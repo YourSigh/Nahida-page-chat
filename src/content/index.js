@@ -196,7 +196,87 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
     messagesEl.appendChild(assistantEl);
     scrollToBottom();
 
-    let fullResponse = "";
+    let rawResponse = "";
+    let thinkBlockEl = null;
+    let thinkContentEl = null;
+    let replyContentEl = null;
+
+    const parseThinkAndReply = (raw) => {
+      const openTag = "<think>";
+      const closeTag = "</think>";
+      let thinkText = "";
+      let replyText = "";
+      let thinkClosed = false;
+
+      const openIdx = raw.indexOf(openTag);
+      if (openIdx === -1) {
+        return { thinkText: "", replyText: raw, thinkClosed: true };
+      }
+
+      const afterOpen = openIdx + openTag.length;
+      const closeIdx = raw.indexOf(closeTag, afterOpen);
+      if (closeIdx === -1) {
+        thinkText = raw.slice(afterOpen);
+        thinkClosed = false;
+        replyText = "";
+      } else {
+        thinkText = raw.slice(afterOpen, closeIdx);
+        thinkClosed = true;
+        replyText = raw.slice(closeIdx + closeTag.length);
+      }
+
+      return { thinkText, replyText, thinkClosed };
+    };
+
+    const ensureThinkBlock = () => {
+      if (thinkBlockEl) return;
+      thinkBlockEl = document.createElement("div");
+      thinkBlockEl.className = "think-block streaming";
+
+      const toggle = document.createElement("button");
+      toggle.className = "think-toggle";
+      toggle.innerHTML = '<span class="think-arrow">▼</span> 思考过程';
+      toggle.addEventListener("click", () => {
+        thinkBlockEl.classList.toggle("collapsed");
+      });
+
+      thinkContentEl = document.createElement("div");
+      thinkContentEl.className = "think-content";
+
+      thinkBlockEl.append(toggle, thinkContentEl);
+      assistantEl.insertBefore(thinkBlockEl, assistantEl.firstChild);
+    };
+
+    const ensureReplyContent = () => {
+      if (replyContentEl) return;
+      replyContentEl = document.createElement("div");
+      replyContentEl.className = "reply-content";
+      assistantEl.appendChild(replyContentEl);
+    };
+
+    const renderStream = (finished) => {
+      const { thinkText, replyText, thinkClosed } = parseThinkAndReply(rawResponse);
+
+      if (thinkText) {
+        ensureThinkBlock();
+        thinkContentEl.textContent = thinkText;
+        if (thinkClosed && !finished) {
+          thinkBlockEl.classList.remove("streaming");
+          thinkBlockEl.classList.add("collapsed");
+        }
+        if (finished && thinkClosed) {
+          thinkBlockEl.classList.remove("streaming");
+        }
+      }
+
+      const trimmedReply = replyText.replace(/^\n+/, "");
+      if (trimmedReply || (finished && thinkClosed)) {
+        ensureReplyContent();
+        replyContentEl.textContent = trimmedReply;
+      }
+
+      scrollToBottom();
+    };
 
     try {
       activePort = chrome.runtime.connect({ name: "nahida-chat" });
@@ -211,15 +291,17 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
     activePort.onMessage.addListener((msg) => {
       if (msg.type === "chunk") {
         if (typingIndicator.parentNode) typingIndicator.remove();
-        fullResponse += msg.content;
-        assistantEl.textContent = fullResponse;
-        scrollToBottom();
+        rawResponse += msg.content;
+        renderStream(false);
       } else if (msg.type === "done") {
         if (typingIndicator.parentNode) typingIndicator.remove();
-        if (!fullResponse) {
+        renderStream(true);
+        const { replyText } = parseThinkAndReply(rawResponse);
+        const reply = replyText.replace(/^\n+/, "");
+        if (!reply.trim() && !rawResponse.trim()) {
           assistantEl.textContent = "（纳西妲没有回复内容）";
         }
-        chatHistory.push({ role: "assistant", content: fullResponse });
+        chatHistory.push({ role: "assistant", content: reply || rawResponse });
         setInputEnabled(true);
         activePort = null;
         input.focus();
@@ -235,11 +317,14 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
     activePort.onDisconnect.addListener(() => {
       if (isStreaming) {
         if (typingIndicator.parentNode) typingIndicator.remove();
-        if (!fullResponse) {
+        renderStream(true);
+        const { replyText } = parseThinkAndReply(rawResponse);
+        const reply = replyText.replace(/^\n+/, "");
+        if (!reply.trim() && !rawResponse.trim()) {
           assistantEl.classList.replace("assistant", "error");
           assistantEl.textContent = "连接已断开";
         } else {
-          chatHistory.push({ role: "assistant", content: fullResponse });
+          chatHistory.push({ role: "assistant", content: reply || rawResponse });
         }
         setInputEnabled(true);
         activePort = null;
