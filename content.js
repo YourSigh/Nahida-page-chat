@@ -1,6 +1,6 @@
 (() => {
   // src/ui/styles.css
-  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 112px;\n  height: 112px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog-overlay {\n  position: fixed;\n  inset: 0;\n  pointer-events: auto;\n  background: rgba(0, 0, 0, 0.22);\n  opacity: 0;\n  visibility: hidden;\n  transition: opacity 160ms ease, visibility 160ms ease;\n}\n\n.dialog-overlay.open {\n  opacity: 1;\n  visibility: visible;\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  resize: both;\n  overflow: auto;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.94);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: flex;\n  flex-direction: column;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.78));\n  border-bottom: 1px solid rgba(20, 26, 22, 0.08);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n  background: rgba(20, 26, 22, 0.1);\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 10px;\n  border-radius: 14px;\n  background: rgba(20, 26, 22, 0.045);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  font-size: 13px;\n  line-height: 1.4;\n}\n\n.composer {\n  display: flex;\n  gap: 10px;\n  align-items: flex-end;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n';
+  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 112px;\n  height: 112px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.94);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: flex;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog.open {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.78));\n  border-bottom: 1px solid rgba(20, 26, 22, 0.08);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n  background: rgba(20, 26, 22, 0.1);\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 10px;\n  border-radius: 14px;\n  background: rgba(20, 26, 22, 0.045);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  font-size: 13px;\n  line-height: 1.4;\n}\n\n.composer {\n  display: flex;\n  gap: 10px;\n  align-items: flex-end;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n';
 
   // src/utils/geometry.js
   var clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -126,19 +126,18 @@
     });
     button.appendChild(image);
     wrapper.appendChild(button);
-    const overlay = document.createElement("div");
-    overlay.className = "dialog-overlay";
-    overlay.setAttribute("role", "dialog");
-    overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-hidden", "true");
     const dialog = document.createElement("div");
     dialog.className = "dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "false");
+    dialog.setAttribute("aria-hidden", "true");
     dialog.addEventListener("pointerdown", (event) => event.stopPropagation());
+    dialog.addEventListener("click", (event) => event.stopPropagation());
     const header = document.createElement("div");
     header.className = "dialog-header";
     const title = document.createElement("div");
     title.className = "dialog-title";
-    title.textContent = "\u5BF9\u8BDD\u6846\uFF08\u5360\u4F4D\uFF09";
+    title.textContent = "\u5BF9\u8BDD\u6846";
     const closeButton = document.createElement("button");
     closeButton.className = "icon-button";
     closeButton.type = "button";
@@ -162,8 +161,15 @@
     composer.append(input, sendButton);
     body.append(messages, composer);
     dialog.append(header, body);
-    overlay.appendChild(dialog);
-    shadowRoot.append(style, wrapper, overlay);
+    const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
+    const resizeHandles = resizeHandleDirs.map((dir) => {
+      const handle = document.createElement("div");
+      handle.className = `resize-handle ${dir}`;
+      handle.dataset.dir = dir;
+      return handle;
+    });
+    dialog.append(...resizeHandles);
+    shadowRoot.append(style, wrapper, dialog);
     const mount = () => {
       const target = document.documentElement || document.body;
       if (!target) {
@@ -184,6 +190,9 @@
     let isDialogOpen = false;
     let dialogDragState = null;
     let dialogPosition = { left: EDGE_GAP, top: EDGE_GAP };
+    let dialogResizeState = null;
+    const MIN_DIALOG_WIDTH = 280;
+    const MIN_DIALOG_HEIGHT = 220;
     const renderIcon = () => {
       wrapper.style.left = `${iconPosition.x}px`;
       wrapper.style.top = `${iconPosition.y}px`;
@@ -195,6 +204,10 @@
     const applyDialogPosition = () => {
       dialog.style.left = `${dialogPosition.left}px`;
       dialog.style.top = `${dialogPosition.top}px`;
+    };
+    const applyDialogSize = (size) => {
+      dialog.style.width = `${size.width}px`;
+      dialog.style.height = `${size.height}px`;
     };
     const clampDialogIntoViewport = () => {
       const size = measureDialogSize();
@@ -224,8 +237,8 @@
     };
     const setDialogOpen = (open) => {
       isDialogOpen = open;
-      overlay.classList.toggle("open", open);
-      overlay.setAttribute("aria-hidden", open ? "false" : "true");
+      dialog.classList.toggle("open", open);
+      dialog.setAttribute("aria-hidden", open ? "false" : "true");
       wrapper.classList.toggle("hidden", open);
       if (open) {
         requestAnimationFrame(() => {
@@ -305,11 +318,18 @@
     button.addEventListener("pointerup", endPointer);
     button.addEventListener("pointercancel", endPointer);
     button.addEventListener("dragstart", (event) => event.preventDefault());
-    overlay.addEventListener("pointerdown", () => setDialogOpen(false));
     closeButton.addEventListener("click", () => setDialogOpen(false));
     sendButton.addEventListener("click", () => {
       input.value = "";
       input.focus();
+    });
+    window.addEventListener("keydown", (event) => {
+      if (!isDialogOpen) {
+        return;
+      }
+      if (event.key === "Escape") {
+        setDialogOpen(false);
+      }
     });
     window.addEventListener("resize", () => {
       iconPosition = clampIconPosition(iconPosition, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
@@ -331,6 +351,7 @@
         offsetX: event.clientX - rect.left,
         offsetY: event.clientY - rect.top
       };
+      dialog.classList.add("dragging");
       header.setPointerCapture(event.pointerId);
       event.preventDefault();
     };
@@ -355,6 +376,7 @@
         return;
       }
       dialogDragState = null;
+      dialog.classList.remove("dragging");
       if (header.hasPointerCapture(event.pointerId)) {
         header.releasePointerCapture(event.pointerId);
       }
@@ -364,6 +386,94 @@
     header.addEventListener("pointermove", moveDialogDrag);
     header.addEventListener("pointerup", endDialogDrag);
     header.addEventListener("pointercancel", endDialogDrag);
+    const startDialogResize = (event) => {
+      if (!isDialogOpen || event.button !== 0) {
+        return;
+      }
+      const handle = event.currentTarget;
+      const dir = handle?.dataset?.dir;
+      if (!dir) {
+        return;
+      }
+      const rect = dialog.getBoundingClientRect();
+      dialogResizeState = {
+        pointerId: event.pointerId,
+        dir,
+        startX: event.clientX,
+        startY: event.clientY,
+        startLeft: rect.left,
+        startTop: rect.top,
+        startWidth: rect.width,
+        startHeight: rect.height
+      };
+      handle.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    };
+    const moveDialogResize = (event) => {
+      if (!dialogResizeState || event.pointerId !== dialogResizeState.pointerId) {
+        return;
+      }
+      const { viewportWidth, viewportHeight } = viewport();
+      const maxWidth = Math.max(MIN_DIALOG_WIDTH, viewportWidth - EDGE_GAP * 2);
+      const maxHeight = Math.max(MIN_DIALOG_HEIGHT, viewportHeight - EDGE_GAP * 2);
+      const dx = event.clientX - dialogResizeState.startX;
+      const dy = event.clientY - dialogResizeState.startY;
+      const dir = dialogResizeState.dir;
+      let nextLeft = dialogResizeState.startLeft;
+      let nextTop = dialogResizeState.startTop;
+      let nextWidth = dialogResizeState.startWidth;
+      let nextHeight = dialogResizeState.startHeight;
+      const resizeE = dir.includes("e");
+      const resizeW = dir.includes("w");
+      const resizeS = dir.includes("s");
+      const resizeN = dir.includes("n");
+      if (resizeE) {
+        nextWidth = dialogResizeState.startWidth + dx;
+      }
+      if (resizeS) {
+        nextHeight = dialogResizeState.startHeight + dy;
+      }
+      if (resizeW) {
+        nextWidth = dialogResizeState.startWidth - dx;
+        nextLeft = dialogResizeState.startLeft + dx;
+      }
+      if (resizeN) {
+        nextHeight = dialogResizeState.startHeight - dy;
+        nextTop = dialogResizeState.startTop + dy;
+      }
+      nextWidth = Math.min(Math.max(nextWidth, MIN_DIALOG_WIDTH), maxWidth);
+      nextHeight = Math.min(Math.max(nextHeight, MIN_DIALOG_HEIGHT), maxHeight);
+      if (resizeW) {
+        const right = dialogResizeState.startLeft + dialogResizeState.startWidth;
+        nextLeft = right - nextWidth;
+      }
+      if (resizeN) {
+        const bottom = dialogResizeState.startTop + dialogResizeState.startHeight;
+        nextTop = bottom - nextHeight;
+      }
+      nextLeft = Math.min(Math.max(nextLeft, EDGE_GAP), viewportWidth - EDGE_GAP - nextWidth);
+      nextTop = Math.min(Math.max(nextTop, EDGE_GAP), viewportHeight - EDGE_GAP - nextHeight);
+      dialogPosition = { left: nextLeft, top: nextTop };
+      applyDialogPosition();
+      applyDialogSize({ width: nextWidth, height: nextHeight });
+    };
+    const endDialogResize = (event) => {
+      if (!dialogResizeState || event.pointerId !== dialogResizeState.pointerId) {
+        return;
+      }
+      const handle = event.currentTarget;
+      if (handle.hasPointerCapture(event.pointerId)) {
+        handle.releasePointerCapture(event.pointerId);
+      }
+      dialogResizeState = null;
+      clampDialogIntoViewport();
+    };
+    resizeHandles.forEach((handle) => {
+      handle.addEventListener("pointerdown", startDialogResize);
+      handle.addEventListener("pointermove", moveDialogResize);
+      handle.addEventListener("pointerup", endDialogResize);
+      handle.addEventListener("pointercancel", endDialogResize);
+    });
     const resizeObserver = new ResizeObserver(() => {
       if (!isDialogOpen) {
         return;

@@ -79,15 +79,13 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   button.appendChild(image);
   wrapper.appendChild(button);
 
-  const overlay = document.createElement("div");
-  overlay.className = "dialog-overlay";
-  overlay.setAttribute("role", "dialog");
-  overlay.setAttribute("aria-modal", "true");
-  overlay.setAttribute("aria-hidden", "true");
-
   const dialog = document.createElement("div");
   dialog.className = "dialog";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "false");
+  dialog.setAttribute("aria-hidden", "true");
   dialog.addEventListener("pointerdown", (event) => event.stopPropagation());
+  dialog.addEventListener("click", (event) => event.stopPropagation());
 
   const header = document.createElement("div");
   header.className = "dialog-header";
@@ -126,9 +124,17 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   composer.append(input, sendButton);
   body.append(messages, composer);
   dialog.append(header, body);
-  overlay.appendChild(dialog);
 
-  shadowRoot.append(style, wrapper, overlay);
+  const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
+  const resizeHandles = resizeHandleDirs.map((dir) => {
+    const handle = document.createElement("div");
+    handle.className = `resize-handle ${dir}`;
+    handle.dataset.dir = dir;
+    return handle;
+  });
+  dialog.append(...resizeHandles);
+
+  shadowRoot.append(style, wrapper, dialog);
 
   const mount = () => {
     const target = document.documentElement || document.body;
@@ -154,6 +160,10 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
 
   let dialogDragState = null;
   let dialogPosition = { left: EDGE_GAP, top: EDGE_GAP };
+  let dialogResizeState = null;
+
+  const MIN_DIALOG_WIDTH = 280;
+  const MIN_DIALOG_HEIGHT = 220;
 
   const renderIcon = () => {
     wrapper.style.left = `${iconPosition.x}px`;
@@ -168,6 +178,11 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   const applyDialogPosition = () => {
     dialog.style.left = `${dialogPosition.left}px`;
     dialog.style.top = `${dialogPosition.top}px`;
+  };
+
+  const applyDialogSize = (size) => {
+    dialog.style.width = `${size.width}px`;
+    dialog.style.height = `${size.height}px`;
   };
 
   const clampDialogIntoViewport = () => {
@@ -200,8 +215,8 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
 
   const setDialogOpen = (open) => {
     isDialogOpen = open;
-    overlay.classList.toggle("open", open);
-    overlay.setAttribute("aria-hidden", open ? "false" : "true");
+    dialog.classList.toggle("open", open);
+    dialog.setAttribute("aria-hidden", open ? "false" : "true");
     wrapper.classList.toggle("hidden", open);
     if (open) {
       requestAnimationFrame(() => {
@@ -292,11 +307,19 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   button.addEventListener("pointercancel", endPointer);
   button.addEventListener("dragstart", (event) => event.preventDefault());
 
-  overlay.addEventListener("pointerdown", () => setDialogOpen(false));
   closeButton.addEventListener("click", () => setDialogOpen(false));
   sendButton.addEventListener("click", () => {
     input.value = "";
     input.focus();
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (!isDialogOpen) {
+      return;
+    }
+    if (event.key === "Escape") {
+      setDialogOpen(false);
+    }
   });
 
   window.addEventListener("resize", () => {
@@ -320,6 +343,7 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
       offsetX: event.clientX - rect.left,
       offsetY: event.clientY - rect.top
     };
+    dialog.classList.add("dragging");
     header.setPointerCapture(event.pointerId);
     event.preventDefault();
   };
@@ -346,6 +370,7 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
       return;
     }
     dialogDragState = null;
+    dialog.classList.remove("dragging");
     if (header.hasPointerCapture(event.pointerId)) {
       header.releasePointerCapture(event.pointerId);
     }
@@ -356,6 +381,110 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   header.addEventListener("pointermove", moveDialogDrag);
   header.addEventListener("pointerup", endDialogDrag);
   header.addEventListener("pointercancel", endDialogDrag);
+
+  const startDialogResize = (event) => {
+    if (!isDialogOpen || event.button !== 0) {
+      return;
+    }
+    const handle = event.currentTarget;
+    const dir = handle?.dataset?.dir;
+    if (!dir) {
+      return;
+    }
+
+    const rect = dialog.getBoundingClientRect();
+    dialogResizeState = {
+      pointerId: event.pointerId,
+      dir,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: rect.left,
+      startTop: rect.top,
+      startWidth: rect.width,
+      startHeight: rect.height
+    };
+    handle.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  };
+
+  const moveDialogResize = (event) => {
+    if (!dialogResizeState || event.pointerId !== dialogResizeState.pointerId) {
+      return;
+    }
+
+    const { viewportWidth, viewportHeight } = viewport();
+    const maxWidth = Math.max(MIN_DIALOG_WIDTH, viewportWidth - EDGE_GAP * 2);
+    const maxHeight = Math.max(MIN_DIALOG_HEIGHT, viewportHeight - EDGE_GAP * 2);
+
+    const dx = event.clientX - dialogResizeState.startX;
+    const dy = event.clientY - dialogResizeState.startY;
+    const dir = dialogResizeState.dir;
+
+    let nextLeft = dialogResizeState.startLeft;
+    let nextTop = dialogResizeState.startTop;
+    let nextWidth = dialogResizeState.startWidth;
+    let nextHeight = dialogResizeState.startHeight;
+
+    const resizeE = dir.includes("e");
+    const resizeW = dir.includes("w");
+    const resizeS = dir.includes("s");
+    const resizeN = dir.includes("n");
+
+    if (resizeE) {
+      nextWidth = dialogResizeState.startWidth + dx;
+    }
+    if (resizeS) {
+      nextHeight = dialogResizeState.startHeight + dy;
+    }
+    if (resizeW) {
+      nextWidth = dialogResizeState.startWidth - dx;
+      nextLeft = dialogResizeState.startLeft + dx;
+    }
+    if (resizeN) {
+      nextHeight = dialogResizeState.startHeight - dy;
+      nextTop = dialogResizeState.startTop + dy;
+    }
+
+    nextWidth = Math.min(Math.max(nextWidth, MIN_DIALOG_WIDTH), maxWidth);
+    nextHeight = Math.min(Math.max(nextHeight, MIN_DIALOG_HEIGHT), maxHeight);
+
+    // When resizing from W/N and clamped, keep the opposite edge fixed.
+    if (resizeW) {
+      const right = dialogResizeState.startLeft + dialogResizeState.startWidth;
+      nextLeft = right - nextWidth;
+    }
+    if (resizeN) {
+      const bottom = dialogResizeState.startTop + dialogResizeState.startHeight;
+      nextTop = bottom - nextHeight;
+    }
+
+    // Clamp position so dialog stays within viewport with EDGE_GAP.
+    nextLeft = Math.min(Math.max(nextLeft, EDGE_GAP), viewportWidth - EDGE_GAP - nextWidth);
+    nextTop = Math.min(Math.max(nextTop, EDGE_GAP), viewportHeight - EDGE_GAP - nextHeight);
+
+    dialogPosition = { left: nextLeft, top: nextTop };
+    applyDialogPosition();
+    applyDialogSize({ width: nextWidth, height: nextHeight });
+  };
+
+  const endDialogResize = (event) => {
+    if (!dialogResizeState || event.pointerId !== dialogResizeState.pointerId) {
+      return;
+    }
+    const handle = event.currentTarget;
+    if (handle.hasPointerCapture(event.pointerId)) {
+      handle.releasePointerCapture(event.pointerId);
+    }
+    dialogResizeState = null;
+    clampDialogIntoViewport();
+  };
+
+  resizeHandles.forEach((handle) => {
+    handle.addEventListener("pointerdown", startDialogResize);
+    handle.addEventListener("pointermove", moveDialogResize);
+    handle.addEventListener("pointerup", endDialogResize);
+    handle.addEventListener("pointercancel", endDialogResize);
+  });
 
   const resizeObserver = new ResizeObserver(() => {
     if (!isDialogOpen) {

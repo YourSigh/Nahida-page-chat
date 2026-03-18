@@ -64,21 +64,6 @@
   filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));
 }
 
-.dialog-overlay {
-  position: fixed;
-  inset: 0;
-  pointer-events: auto;
-  background: rgba(0, 0, 0, 0.22);
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 160ms ease, visibility 160ms ease;
-}
-
-.dialog-overlay.open {
-  opacity: 1;
-  visibility: visible;
-}
-
 .dialog {
   position: fixed;
   left: 20px;
@@ -89,8 +74,7 @@
   min-height: 220px;
   max-width: calc(100vw - 40px);
   max-height: calc(100vh - 40px);
-  resize: both;
-  overflow: auto;
+  overflow: hidden;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.94);
   backdrop-filter: blur(14px);
@@ -102,6 +86,94 @@
   color: rgba(20, 26, 22, 0.92);
   display: flex;
   flex-direction: column;
+  pointer-events: auto;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(6px) scale(0.99);
+  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;
+}
+
+.dialog.open {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.dialog.dragging .dialog-header {
+  cursor: grabbing;
+}
+
+.resize-handle {
+  position: absolute;
+  z-index: 10;
+  pointer-events: auto;
+  background: transparent;
+}
+
+.resize-handle.n,
+.resize-handle.s {
+  left: 10px;
+  right: 10px;
+  height: 10px;
+}
+
+.resize-handle.e,
+.resize-handle.w {
+  top: 10px;
+  bottom: 10px;
+  width: 10px;
+}
+
+.resize-handle.n {
+  top: -4px;
+  cursor: ns-resize;
+}
+
+.resize-handle.s {
+  bottom: -4px;
+  cursor: ns-resize;
+}
+
+.resize-handle.e {
+  right: -4px;
+  cursor: ew-resize;
+}
+
+.resize-handle.w {
+  left: -4px;
+  cursor: ew-resize;
+}
+
+.resize-handle.ne,
+.resize-handle.nw,
+.resize-handle.se,
+.resize-handle.sw {
+  width: 14px;
+  height: 14px;
+}
+
+.resize-handle.ne {
+  top: -5px;
+  right: -5px;
+  cursor: nesw-resize;
+}
+
+.resize-handle.nw {
+  top: -5px;
+  left: -5px;
+  cursor: nwse-resize;
+}
+
+.resize-handle.se {
+  bottom: -5px;
+  right: -5px;
+  cursor: nwse-resize;
+}
+
+.resize-handle.sw {
+  bottom: -5px;
+  left: -5px;
+  cursor: nesw-resize;
 }
 
 .dialog-header {
@@ -157,6 +229,7 @@
   padding: 12px 14px;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .messages {
