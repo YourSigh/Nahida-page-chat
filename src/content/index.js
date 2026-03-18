@@ -92,7 +92,7 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
 
   const title = document.createElement("div");
   title.className = "dialog-title";
-  title.textContent = "对话框";
+  title.textContent = "纳西妲";
 
   const closeButton = document.createElement("button");
   closeButton.className = "icon-button";
@@ -104,9 +104,13 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   const body = document.createElement("div");
   body.className = "dialog-body";
 
-  const messages = document.createElement("div");
-  messages.className = "messages";
-  messages.textContent = "这里之后会显示聊天记录（你后面接入 AI 聊天即可）。";
+  const messagesEl = document.createElement("div");
+  messagesEl.className = "messages";
+
+  const welcome = document.createElement("div");
+  welcome.className = "msg-welcome";
+  welcome.textContent = "你好呀～我是纳西妲！有什么我可以帮你的吗？";
+  messagesEl.appendChild(welcome);
 
   const composer = document.createElement("div");
   composer.className = "composer";
@@ -114,7 +118,7 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   const input = document.createElement("textarea");
   input.className = "input";
   input.rows = 2;
-  input.placeholder = "输入内容（对话功能后续接入）";
+  input.placeholder = "输入消息，Enter 发送，Shift+Enter 换行";
 
   const sendButton = document.createElement("button");
   sendButton.className = "icon-button send";
@@ -122,8 +126,128 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   sendButton.textContent = "发送";
 
   composer.append(input, sendButton);
-  body.append(messages, composer);
+  body.append(messagesEl, composer);
   dialog.append(header, body);
+
+  // --- Chat state & logic ---
+  const chatHistory = [];
+  let isStreaming = false;
+  let activePort = null;
+
+  const scrollToBottom = () => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  };
+
+  const appendMessage = (role, text) => {
+    const el = document.createElement("div");
+    el.className = `msg ${role}`;
+    el.textContent = text;
+    messagesEl.appendChild(el);
+    scrollToBottom();
+    return el;
+  };
+
+  const setInputEnabled = (enabled) => {
+    input.disabled = !enabled;
+    sendButton.disabled = !enabled;
+    isStreaming = !enabled;
+  };
+
+  const getPageContext = () => {
+    const titleText = document.title || "";
+    const metaDesc = document.querySelector('meta[name="description"]')?.content || "";
+    const url = location.href;
+    const parts = [`当前页面标题：${titleText}`, `URL：${url}`];
+    if (metaDesc) parts.push(`页面描述：${metaDesc}`);
+
+    try {
+      const mainEl = document.querySelector("main, article, [role='main']");
+      const bodyText = (mainEl || document.body).innerText || "";
+      const trimmed = bodyText.slice(0, 2000).trim();
+      if (trimmed) parts.push(`页面主要内容（截取前 2000 字）：\n${trimmed}`);
+    } catch {}
+
+    return parts.join("\n");
+  };
+
+  const sendChat = () => {
+    const text = input.value.trim();
+    if (!text || isStreaming) return;
+
+    input.value = "";
+    appendMessage("user", text);
+
+    const pageContext = chatHistory.length === 0 ? getPageContext() : null;
+
+    const userContent = pageContext
+      ? `[以下是用户当前浏览的页面信息]\n${pageContext}\n\n[用户的问题]\n${text}`
+      : text;
+
+    chatHistory.push({ role: "user", content: userContent });
+
+    setInputEnabled(false);
+
+    const assistantEl = document.createElement("div");
+    assistantEl.className = "msg assistant";
+    const typingIndicator = document.createElement("div");
+    typingIndicator.className = "typing-indicator";
+    typingIndicator.innerHTML = "<span></span><span></span><span></span>";
+    assistantEl.appendChild(typingIndicator);
+    messagesEl.appendChild(assistantEl);
+    scrollToBottom();
+
+    let fullResponse = "";
+
+    try {
+      activePort = chrome.runtime.connect({ name: "nahida-chat" });
+    } catch (error) {
+      typingIndicator.remove();
+      assistantEl.classList.replace("assistant", "error");
+      assistantEl.textContent = `连接扩展失败: ${error.message}`;
+      setInputEnabled(true);
+      return;
+    }
+
+    activePort.onMessage.addListener((msg) => {
+      if (msg.type === "chunk") {
+        if (typingIndicator.parentNode) typingIndicator.remove();
+        fullResponse += msg.content;
+        assistantEl.textContent = fullResponse;
+        scrollToBottom();
+      } else if (msg.type === "done") {
+        if (typingIndicator.parentNode) typingIndicator.remove();
+        if (!fullResponse) {
+          assistantEl.textContent = "（纳西妲没有回复内容）";
+        }
+        chatHistory.push({ role: "assistant", content: fullResponse });
+        setInputEnabled(true);
+        activePort = null;
+        input.focus();
+      } else if (msg.type === "error") {
+        if (typingIndicator.parentNode) typingIndicator.remove();
+        assistantEl.classList.replace("assistant", "error");
+        assistantEl.textContent = msg.error;
+        setInputEnabled(true);
+        activePort = null;
+      }
+    });
+
+    activePort.onDisconnect.addListener(() => {
+      if (isStreaming) {
+        if (typingIndicator.parentNode) typingIndicator.remove();
+        if (!fullResponse) {
+          assistantEl.classList.replace("assistant", "error");
+          assistantEl.textContent = "连接已断开";
+        } else {
+          chatHistory.push({ role: "assistant", content: fullResponse });
+        }
+        setInputEnabled(true);
+        activePort = null;
+      }
+    });
+
+    activePort.postMessage({ type: "chat", messages: chatHistory });
+  };
 
   const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
   const resizeHandles = resizeHandleDirs.map((dir) => {
@@ -308,9 +432,13 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   button.addEventListener("dragstart", (event) => event.preventDefault());
 
   closeButton.addEventListener("click", () => setDialogOpen(false));
-  sendButton.addEventListener("click", () => {
-    input.value = "";
-    input.focus();
+  sendButton.addEventListener("click", () => sendChat());
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendChat();
+    }
   });
 
   window.addEventListener("keydown", (event) => {

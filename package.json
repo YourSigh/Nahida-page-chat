@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/content/index.js --bundle --format=iife --target=chrome109 --outfile=content.js --loader:.css=text",
-    "dev": "esbuild src/content/index.js --bundle --format=iife --target=chrome109 --outfile=content.js --loader:.css=text --watch"
+    "build": "node build.js",
+    "dev": "node build.js --watch"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
