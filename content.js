@@ -1,6 +1,6 @@
 (() => {
   // src/ui/styles.css
-  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 112px;\n  height: 112px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.94);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: flex;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog.open {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.78));\n  border-bottom: 1px solid rgba(20, 26, 22, 0.08);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n  background: rgba(20, 26, 22, 0.1);\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow: auto;\n  padding: 10px;\n  border-radius: 14px;\n  background: rgba(20, 26, 22, 0.045);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  font-size: 13px;\n  line-height: 1.4;\n}\n\n.composer {\n  display: flex;\n  gap: 10px;\n  align-items: flex-end;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n';
+  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 112px;\n  height: 112px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.94);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: flex;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog.open {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.78));\n  border-bottom: 1px solid rgba(20, 26, 22, 0.08);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n  background: rgba(20, 26, 22, 0.1);\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 10px 8px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  scroll-behavior: smooth;\n}\n\n.msg {\n  max-width: 85%;\n  padding: 8px 12px;\n  border-radius: 14px;\n  font-size: 13px;\n  line-height: 1.5;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n.msg.user {\n  align-self: flex-end;\n  background: linear-gradient(135deg, #6db082, #4a9960);\n  color: #fff;\n  border-bottom-right-radius: 4px;\n}\n\n.msg.assistant {\n  align-self: flex-start;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.92);\n  border-bottom-left-radius: 4px;\n}\n\n.msg.error {\n  align-self: center;\n  background: rgba(200, 50, 50, 0.08);\n  color: rgba(180, 40, 40, 0.9);\n  font-size: 12px;\n  text-align: center;\n}\n\n.msg-welcome {\n  text-align: center;\n  font-size: 12px;\n  color: rgba(20, 26, 22, 0.42);\n  padding: 20px 10px 6px;\n  line-height: 1.5;\n}\n\n.typing-indicator {\n  display: inline-flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.typing-indicator span {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: rgba(20, 26, 22, 0.3);\n  animation: typing-bounce 1.2s ease-in-out infinite;\n}\n\n.typing-indicator span:nth-child(2) {\n  animation-delay: 0.15s;\n}\n\n.typing-indicator span:nth-child(3) {\n  animation-delay: 0.3s;\n}\n\n@keyframes typing-bounce {\n  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }\n  30% { transform: translateY(-4px); opacity: 1; }\n}\n\n.composer {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n.send:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n';
 
   // src/utils/geometry.js
   var clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -137,7 +137,7 @@
     header.className = "dialog-header";
     const title = document.createElement("div");
     title.className = "dialog-title";
-    title.textContent = "\u5BF9\u8BDD\u6846";
+    title.textContent = "\u7EB3\u897F\u59B2";
     const closeButton = document.createElement("button");
     closeButton.className = "icon-button";
     closeButton.type = "button";
@@ -145,22 +145,129 @@
     header.append(title, closeButton);
     const body = document.createElement("div");
     body.className = "dialog-body";
-    const messages = document.createElement("div");
-    messages.className = "messages";
-    messages.textContent = "\u8FD9\u91CC\u4E4B\u540E\u4F1A\u663E\u793A\u804A\u5929\u8BB0\u5F55\uFF08\u4F60\u540E\u9762\u63A5\u5165 AI \u804A\u5929\u5373\u53EF\uFF09\u3002";
+    const messagesEl = document.createElement("div");
+    messagesEl.className = "messages";
+    const welcome = document.createElement("div");
+    welcome.className = "msg-welcome";
+    welcome.textContent = "\u4F60\u597D\u5440\uFF5E\u6211\u662F\u7EB3\u897F\u59B2\uFF01\u6709\u4EC0\u4E48\u6211\u53EF\u4EE5\u5E2E\u4F60\u7684\u5417\uFF1F";
+    messagesEl.appendChild(welcome);
     const composer = document.createElement("div");
     composer.className = "composer";
     const input = document.createElement("textarea");
     input.className = "input";
     input.rows = 2;
-    input.placeholder = "\u8F93\u5165\u5185\u5BB9\uFF08\u5BF9\u8BDD\u529F\u80FD\u540E\u7EED\u63A5\u5165\uFF09";
+    input.placeholder = "\u8F93\u5165\u6D88\u606F\uFF0CEnter \u53D1\u9001\uFF0CShift+Enter \u6362\u884C";
     const sendButton = document.createElement("button");
     sendButton.className = "icon-button send";
     sendButton.type = "button";
     sendButton.textContent = "\u53D1\u9001";
     composer.append(input, sendButton);
-    body.append(messages, composer);
+    body.append(messagesEl, composer);
     dialog.append(header, body);
+    const chatHistory = [];
+    let isStreaming = false;
+    let activePort = null;
+    const scrollToBottom = () => {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    };
+    const appendMessage = (role, text) => {
+      const el = document.createElement("div");
+      el.className = `msg ${role}`;
+      el.textContent = text;
+      messagesEl.appendChild(el);
+      scrollToBottom();
+      return el;
+    };
+    const setInputEnabled = (enabled) => {
+      input.disabled = !enabled;
+      sendButton.disabled = !enabled;
+      isStreaming = !enabled;
+    };
+    const getPageContext = () => {
+      const titleText = document.title || "";
+      const metaDesc = document.querySelector('meta[name="description"]')?.content || "";
+      const url = location.href;
+      const parts = [`\u5F53\u524D\u9875\u9762\u6807\u9898\uFF1A${titleText}`, `URL\uFF1A${url}`];
+      if (metaDesc) parts.push(`\u9875\u9762\u63CF\u8FF0\uFF1A${metaDesc}`);
+      try {
+        const mainEl = document.querySelector("main, article, [role='main']");
+        const bodyText = (mainEl || document.body).innerText || "";
+        const trimmed = bodyText.slice(0, 2e3).trim();
+        if (trimmed) parts.push(`\u9875\u9762\u4E3B\u8981\u5185\u5BB9\uFF08\u622A\u53D6\u524D 2000 \u5B57\uFF09\uFF1A
+${trimmed}`);
+      } catch {
+      }
+      return parts.join("\n");
+    };
+    const sendChat = () => {
+      const text = input.value.trim();
+      if (!text || isStreaming) return;
+      input.value = "";
+      appendMessage("user", text);
+      const pageContext = chatHistory.length === 0 ? getPageContext() : null;
+      const userContent = pageContext ? `[\u4EE5\u4E0B\u662F\u7528\u6237\u5F53\u524D\u6D4F\u89C8\u7684\u9875\u9762\u4FE1\u606F]
+${pageContext}
+
+[\u7528\u6237\u7684\u95EE\u9898]
+${text}` : text;
+      chatHistory.push({ role: "user", content: userContent });
+      setInputEnabled(false);
+      const assistantEl = document.createElement("div");
+      assistantEl.className = "msg assistant";
+      const typingIndicator = document.createElement("div");
+      typingIndicator.className = "typing-indicator";
+      typingIndicator.innerHTML = "<span></span><span></span><span></span>";
+      assistantEl.appendChild(typingIndicator);
+      messagesEl.appendChild(assistantEl);
+      scrollToBottom();
+      let fullResponse = "";
+      try {
+        activePort = chrome.runtime.connect({ name: "nahida-chat" });
+      } catch (error) {
+        typingIndicator.remove();
+        assistantEl.classList.replace("assistant", "error");
+        assistantEl.textContent = `\u8FDE\u63A5\u6269\u5C55\u5931\u8D25: ${error.message}`;
+        setInputEnabled(true);
+        return;
+      }
+      activePort.onMessage.addListener((msg) => {
+        if (msg.type === "chunk") {
+          if (typingIndicator.parentNode) typingIndicator.remove();
+          fullResponse += msg.content;
+          assistantEl.textContent = fullResponse;
+          scrollToBottom();
+        } else if (msg.type === "done") {
+          if (typingIndicator.parentNode) typingIndicator.remove();
+          if (!fullResponse) {
+            assistantEl.textContent = "\uFF08\u7EB3\u897F\u59B2\u6CA1\u6709\u56DE\u590D\u5185\u5BB9\uFF09";
+          }
+          chatHistory.push({ role: "assistant", content: fullResponse });
+          setInputEnabled(true);
+          activePort = null;
+          input.focus();
+        } else if (msg.type === "error") {
+          if (typingIndicator.parentNode) typingIndicator.remove();
+          assistantEl.classList.replace("assistant", "error");
+          assistantEl.textContent = msg.error;
+          setInputEnabled(true);
+          activePort = null;
+        }
+      });
+      activePort.onDisconnect.addListener(() => {
+        if (isStreaming) {
+          if (typingIndicator.parentNode) typingIndicator.remove();
+          if (!fullResponse) {
+            assistantEl.classList.replace("assistant", "error");
+            assistantEl.textContent = "\u8FDE\u63A5\u5DF2\u65AD\u5F00";
+          } else {
+            chatHistory.push({ role: "assistant", content: fullResponse });
+          }
+          setInputEnabled(true);
+          activePort = null;
+        }
+      });
+      activePort.postMessage({ type: "chat", messages: chatHistory });
+    };
     const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
     const resizeHandles = resizeHandleDirs.map((dir) => {
       const handle = document.createElement("div");
@@ -319,9 +426,12 @@
     button.addEventListener("pointercancel", endPointer);
     button.addEventListener("dragstart", (event) => event.preventDefault());
     closeButton.addEventListener("click", () => setDialogOpen(false));
-    sendButton.addEventListener("click", () => {
-      input.value = "";
-      input.focus();
+    sendButton.addEventListener("click", () => sendChat());
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendChat();
+      }
     });
     window.addEventListener("keydown", (event) => {
       if (!isDialogOpen) {
