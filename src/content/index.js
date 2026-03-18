@@ -170,6 +170,74 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
     return parts.join("\n");
   };
 
+  const tool_read_page = ({ maxChars = 2000 } = {}) => {
+    const titleText = document.title || "";
+    const metaDesc = document.querySelector('meta[name="description"]')?.content || "";
+    const url = location.href;
+    let text = "";
+    try {
+      const mainEl = document.querySelector("main, article, [role='main']");
+      const bodyText = (mainEl || document.body).innerText || "";
+      text = bodyText.slice(0, maxChars).trim();
+    } catch {}
+    return { title: titleText, url, description: metaDesc, text };
+  };
+
+  const tool_get_visible_text = ({ maxChars = 2000 } = {}) => {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const nodes = Array.from(document.querySelectorAll("p, li, h1, h2, h3, h4, h5, h6, article, main, section, div, span, a, button"))
+      .slice(0, 800);
+    const chunks = [];
+    for (const el of nodes) {
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      const visible = rect.bottom >= 0 && rect.right >= 0 && rect.top <= vh && rect.left <= vw;
+      if (!visible) continue;
+      const t = (el.innerText || el.textContent || "").trim();
+      if (!t) continue;
+      chunks.push(t.replace(/\s+/g, " "));
+      const joined = chunks.join("\n");
+      if (joined.length >= maxChars) break;
+    }
+    const text = chunks.join("\n").slice(0, maxChars);
+    return { url: location.href, text };
+  };
+
+  const tool_query = ({ selector, limit = 10, includeAttrs = [] } = {}) => {
+    if (!selector || typeof selector !== "string") {
+      return { error: "selector 必填" };
+    }
+    let elements = [];
+    try {
+      elements = Array.from(document.querySelectorAll(selector)).slice(0, Math.max(1, Math.min(50, limit)));
+    } catch (e) {
+      return { error: `selector 无效: ${String(e?.message || e)}` };
+    }
+    const results = elements.map((el) => {
+      const attrs = {};
+      for (const k of includeAttrs) {
+        const v = el.getAttribute?.(k);
+        if (v != null) attrs[k] = v;
+      }
+      const rect = el.getBoundingClientRect();
+      return {
+        tag: el.tagName?.toLowerCase?.() || "",
+        text: (el.innerText || el.textContent || "").trim().slice(0, 500),
+        attrs,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
+      };
+    });
+    return { selector, count: results.length, results };
+  };
+
+  const runTool = async (name, args) => {
+    if (name === "read_page") return tool_read_page(args);
+    if (name === "get_visible_text") return tool_get_visible_text(args);
+    if (name === "query") return tool_query(args);
+    return { error: `未知工具: ${name}` };
+  };
+
   const sendChat = () => {
     const text = input.value.trim();
     if (!text || isStreaming) return;
@@ -289,6 +357,22 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
     }
 
     activePort.onMessage.addListener((msg) => {
+      if (msg?.type === "tool") {
+        runTool(msg.name, msg.args)
+          .then((result) => {
+            activePort?.postMessage({ type: "tool_result", id: msg.id, result });
+          })
+          .catch((error) => {
+            activePort?.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error?.message || error) } });
+          });
+        return;
+      }
+
+      if (msg?.type === "tool_log") {
+        // TODO: 可以在 UI 里显示工具调用日志（先不影响主流程）
+        return;
+      }
+
       if (msg.type === "chunk") {
         if (typingIndicator.parentNode) typingIndicator.remove();
         rawResponse += msg.content;
