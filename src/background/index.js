@@ -3,16 +3,33 @@ const API_KEY = process.env.LLM_API_KEY;
 const MODEL = process.env.LLM_MODEL;
 
 const SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》中的草之神。你聪明、温柔、好奇心旺盛，说话亲切自然，偶尔带一点俏皮。
-你正在帮助用户浏览当前网页。用户可能会问你关于页面内容的问题，也可能只是想和你聊天。
-回答尽量简洁实用，如果涉及页面内容就结合上下文回答。`;
+你正在帮助用户理解当前网页内容，你可以“请求工具”来实时读取页面 DOM 信息，但你不能直接操作页面。
 
-async function streamChat(messages, port) {
+你可用的工具只有：
+- read_page: 读取当前页面标题/URL/描述/主要文本
+- get_visible_text: 读取当前视口附近的可见文本（更实时、更相关）
+- query: 用 CSS selector 查询元素列表（返回 text/tag/attributes 等）
+
+你必须严格使用以下 JSON 格式回复（不要输出任何额外文字）：
+1) 当你需要页面信息时：
+{"type":"tool","name":"read_page","args":{"maxChars":2000}}
+{"type":"tool","name":"get_visible_text","args":{"maxChars":2000}}
+{"type":"tool","name":"query","args":{"selector":"...","limit":10,"includeAttrs":["href","aria-label"]}}
+
+2) 当你已经可以回答用户问题时：
+{"type":"final","content":"..."} 
+
+规则：
+- 最多连续调用 5 次工具，否则直接总结你已知信息并给出建议。
+- 用户没有问页面相关问题时，不要调用工具，直接聊天回答。`;
+
+async function callChatCompletion(messages) {
   const url = `${API_BASE_URL}/chat/completions`;
 
   const body = {
     model: MODEL,
-    messages: [{ role: "system", content: SYSTEM_PROMPT }, ...messages],
-    stream: true
+    messages,
+    stream: false
   };
 
   let response;
@@ -26,8 +43,7 @@ async function streamChat(messages, port) {
       body: JSON.stringify(body)
     });
   } catch (error) {
-    port.postMessage({ type: "error", error: `网络请求失败: ${error.message}` });
-    return;
+    throw new Error(`网络请求失败: ${error.message}`);
   }
 
   if (!response.ok) {
@@ -35,61 +51,153 @@ async function streamChat(messages, port) {
     try {
       detail = await response.text();
     } catch {}
-    port.postMessage({
-      type: "error",
-      error: `API 返回 ${response.status}: ${detail.slice(0, 200)}`
-    });
+    throw new Error(`API 返回 ${response.status}: ${detail.slice(0, 400)}`);
+  }
+
+  const json = await response.json();
+  const content = json?.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error("模型未返回内容");
+  }
+  return String(content);
+}
+
+function safeParseJson(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function extractFirstJsonObject(text) {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (ch === "\\") {
+        escape = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return text.slice(start, i + 1);
+      }
+    }
+  }
+  return null;
+}
+
+function parseAgentJson(output) {
+  const trimmed = String(output || "").trim();
+  const direct = safeParseJson(trimmed);
+  if (direct && typeof direct === "object") return direct;
+
+  // Handle code fences or extra explanation around JSON.
+  const extracted = extractFirstJsonObject(trimmed);
+  if (!extracted) return null;
+  const parsed = safeParseJson(extracted);
+  if (parsed && typeof parsed === "object") return parsed;
+  return null;
+}
+
+async function requestTool(port, name, args) {
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`工具调用超时: ${name}`));
+    }, 15_000);
+
+    const handler = (msg) => {
+      if (msg?.type !== "tool_result" || msg?.id !== id) return;
+      clearTimeout(timeout);
+      port.onMessage.removeListener(handler);
+      resolve(msg.result);
+    };
+
+    port.onMessage.addListener(handler);
+    port.postMessage({ type: "tool", id, name, args });
+  });
+}
+
+async function runAgent(userMessages, port) {
+  const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
+
+  let toolCalls = 0;
+  while (toolCalls < 5) {
+    const assistantContent = await callChatCompletion(messages);
+    const parsed = parseAgentJson(assistantContent);
+
+    if (!parsed || !parsed.type) {
+      // Fallback: treat as final answer
+      port.postMessage({ type: "chunk", content: assistantContent });
+      port.postMessage({ type: "done" });
+      return;
+    }
+
+    if (parsed.type === "final") {
+      port.postMessage({ type: "chunk", content: parsed.content || "" });
+      port.postMessage({ type: "done" });
+      return;
+    }
+
+    if (parsed.type === "tool") {
+      toolCalls += 1;
+      const name = parsed.name;
+      const args = parsed.args || {};
+      port.postMessage({ type: "tool_log", name, args });
+      const result = await requestTool(port, name, args);
+      // Keep the original model output to preserve chain of thought / tool intent,
+      // but ensure we don't leak tool JSON to the UI.
+      messages.push({ role: "assistant", content: JSON.stringify(parsed) });
+      messages.push({ role: "user", content: `工具结果(${name}):\n${JSON.stringify(result).slice(0, 6000)}` });
+      continue;
+    }
+
+    port.postMessage({ type: "chunk", content: assistantContent });
+    port.postMessage({ type: "done" });
     return;
   }
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data:")) continue;
-        const data = trimmed.slice(5).trim();
-        if (data === "[DONE]") {
-          port.postMessage({ type: "done" });
-          return;
-        }
-
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            port.postMessage({ type: "chunk", content: delta });
-          }
-        } catch {}
-      }
-    }
-
-    port.postMessage({ type: "done" });
-  } catch (error) {
-    port.postMessage({ type: "error", error: `流式读取中断: ${error.message}` });
+  // tool limit reached
+  const assistantContent = await callChatCompletion(messages);
+  const parsed = parseAgentJson(assistantContent);
+  if (parsed?.type === "final") {
+    port.postMessage({ type: "chunk", content: parsed.content || "" });
+  } else {
+    port.postMessage({ type: "chunk", content: assistantContent });
   }
+  port.postMessage({ type: "done" });
 }
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "nahida-chat") return;
 
-  port.onMessage.addListener((msg) => {
-    if (msg.type === "chat") {
-      if (!API_KEY) {
-        port.postMessage({ type: "error", error: "未配置 API Key，请在 .env 文件中设置 LLM_API_KEY 后重新构建。" });
-        return;
-      }
-      streamChat(msg.messages, port);
+  port.onMessage.addListener(async (msg) => {
+    if (msg.type !== "chat") return;
+    if (!API_KEY) {
+      port.postMessage({ type: "error", error: "未配置 API Key，请在 .env 文件中设置 LLM_API_KEY 后重新构建。" });
+      return;
+    }
+    try {
+      await runAgent(msg.messages, port);
+    } catch (error) {
+      port.postMessage({ type: "error", error: String(error?.message || error) });
     }
   });
 });
