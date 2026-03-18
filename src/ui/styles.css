@@ -284,6 +284,71 @@
   line-height: 1.5;
 }
 
+.think-block {
+  margin-bottom: 6px;
+}
+
+.think-toggle {
+  all: initial;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  color: rgba(20, 26, 22, 0.45);
+  padding: 2px 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.think-toggle:hover {
+  color: rgba(20, 26, 22, 0.7);
+}
+
+.think-arrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 160ms ease;
+}
+
+.think-block.collapsed .think-arrow {
+  transform: rotate(-90deg);
+}
+
+.think-content {
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-left: 2px solid rgba(20, 26, 22, 0.1);
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(20, 26, 22, 0.5);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  transition: max-height 200ms ease, opacity 200ms ease;
+}
+
+.think-block.collapsed .think-content {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  margin-top: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.think-block.streaming .think-content {
+  max-height: none;
+}
+
+.reply-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .typing-indicator {
   display: inline-flex;
   gap: 4px;
