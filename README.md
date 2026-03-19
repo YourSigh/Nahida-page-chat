@@ -1,4 +1,4 @@
-# Floating Icon Extension
+# Nahida page chat
 
 一个纳西妲基于当前页面信息进行聊天的浏览器插件
 
@@ -8,21 +8,28 @@
 - 悬浮图标支持鼠标拖动
 - 拖动后会记住位置，下次打开网页继续沿用
 - 点击悬浮图标可打开对话框
-- 对话框支持拖动（拖拽标题栏）与调整大小（右下角 resize）
+- 对话框支持拖动（拖拽标题栏）与调整大小（边缘/四角拖拽缩放）
 - 对话框弹出位置会锚定在悬浮图标附近，并在超出页面时自动向内收敛
 - 对话框显示时悬浮图标会自动隐藏，关闭对话框后恢复显示
+- 对话框支持背景图（`assets/background.jpeg`）
 - 扩展栏图标也会使用你的图片
 - 当前图标资源放在 `assets/floating-icon.svg`
+- 支持 AI 对话（OpenAI 兼容接口），回复支持 Markdown 渲染
+- 支持 `<think>...</think>` 思考过程展示（可折叠，类似 DeepSeek）
+- 内置“只读网页智能体”：模型可按需实时读取当前页面 DOM（不做跨页面/跨浏览器操作）
 
 对话框关闭方式：
 
-- 点击遮罩层
 - 点击右上角“关闭”按钮
+- 按 `Esc`
 
 ## 目录说明
 
 - `manifest.json`: 插件配置
-- `content.js`: 注入悬浮图标、对话框、拖动/定位逻辑
+- `content.js`: content script（由 `src/` 打包产物）
+- `background.js`: MV3 service worker（由 `src/` 打包产物，负责调用大模型 API / 工具调度）
+- `src/content/index.js`: 悬浮图标 + 对话框 UI + 工具执行（读取 DOM）
+- `src/background/index.js`: AI 对话与工具调用循环
 - `assets/floating-icon.svg`: 当前默认展示的悬浮图标
 
 ## 本地加载方式
@@ -35,7 +42,15 @@
 
 ## 开发与构建
 
-本项目使用 `esbuild` 将 `src/` 下的源码打包成根目录的 `content.js`（供 `manifest.json` 直接引用）。
+本项目使用 `esbuild` 将 `src/` 下的源码打包成根目录的 `content.js` / `background.js`（供 `manifest.json` 直接引用）。
+
+### 环境变量（大模型配置）
+
+请新建 `.env`（可参考 `.env.example`），填入你的模型参数：
+
+- `LLM_API_BASE_URL`: OpenAI 兼容接口地址（例如 `https://api.openai.com/v1`）
+- `LLM_API_KEY`: API Key
+- `LLM_MODEL`: 模型名
 
 - 构建一次：
 
