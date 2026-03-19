@@ -6031,7 +6031,7 @@ ${text2}` : text2;
       if (!isDialogOpen || event.button !== 0) {
         return;
       }
-      if (event.target === closeButton) {
+      if (closeButton.contains(event.target)) {
         return;
       }
       const rect = dialog.getBoundingClientRect();
