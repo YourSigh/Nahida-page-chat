@@ -553,12 +553,14 @@ const renderMarkdown = (text) => md.render(String(text || ""));
     wrapper.classList.toggle("hidden", open);
     if (open) {
       dialog.classList.add("open");
-      requestAnimationFrame(() => {
-        if (token !== closeAnimationToken) return;
-        dialog.classList.add("visible");
-        computeDialogAnchorPosition();
-        input.focus();
-      });
+      // Force a reflow so the transition reliably runs, then show.
+      // This avoids a one-frame state where the dialog is present but not interactable.
+      // eslint-disable-next-line no-unused-expressions
+      dialog.offsetWidth;
+      if (token !== closeAnimationToken) return;
+      dialog.classList.add("visible");
+      computeDialogAnchorPosition();
+      input.focus();
     } else {
       dialog.classList.remove("visible");
       const finishClose = () => {
