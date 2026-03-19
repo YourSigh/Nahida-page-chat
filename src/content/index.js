@@ -14,7 +14,41 @@ const md = new MarkdownIt({
   typographer: true
 });
 
-const renderMarkdown = (text) => md.render(String(text || ""));
+const STICKER_NAMES = ["happy", "curious", "surprised", "confused", "relaxed", "excited"];
+const STICKER_URLS = {};
+for (const name of STICKER_NAMES) {
+  STICKER_URLS[name] = chrome.runtime.getURL(`assets/nahida/${name}.png`);
+}
+
+const renderMarkdown = (text) => {
+  const html = md.render(String(text || ""));
+  return html.replace(
+    /\[sticker:(\w+)\]/g,
+    (match, name) => {
+      const url = STICKER_URLS[name];
+      if (!url) return match;
+      return `<img class="sticker" src="${url}" alt="${name}" title="${name}" />`;
+    }
+  );
+};
+
+const splitMessageSegments = (text) => {
+  const regex = /\[sticker:(\w+)\]/g;
+  const segments = [];
+  let lastIndex = 0;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const before = text.slice(lastIndex, match.index).trim();
+    if (before) segments.push({ type: "text", content: before });
+    if (STICKER_URLS[match[1]]) {
+      segments.push({ type: "sticker", name: match[1] });
+    }
+    lastIndex = regex.lastIndex;
+  }
+  const after = text.slice(lastIndex).trim();
+  if (after) segments.push({ type: "text", content: after });
+  return segments;
+};
 
 (() => {
   if (window.top !== window) {
@@ -408,15 +442,51 @@ const renderMarkdown = (text) => md.render(String(text || ""));
         const { replyText } = parseThinkAndReply(rawResponse);
         const reply = replyText.replace(/^\n+/, "");
         if (!reply.trim() && !rawResponse.trim()) {
-          // 只有思考过程时，给一个兜底提示
           if (!replyContentEl) {
-            // eslint-disable-next-line no-inner-declarations
             replyContentEl = document.createElement("div");
             replyContentEl.className = "reply-content";
             assistantEl.appendChild(replyContentEl);
           }
           replyContentEl.innerHTML = renderMarkdown("（纳西妲没有回复内容）");
         }
+
+        const segments = splitMessageSegments(reply);
+        const hasSticker = segments.some(s => s.type === "sticker");
+        if (hasSticker && segments.length > 0) {
+          if (replyContentEl) {
+            replyContentEl.remove();
+            replyContentEl = null;
+          }
+          let insertAfter = assistantEl;
+          for (const seg of segments) {
+            if (seg.type === "text") {
+              const bubble = document.createElement("div");
+              bubble.className = "msg assistant";
+              const rc = document.createElement("div");
+              rc.className = "reply-content";
+              rc.innerHTML = renderMarkdown(seg.content);
+              bubble.appendChild(rc);
+              insertAfter.after(bubble);
+              insertAfter = bubble;
+            } else if (seg.type === "sticker") {
+              const bubble = document.createElement("div");
+              bubble.className = "msg assistant sticker-msg";
+              const img = document.createElement("img");
+              img.className = "sticker";
+              img.src = STICKER_URLS[seg.name];
+              img.alt = seg.name;
+              img.title = seg.name;
+              bubble.appendChild(img);
+              insertAfter.after(bubble);
+              insertAfter = bubble;
+            }
+          }
+          if (!thinkBlockEl) {
+            assistantEl.remove();
+          }
+          scrollToBottom();
+        }
+
         chatHistory.push({ role: "assistant", content: reply || rawResponse });
         setInputEnabled(true);
         activePort = null;
