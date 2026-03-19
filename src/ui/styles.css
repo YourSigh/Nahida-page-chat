@@ -222,6 +222,29 @@
   background: rgba(20, 26, 22, 0.1);
 }
 
+.close-button {
+  background: transparent;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-button:hover {
+  background: transparent;
+  transform: none;
+}
+
+.close-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
 .dialog-body {
   display: flex;
   flex-direction: column;
