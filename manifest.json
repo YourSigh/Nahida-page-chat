@@ -50,7 +50,13 @@
         "assets/icon-16.png",
         "assets/icon-32.png",
         "assets/icon-48.png",
-        "assets/icon-128.png"
+        "assets/icon-128.png",
+        "assets/nahida/happy.png",
+        "assets/nahida/curious.png",
+        "assets/nahida/surprised.png",
+        "assets/nahida/confused.png",
+        "assets/nahida/relaxed.png",
+        "assets/nahida/excited.png"
       ],
       "matches": [
         "<all_urls>"

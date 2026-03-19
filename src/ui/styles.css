@@ -414,13 +414,33 @@
   max-height: none;
 }
 
+.sticker {
+  display: block;
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+.msg.sticker-msg {
+  background: transparent;
+  padding: 2px 0;
+  max-width: none;
+  border-radius: 0;
+}
+
 .reply-content {
-  white-space: pre-wrap;
+  white-space: normal;
   word-break: break-word;
 }
 
 .reply-content :where(p, ul, ol) {
   margin: 0 0 8px 0;
+}
+
+.reply-content :where(p, ul, ol):last-child {
+  margin-bottom: 0;
 }
 
 .reply-content :where(ul, ol) {
