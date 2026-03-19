@@ -1,4 +1,5 @@
 import stylesText from "../ui/styles.css";
+import MarkdownIt from "markdown-it";
 import {
   clampIconPosition,
   computeAnchoredDialogPosition,
@@ -6,6 +7,14 @@ import {
   clampDialogPosition
 } from "../utils/geometry.js";
 import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.js";
+
+const md = new MarkdownIt({
+  html: false,
+  linkify: true,
+  typographer: true
+});
+
+const renderMarkdown = (text) => md.render(String(text || ""));
 
 (() => {
   if (window.top !== window) {
@@ -334,7 +343,7 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
 
       if (thinkText) {
         ensureThinkBlock();
-        thinkContentEl.textContent = thinkText;
+        thinkContentEl.innerHTML = renderMarkdown(thinkText);
         if (thinkClosed && !finished) {
           thinkBlockEl.classList.remove("streaming");
           thinkBlockEl.classList.add("collapsed");
@@ -347,7 +356,7 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
       const trimmedReply = replyText.replace(/^\n+/, "");
       if (trimmedReply || (finished && thinkClosed)) {
         ensureReplyContent();
-        replyContentEl.textContent = trimmedReply;
+        replyContentEl.innerHTML = renderMarkdown(trimmedReply);
       }
 
       scrollToBottom();
@@ -390,7 +399,14 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
         const { replyText } = parseThinkAndReply(rawResponse);
         const reply = replyText.replace(/^\n+/, "");
         if (!reply.trim() && !rawResponse.trim()) {
-          assistantEl.textContent = "（纳西妲没有回复内容）";
+          // 只有思考过程时，给一个兜底提示
+          if (!replyContentEl) {
+            // eslint-disable-next-line no-inner-declarations
+            replyContentEl = document.createElement("div");
+            replyContentEl.className = "reply-content";
+            assistantEl.appendChild(replyContentEl);
+          }
+          replyContentEl.innerHTML = renderMarkdown("（纳西妲没有回复内容）");
         }
         chatHistory.push({ role: "assistant", content: reply || rawResponse });
         setInputEnabled(true);
@@ -412,8 +428,13 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
         const { replyText } = parseThinkAndReply(rawResponse);
         const reply = replyText.replace(/^\n+/, "");
         if (!reply.trim() && !rawResponse.trim()) {
-          assistantEl.classList.replace("assistant", "error");
-          assistantEl.textContent = "连接已断开";
+          if (!replyContentEl) {
+            replyContentEl = document.createElement("div");
+            replyContentEl.className = "reply-content";
+            assistantEl.appendChild(replyContentEl);
+          }
+          replyContentEl.innerHTML = renderMarkdown("连接已断开");
+          chatHistory.push({ role: "assistant", content: "连接已断开" });
         } else {
           chatHistory.push({ role: "assistant", content: reply || rawResponse });
         }

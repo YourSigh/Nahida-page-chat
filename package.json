@@ -9,6 +9,8 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
+  },
+  "dependencies": {
+    "markdown-it": "^14.1.1"
   }
 }
-
