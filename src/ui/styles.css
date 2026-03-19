@@ -478,11 +478,18 @@
   border-radius: 14px;
   border: 1px solid rgba(20, 26, 22, 0.12);
   background: rgba(255, 255, 255, 0.9);
+  color: rgba(20, 26, 22, 0.92);
+  caret-color: rgba(20, 26, 22, 0.92);
+  color-scheme: light;
   padding: 10px 12px;
   font-family: inherit;
   font-size: 13px;
   line-height: 1.35;
   outline: none;
+}
+
+.input::placeholder {
+  color: rgba(20, 26, 22, 0.45);
 }
 
 .input:focus {
