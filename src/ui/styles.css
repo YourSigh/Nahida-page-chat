@@ -76,7 +76,7 @@
   max-height: calc(100vh - 40px);
   overflow: hidden;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
@@ -91,6 +91,23 @@
   visibility: hidden;
   transform: translateY(6px) scale(0.99);
   transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;
+}
+
+.dialog::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: var(--dialog-bg-url);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0.22;
+  pointer-events: none;
+}
+
+.dialog > * {
+  position: relative;
+  z-index: 1;
 }
 
 .dialog.open {
