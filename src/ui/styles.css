@@ -84,9 +84,8 @@
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
     "Apple Color Emoji", "Segoe UI Emoji";
   color: rgba(20, 26, 22, 0.92);
-  display: flex;
+  display: none;
   flex-direction: column;
-  pointer-events: auto;
   opacity: 0;
   visibility: hidden;
   transform: translateY(6px) scale(0.99);
@@ -111,6 +110,10 @@
 }
 
 .dialog.open {
+  display: flex;
+}
+
+.dialog.visible {
   opacity: 1;
   visibility: visible;
   transform: none;
@@ -236,7 +239,6 @@
 
 .icon-button:hover {
   transform: translateY(-1px);
-  background: rgba(20, 26, 22, 0.1);
 }
 
 .close-button {
@@ -258,6 +260,32 @@
 .close-icon {
   width: 28px;
   height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
+.send {
+  background: transparent;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 4px;
+}
+
+.send:hover {
+  transform: none;
+}
+
+.send:disabled {
+  background: transparent;
+}
+
+.send-icon {
+  width: 36px;
   object-fit: contain;
   display: block;
 }
