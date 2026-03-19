@@ -20,10 +20,12 @@ for (const name of STICKER_NAMES) {
   STICKER_URLS[name] = chrome.runtime.getURL(`assets/nahida/${name}.png`);
 }
 
+const STICKER_TAG_REGEX = /\[sticker:(\w+)\]/g;
+
 const renderMarkdown = (text) => {
   const html = md.render(String(text || ""));
   return html.replace(
-    /\[sticker:(\w+)\]/g,
+    STICKER_TAG_REGEX,
     (match, name) => {
       const url = STICKER_URLS[name];
       if (!url) return match;
@@ -32,22 +34,28 @@ const renderMarkdown = (text) => {
   );
 };
 
-const splitMessageSegments = (text) => {
-  const regex = /\[sticker:(\w+)\]/g;
-  const segments = [];
-  let lastIndex = 0;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
-    const before = text.slice(lastIndex, match.index).trim();
-    if (before) segments.push({ type: "text", content: before });
-    if (STICKER_URLS[match[1]]) {
-      segments.push({ type: "sticker", name: match[1] });
-    }
-    lastIndex = regex.lastIndex;
-  }
-  const after = text.slice(lastIndex).trim();
-  if (after) segments.push({ type: "text", content: after });
-  return segments;
+const stripStickerTags = (text) => String(text || "").replace(STICKER_TAG_REGEX, "").trim();
+
+const requestStickerDecision = ({ userText, assistantText }) => {
+  const port = chrome.runtime.connect({ name: "nahida-chat" });
+  const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      try { port.disconnect(); } catch {}
+      resolve(null);
+    }, 12_000);
+
+    const handler = (msg) => {
+      if (msg?.type !== "sticker_decision" || msg?.id !== id) return;
+      clearTimeout(timeout);
+      port.onMessage.removeListener(handler);
+      try { port.disconnect(); } catch {}
+      resolve(msg.sticker || null);
+    };
+
+    port.onMessage.addListener(handler);
+    port.postMessage({ type: "sticker_decide", id, userText, assistantText });
+  });
 };
 
 (() => {
@@ -327,6 +335,7 @@ const splitMessageSegments = (text) => {
     let thinkBlockEl = null;
     let thinkContentEl = null;
     let replyContentEl = null;
+    const turnUserText = text;
 
     const parseThinkAndReply = (raw) => {
       const openTag = "<think>";
@@ -441,7 +450,8 @@ const splitMessageSegments = (text) => {
         renderStream(true);
         const { replyText } = parseThinkAndReply(rawResponse);
         const reply = replyText.replace(/^\n+/, "");
-        if (!reply.trim() && !rawResponse.trim()) {
+        const cleanedReply = stripStickerTags(reply);
+        if (!cleanedReply.trim() && !rawResponse.trim()) {
           if (!replyContentEl) {
             replyContentEl = document.createElement("div");
             replyContentEl.className = "reply-content";
@@ -450,58 +460,31 @@ const splitMessageSegments = (text) => {
           replyContentEl.innerHTML = renderMarkdown("（纳西妲没有回复内容）");
         }
 
-        const segments = splitMessageSegments(reply);
-        const hasSticker = segments.some(s => s.type === "sticker");
-        if (hasSticker && segments.length > 0) {
-          if (replyContentEl) {
-            replyContentEl.remove();
-            replyContentEl = null;
-          }
-          let insertAfter = assistantEl;
-          let startIdx = 0;
-
-          if (segments[0]?.type === "text") {
-            const rc = document.createElement("div");
-            rc.className = "reply-content";
-            rc.innerHTML = renderMarkdown(segments[0].content);
-            assistantEl.appendChild(rc);
-            startIdx = 1;
-          }
-
-          for (let i = startIdx; i < segments.length; i++) {
-            const seg = segments[i];
-            if (seg.type === "text") {
-              const bubble = document.createElement("div");
-              bubble.className = "msg assistant";
-              const rc = document.createElement("div");
-              rc.className = "reply-content";
-              rc.innerHTML = renderMarkdown(seg.content);
-              bubble.appendChild(rc);
-              insertAfter.after(bubble);
-              insertAfter = bubble;
-            } else if (seg.type === "sticker") {
-              const bubble = document.createElement("div");
-              bubble.className = "msg assistant sticker-msg";
-              const img = document.createElement("img");
-              img.className = "sticker";
-              img.src = STICKER_URLS[seg.name];
-              img.alt = seg.name;
-              img.title = seg.name;
-              bubble.appendChild(img);
-              insertAfter.after(bubble);
-              insertAfter = bubble;
-            }
-          }
-          if (!thinkBlockEl && startIdx === 0) {
-            assistantEl.remove();
-          }
-          scrollToBottom();
+        if (replyContentEl) {
+          replyContentEl.innerHTML = renderMarkdown(cleanedReply.replace(/^\n+/, ""));
         }
 
-        chatHistory.push({ role: "assistant", content: reply || rawResponse });
+        chatHistory.push({ role: "assistant", content: cleanedReply || rawResponse });
         setInputEnabled(true);
-        activePort = null;
         input.focus();
+
+        requestStickerDecision({ userText: turnUserText, assistantText: cleanedReply })
+          .then((stickerName) => {
+            if (!stickerName || !STICKER_URLS[stickerName]) return;
+            const bubble = document.createElement("div");
+            bubble.className = "msg assistant sticker-msg";
+            const img = document.createElement("img");
+            img.className = "sticker";
+            img.src = STICKER_URLS[stickerName];
+            img.alt = stickerName;
+            img.title = stickerName;
+            bubble.appendChild(img);
+            assistantEl.after(bubble);
+            scrollToBottom();
+          })
+          .catch(() => {});
+
+        activePort = null;
       } else if (msg.type === "error") {
         if (typingIndicator.parentNode) typingIndicator.remove();
         assistantEl.classList.replace("assistant", "error");
