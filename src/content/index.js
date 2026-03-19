@@ -95,9 +95,16 @@ import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.
   title.textContent = "纳西妲";
 
   const closeButton = document.createElement("button");
-  closeButton.className = "icon-button";
+  closeButton.className = "icon-button close-button";
   closeButton.type = "button";
-  closeButton.textContent = "关闭";
+  closeButton.setAttribute("aria-label", "关闭");
+
+  const closeImg = document.createElement("img");
+  closeImg.className = "close-icon";
+  closeImg.alt = "";
+  closeImg.draggable = false;
+  closeImg.src = chrome.runtime.getURL("assets/close.png");
+  closeButton.appendChild(closeImg);
 
   header.append(title, closeButton);
 
