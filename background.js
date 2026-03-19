@@ -113,13 +113,48 @@
     }
     return null;
   }
+  function fixUnescapedNewlines(jsonStr) {
+    let result = "";
+    let inString = false;
+    let escape = false;
+    for (let i = 0; i < jsonStr.length; i++) {
+      const ch = jsonStr[i];
+      if (inString) {
+        if (escape) {
+          escape = false;
+          result += ch;
+        } else if (ch === "\\") {
+          escape = true;
+          result += ch;
+        } else if (ch === '"') {
+          inString = false;
+          result += ch;
+        } else if (ch === "\n") {
+          result += "\\n";
+        } else if (ch === "\r") {
+          result += "\\r";
+        } else if (ch === "	") {
+          result += "\\t";
+        } else {
+          result += ch;
+        }
+      } else {
+        if (ch === '"') inString = true;
+        result += ch;
+      }
+    }
+    return result;
+  }
   function parseAgentJson(output) {
     const trimmed = String(output || "").trim();
     const direct = safeParseJson(trimmed);
     if (direct && typeof direct === "object") return direct;
     const extracted = extractFirstJsonObject(trimmed);
     if (!extracted) return null;
-    const parsed = safeParseJson(extracted);
+    let parsed = safeParseJson(extracted);
+    if (parsed && typeof parsed === "object") return parsed;
+    const fixed = fixUnescapedNewlines(extracted);
+    parsed = safeParseJson(fixed);
     if (parsed && typeof parsed === "object") return parsed;
     return null;
   }

@@ -5858,7 +5858,16 @@ ${text2}` : text2;
               replyContentEl = null;
             }
             let insertAfter = assistantEl;
-            for (const seg of segments) {
+            let startIdx = 0;
+            if (segments[0]?.type === "text") {
+              const rc = document.createElement("div");
+              rc.className = "reply-content";
+              rc.innerHTML = renderMarkdown(segments[0].content);
+              assistantEl.appendChild(rc);
+              startIdx = 1;
+            }
+            for (let i = startIdx; i < segments.length; i++) {
+              const seg = segments[i];
               if (seg.type === "text") {
                 const bubble = document.createElement("div");
                 bubble.className = "msg assistant";
@@ -5881,7 +5890,7 @@ ${text2}` : text2;
                 insertAfter = bubble;
               }
             }
-            if (!thinkBlockEl) {
+            if (!thinkBlockEl && startIdx === 0) {
               assistantEl.remove();
             }
             scrollToBottom();
