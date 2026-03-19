@@ -205,8 +205,8 @@
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.78));
-  border-bottom: 1px solid rgba(20, 26, 22, 0.08);
+  background: linear-gradient(180deg, #ddffaa, #ddffaa00);
+  border-bottom: 1px solid rgba(20, 26, 22, 0.10);
   cursor: move;
   user-select: none;
   -webkit-user-select: none;
@@ -220,6 +220,7 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: rgba(12, 26, 18, 0.88);
 }
 
 .icon-button {
