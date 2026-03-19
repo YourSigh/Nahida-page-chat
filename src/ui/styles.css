@@ -243,6 +243,92 @@
   transform: translateY(-1px);
 }
 
+.icon-button[aria-label] {
+  position: relative;
+}
+
+.icon-button[aria-label]::after {
+  content: attr(aria-label);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%) translateY(-2px);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: rgba(20, 26, 22, 0.86);
+  color: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 40;
+}
+
+.icon-button[aria-label]::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translateX(-50%) rotate(45deg);
+  opacity: 0;
+  pointer-events: none;
+  background: rgba(20, 26, 22, 0.86);
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 39;
+}
+
+/* Top-right buttons: tooltip below (avoid dialog overflow clipping) */
+.settings-button[aria-label]::after,
+.close-button[aria-label]::after {
+  top: calc(100% + 10px);
+}
+.settings-button[aria-label]::before,
+.close-button[aria-label]::before {
+  top: calc(100% + 6px);
+}
+.settings-button[aria-label]::before,
+.close-button[aria-label]::before {
+  transform: translateX(-50%) rotate(45deg);
+}
+
+/* Send button: tooltip above (keeps it inside dialog) */
+.send[aria-label]::after {
+  bottom: calc(100% + 10px);
+}
+.send[aria-label]::before {
+  bottom: calc(100% + 6px);
+}
+
+.icon-button[aria-label]:hover::after,
+.icon-button[aria-label]:hover::before,
+.icon-button[aria-label]:focus-visible::after,
+.icon-button[aria-label]:focus-visible::before {
+  opacity: 1;
+}
+
+.icon-button[aria-label]:hover::after,
+.icon-button[aria-label]:focus-visible::after {
+  transform: translateX(-50%) translateY(0);
+}
+
+.icon-button[aria-label]:hover::before,
+.icon-button[aria-label]:focus-visible::before {
+  transform: translateX(-50%) rotate(45deg) translateY(0);
+}
+
+.send[aria-label]:hover::after,
+.send[aria-label]:focus-visible::after {
+  transform: translateX(-50%) translateY(0);
+}
+
+.icon-button[disabled]::after,
+.icon-button[disabled]::before {
+  display: none;
+}
+
 .close-button {
   background: transparent;
   padding: 0;
@@ -264,6 +350,106 @@
   height: 28px;
   object-fit: contain;
   display: block;
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-button {
+  background: transparent;
+  padding: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-button:hover {
+  background: transparent;
+  transform: none;
+}
+
+.settings-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
+.settings-panel {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  width: min(340px, calc(100% - 24px));
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(20, 26, 22, 0.10);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 20;
+}
+
+.settings-panel.open {
+  display: flex;
+}
+
+.settings-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: rgba(20, 26, 22, 0.9);
+  margin-bottom: 2px;
+}
+
+.settings-label {
+  font-size: 11px;
+  color: rgba(20, 26, 22, 0.55);
+}
+
+.settings-input {
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 12px;
+  border: 1px solid rgba(20, 26, 22, 0.12);
+  background: rgba(255, 255, 255, 0.95);
+  color: rgba(20, 26, 22, 0.92);
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.settings-input:focus {
+  border-color: rgba(70, 120, 90, 0.55);
+  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.12);
+}
+
+.settings-hint {
+  font-size: 11px;
+  color: rgba(20, 26, 22, 0.45);
+  line-height: 1.4;
+}
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.settings-cancel,
+.settings-save {
+  padding: 8px 10px;
+  border-radius: 12px;
 }
 
 .send {

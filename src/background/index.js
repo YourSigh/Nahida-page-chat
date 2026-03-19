@@ -1,6 +1,24 @@
-const API_BASE_URL = process.env.LLM_API_BASE_URL;
-const API_KEY = process.env.LLM_API_KEY;
-const MODEL = process.env.LLM_MODEL;
+const DEFAULT_CONFIG = {
+  apiBaseUrl: process.env.LLM_API_BASE_URL || "https://api.openai.com/v1",
+  apiKey: process.env.LLM_API_KEY || "",
+  model: process.env.LLM_MODEL || "gpt-4o-mini"
+};
+
+const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
+
+async function getLlmConfig() {
+  try {
+    const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+    const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
+    return {
+      apiBaseUrl: String(cfg.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl),
+      apiKey: String(cfg.apiKey || DEFAULT_CONFIG.apiKey),
+      model: String(cfg.model || DEFAULT_CONFIG.model)
+    };
+  } catch {
+    return { ...DEFAULT_CONFIG };
+  }
+}
 
 const SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》中的草之神。你聪明、温柔、好奇心旺盛，说话亲切自然，偶尔带一点俏皮。
 你正在帮助用户理解当前网页内容，你可以"请求工具"来实时读取页面 DOM 信息，但你不能直接操作页面。
@@ -24,15 +42,15 @@ const SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》中
 
 const STICKER_DECIDER_PROMPT = `你是一个“表情包选择器”。\n\n你会收到两段文本：用户刚刚发的话（user）和纳西妲刚刚的完整回复（assistant）。\n你的任务是：判断“是否应该发送一个纳西妲表情包”，以及“如果发送，发哪一个”。\n\n可用表情包只有这 6 个：happy, curious, surprised, confused, relaxed, excited。\n\n严格输出一行 JSON（不要输出任何其它文字）：\n- 不发送：{\"sticker\":null}\n- 发送：{\"sticker\":\"happy\"}\n\n规则：\n- 每次最多选择 1 个表情包\n- 只有当表情能明显提升互动氛围时才发送；偏严肃/长篇技术解释通常不发\n- 如果 assistant 回复中包含明显的错误/困惑/不确定，优先 confused\n- 如果 user 表达感谢/开心，或 assistant 语气轻松友好，可能 happy\n- 如果 user 在追问“为什么/怎么/如何”，可能 curious\n- 如果出现“意外/惊讶/太离谱”，可能 surprised\n- 如果讨论“休息/慢慢来/不急”，可能 relaxed\n- 如果表达“冲/开始/完成/太棒了”，可能 excited`;
 
-async function* streamChatCompletion(messages) {
-  const url = `${API_BASE_URL}/chat/completions`;
+async function* streamChatCompletion(config, messages) {
+  const url = `${config.apiBaseUrl}/chat/completions`;
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`
+      Authorization: `Bearer ${config.apiKey}`
     },
-    body: JSON.stringify({ model: MODEL, messages, stream: true })
+    body: JSON.stringify({ model: config.model, messages, stream: true })
   });
 
   if (!response.ok) {
@@ -175,15 +193,15 @@ function looksLikeToolCallPayload(replyText) {
   return false;
 }
 
-async function callChatCompletionOnce(messages) {
-  const url = `${API_BASE_URL}/chat/completions`;
+async function callChatCompletionOnce(config, messages) {
+  const url = `${config.apiBaseUrl}/chat/completions`;
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`
+      Authorization: `Bearer ${config.apiKey}`
     },
-    body: JSON.stringify({ model: MODEL, messages, stream: false })
+    body: JSON.stringify({ model: config.model, messages, stream: false })
   });
 
   if (!response.ok) {
@@ -222,12 +240,12 @@ async function requestTool(port, name, args) {
   });
 }
 
-async function decideSticker({ userText, assistantText }) {
+async function decideSticker(config, { userText, assistantText }) {
   const messages = [
     { role: "system", content: STICKER_DECIDER_PROMPT },
     { role: "user", content: `user:\n${String(userText || "").slice(0, 2000)}\n\nassistant:\n${String(assistantText || "").slice(0, 4000)}` }
   ];
-  const out = await callChatCompletionOnce(messages);
+  const out = await callChatCompletionOnce(config, messages);
   const parsed = parseAgentJson(out);
   const sticker = parsed?.sticker;
   if (sticker == null) return null;
@@ -245,7 +263,7 @@ function safePost(port, msg) {
   }
 }
 
-async function runAgent(userMessages, port) {
+async function runAgent(config, userMessages, port) {
   const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
   let disconnected = false;
   const onDisconnect = () => { disconnected = true; };
@@ -258,7 +276,7 @@ async function runAgent(userMessages, port) {
     let phase = "detecting";
     let streamedAny = false;
 
-    for await (const chunk of streamChatCompletion(messages)) {
+    for await (const chunk of streamChatCompletion(config, messages)) {
       if (disconnected) return;
       fullResponse += chunk;
 
@@ -314,7 +332,7 @@ async function runAgent(userMessages, port) {
     return;
   }
 
-  for await (const chunk of streamChatCompletion(messages)) {
+  for await (const chunk of streamChatCompletion(config, messages)) {
     if (disconnected) return;
     if (!safePost(port, { type: "chunk", content: chunk })) return;
   }
@@ -325,17 +343,18 @@ chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "nahida-chat") return;
 
   port.onMessage.addListener(async (msg) => {
-    if (!API_KEY) {
-      safePost(port, { type: "error", error: "未配置 API Key，请在 .env 文件中设置 LLM_API_KEY 后重新构建。" });
+    const config = await getLlmConfig();
+    if (!config.apiKey) {
+      safePost(port, { type: "error", error: "missing_api_key" });
       return;
     }
     try {
       if (msg.type === "chat") {
-        await runAgent(msg.messages, port);
+        await runAgent(config, msg.messages, port);
         return;
       }
       if (msg.type === "sticker_decide") {
-        const sticker = await decideSticker({ userText: msg.userText, assistantText: msg.assistantText });
+        const sticker = await decideSticker(config, { userText: msg.userText, assistantText: msg.assistantText });
         safePost(port, { type: "sticker_decision", id: msg.id, sticker });
       }
     } catch (error) {

@@ -147,6 +147,20 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   title.className = "dialog-title";
   title.textContent = "纳西妲";
 
+  const headerActions = document.createElement("div");
+  headerActions.className = "dialog-actions";
+
+  const settingsButton = document.createElement("button");
+  settingsButton.className = "icon-button settings-button";
+  settingsButton.type = "button";
+  settingsButton.setAttribute("aria-label", "设置");
+  const settingsImg = document.createElement("img");
+  settingsImg.className = "settings-icon";
+  settingsImg.alt = "";
+  settingsImg.draggable = false;
+  settingsImg.src = chrome.runtime.getURL("assets/setting.png");
+  settingsButton.appendChild(settingsImg);
+
   const closeButton = document.createElement("button");
   closeButton.className = "icon-button close-button";
   closeButton.type = "button";
@@ -159,10 +173,70 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   closeImg.src = chrome.runtime.getURL("assets/close.png");
   closeButton.appendChild(closeImg);
 
-  header.append(title, closeButton);
+  headerActions.append(settingsButton, closeButton);
+  header.append(title, headerActions);
+
+  const settingsPanel = document.createElement("div");
+  settingsPanel.className = "settings-panel";
+  settingsPanel.setAttribute("aria-hidden", "true");
+  settingsPanel.addEventListener("pointerdown", (e) => e.stopPropagation());
+  settingsPanel.addEventListener("click", (e) => e.stopPropagation());
 
   const body = document.createElement("div");
   body.className = "dialog-body";
+
+  const settingsTitle = document.createElement("div");
+  settingsTitle.className = "settings-title";
+  settingsTitle.textContent = "大模型配置";
+
+  const fieldBaseUrlLabel = document.createElement("label");
+  fieldBaseUrlLabel.className = "settings-label";
+  fieldBaseUrlLabel.textContent = "API Base URL";
+  const fieldBaseUrl = document.createElement("input");
+  fieldBaseUrl.className = "settings-input";
+  fieldBaseUrl.type = "text";
+  fieldBaseUrl.placeholder = "https://api.openai.com/v1";
+
+  const fieldModelLabel = document.createElement("label");
+  fieldModelLabel.className = "settings-label";
+  fieldModelLabel.textContent = "Model";
+  const fieldModel = document.createElement("input");
+  fieldModel.className = "settings-input";
+  fieldModel.type = "text";
+  fieldModel.placeholder = "gpt-4o-mini";
+
+  const fieldKeyLabel = document.createElement("label");
+  fieldKeyLabel.className = "settings-label";
+  fieldKeyLabel.textContent = "API Key";
+  const fieldKey = document.createElement("input");
+  fieldKey.className = "settings-input";
+  fieldKey.type = "password";
+  fieldKey.placeholder = "sk-...";
+
+  const settingsHint = document.createElement("div");
+  settingsHint.className = "settings-hint";
+  settingsHint.textContent = "配置会保存在本地浏览器（chrome.storage.local），不会上传。";
+
+  const settingsActions = document.createElement("div");
+  settingsActions.className = "settings-actions";
+  const settingsCancel = document.createElement("button");
+  settingsCancel.className = "icon-button settings-cancel";
+  settingsCancel.type = "button";
+  settingsCancel.textContent = "取消";
+  const settingsSave = document.createElement("button");
+  settingsSave.className = "icon-button settings-save";
+  settingsSave.type = "button";
+  settingsSave.textContent = "保存";
+
+  settingsActions.append(settingsCancel, settingsSave);
+  settingsPanel.append(
+    settingsTitle,
+    fieldBaseUrlLabel, fieldBaseUrl,
+    fieldModelLabel, fieldModel,
+    fieldKeyLabel, fieldKey,
+    settingsHint,
+    settingsActions
+  );
 
   const messagesEl = document.createElement("div");
   messagesEl.className = "messages";
@@ -194,12 +268,73 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   composer.append(input, sendButton);
   body.append(messagesEl, composer);
-  dialog.append(header, body);
+  dialog.append(header, settingsPanel, body);
 
   // --- Chat state & logic ---
   const chatHistory = [];
   let isStreaming = false;
   let activePort = null;
+  const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
+  const DEFAULT_LLM_CONFIG = {
+    apiBaseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+    apiKey: ""
+  };
+
+  const setSettingsOpen = (open) => {
+    settingsPanel.classList.toggle("open", open);
+    settingsPanel.setAttribute("aria-hidden", open ? "false" : "true");
+    if (open) {
+      fieldKey.focus();
+    } else {
+      input.focus();
+    }
+  };
+
+  const closeSettingsIfClickOutside = (event) => {
+    if (!settingsPanel.classList.contains("open")) return;
+    const path = event.composedPath?.() || [];
+    if (path.includes(settingsPanel) || path.includes(settingsButton)) return;
+    setSettingsOpen(false);
+  };
+
+  document.addEventListener("pointerdown", closeSettingsIfClickOutside, true);
+
+  const loadLlmConfigIntoForm = async () => {
+    try {
+      const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+      const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
+      fieldBaseUrl.value = String(cfg.apiBaseUrl || DEFAULT_LLM_CONFIG.apiBaseUrl);
+      fieldModel.value = String(cfg.model || DEFAULT_LLM_CONFIG.model);
+      fieldKey.value = String(cfg.apiKey || DEFAULT_LLM_CONFIG.apiKey);
+    } catch {
+      fieldBaseUrl.value = DEFAULT_LLM_CONFIG.apiBaseUrl;
+      fieldModel.value = DEFAULT_LLM_CONFIG.model;
+      fieldKey.value = DEFAULT_LLM_CONFIG.apiKey;
+    }
+  };
+
+  const saveLlmConfigFromForm = async () => {
+    const next = {
+      apiBaseUrl: String(fieldBaseUrl.value || "").trim() || DEFAULT_LLM_CONFIG.apiBaseUrl,
+      model: String(fieldModel.value || "").trim() || DEFAULT_LLM_CONFIG.model,
+      apiKey: String(fieldKey.value || "").trim()
+    };
+    await chrome.storage.local.set({ [STORAGE_KEY_LLM_CONFIG]: next });
+    return next;
+  };
+
+  const ensureApiKeyOrOpenSettings = async () => {
+    try {
+      const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+      const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
+      const key = String(cfg.apiKey || "").trim();
+      if (key) return true;
+    } catch {}
+    await loadLlmConfigIntoForm();
+    setSettingsOpen(true);
+    return false;
+  };
 
   const scrollToBottom = () => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -308,6 +443,13 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const sendChat = () => {
     const text = input.value.trim();
     if (!text || isStreaming) return;
+    ensureApiKeyOrOpenSettings().then((ok) => {
+      if (!ok) return;
+      doSendChat(text);
+    });
+  };
+
+  const doSendChat = (text) => {
 
     input.value = "";
     appendMessage("user", text);
@@ -488,7 +630,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       } else if (msg.type === "error") {
         if (typingIndicator.parentNode) typingIndicator.remove();
         assistantEl.classList.replace("assistant", "error");
-        assistantEl.textContent = msg.error;
+        if (msg.error === "missing_api_key") {
+          assistantEl.textContent = "还没有配置 API Key～先去右上角设置一下吧。";
+          loadLlmConfigIntoForm().then(() => setSettingsOpen(true)).catch(() => {});
+        } else {
+          assistantEl.textContent = msg.error;
+        }
         setInputEnabled(true);
         activePort = null;
       }
@@ -733,6 +880,21 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   button.addEventListener("dragstart", (event) => event.preventDefault());
 
   closeButton.addEventListener("click", () => setDialogOpen(false));
+  settingsButton.addEventListener("click", async () => {
+    await loadLlmConfigIntoForm();
+    setSettingsOpen(true);
+  });
+  settingsCancel.addEventListener("click", () => setSettingsOpen(false));
+  settingsSave.addEventListener("click", async () => {
+    try {
+      const next = await saveLlmConfigFromForm();
+      if (!next.apiKey) {
+        // stay open until key is set
+        return;
+      }
+      setSettingsOpen(false);
+    } catch {}
+  });
   sendButton.addEventListener("click", () => sendChat());
 
   input.addEventListener("keydown", (event) => {
@@ -754,7 +916,11 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const keyboardIsolationHandler = (event) => {
     if (!isDialogOpen) return;
-    if (shadowRoot.activeElement !== input) return;
+    const activeEl = shadowRoot.activeElement;
+    const isEditable =
+      activeEl === input ||
+      (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA"));
+    if (!isEditable) return;
     const path = event.composedPath?.() || [];
     if (!path.includes(dialog)) return;
 
@@ -788,6 +954,11 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       !event.isComposing &&
       !imeComposing
     ) {
+      if (activeEl !== input) {
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation?.();
@@ -836,6 +1007,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       return;
     }
     if (closeButton.contains(event.target)) {
+      return;
+    }
+    if (settingsButton.contains(event.target)) {
       return;
     }
     const rect = dialog.getBoundingClientRect();
