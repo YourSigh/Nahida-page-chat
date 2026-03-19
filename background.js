@@ -1,8 +1,24 @@
 (() => {
   // src/background/index.js
-  var API_BASE_URL = "https://api.minimax.chat/v1";
-  var API_KEY = "sk-cp-Z7ntf2FncKUIiEv_6iquYTYF4mQ72eqDf2AlKOm_SFrnTMeq6t7at9_lLNmrzigNuoX48AwNOZb1lvD4lmLX_ZxztVDOyMsP9i-icL26p59U1iVOukMSnu4";
-  var MODEL = "MiniMax-M2.5-highspeed";
+  var DEFAULT_CONFIG = {
+    apiBaseUrl: "https://api.minimax.chat/v1",
+    apiKey: "sk-cp-Z7ntf2FncKUIiEv_6iquYTYF4mQ72eqDf2AlKOm_SFrnTMeq6t7at9_lLNmrzigNuoX48AwNOZb1lvD4lmLX_ZxztVDOyMsP9i-icL26p59U1iVOukMSnu4",
+    model: "MiniMax-M2.5-highspeed"
+  };
+  var STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
+  async function getLlmConfig() {
+    try {
+      const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+      const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
+      return {
+        apiBaseUrl: String(cfg.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl),
+        apiKey: String(cfg.apiKey || DEFAULT_CONFIG.apiKey),
+        model: String(cfg.model || DEFAULT_CONFIG.model)
+      };
+    } catch {
+      return { ...DEFAULT_CONFIG };
+    }
+  }
   var SYSTEM_PROMPT = `\u4F60\u662F\u7EB3\u897F\u59B2\uFF08Nahida\uFF09\uFF0C\u6765\u81EA\u6E38\u620F\u300A\u539F\u795E\u300B\u4E2D\u7684\u8349\u4E4B\u795E\u3002\u4F60\u806A\u660E\u3001\u6E29\u67D4\u3001\u597D\u5947\u5FC3\u65FA\u76DB\uFF0C\u8BF4\u8BDD\u4EB2\u5207\u81EA\u7136\uFF0C\u5076\u5C14\u5E26\u4E00\u70B9\u4FCF\u76AE\u3002
 \u4F60\u6B63\u5728\u5E2E\u52A9\u7528\u6237\u7406\u89E3\u5F53\u524D\u7F51\u9875\u5185\u5BB9\uFF0C\u4F60\u53EF\u4EE5"\u8BF7\u6C42\u5DE5\u5177"\u6765\u5B9E\u65F6\u8BFB\u53D6\u9875\u9762 DOM \u4FE1\u606F\uFF0C\u4F46\u4F60\u4E0D\u80FD\u76F4\u63A5\u64CD\u4F5C\u9875\u9762\u3002
 
@@ -42,15 +58,15 @@
 - \u5982\u679C\u51FA\u73B0\u201C\u610F\u5916/\u60CA\u8BB6/\u592A\u79BB\u8C31\u201D\uFF0C\u53EF\u80FD surprised
 - \u5982\u679C\u8BA8\u8BBA\u201C\u4F11\u606F/\u6162\u6162\u6765/\u4E0D\u6025\u201D\uFF0C\u53EF\u80FD relaxed
 - \u5982\u679C\u8868\u8FBE\u201C\u51B2/\u5F00\u59CB/\u5B8C\u6210/\u592A\u68D2\u4E86\u201D\uFF0C\u53EF\u80FD excited`;
-  async function* streamChatCompletion(messages) {
-    const url = `${API_BASE_URL}/chat/completions`;
+  async function* streamChatCompletion(config, messages) {
+    const url = `${config.apiBaseUrl}/chat/completions`;
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${API_KEY}`
+        Authorization: `Bearer ${config.apiKey}`
       },
-      body: JSON.stringify({ model: MODEL, messages, stream: true })
+      body: JSON.stringify({ model: config.model, messages, stream: true })
     });
     if (!response.ok) {
       let detail = "";
@@ -182,15 +198,15 @@
     if (t.includes('{"type":"tool"') || t.includes('"type":"tool"')) return true;
     return false;
   }
-  async function callChatCompletionOnce(messages) {
-    const url = `${API_BASE_URL}/chat/completions`;
+  async function callChatCompletionOnce(config, messages) {
+    const url = `${config.apiBaseUrl}/chat/completions`;
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${API_KEY}`
+        Authorization: `Bearer ${config.apiKey}`
       },
-      body: JSON.stringify({ model: MODEL, messages, stream: false })
+      body: JSON.stringify({ model: config.model, messages, stream: false })
     });
     if (!response.ok) {
       let detail = "";
@@ -227,7 +243,7 @@
       }
     });
   }
-  async function decideSticker({ userText, assistantText }) {
+  async function decideSticker(config, { userText, assistantText }) {
     const messages = [
       { role: "system", content: STICKER_DECIDER_PROMPT },
       { role: "user", content: `user:
@@ -236,7 +252,7 @@ ${String(userText || "").slice(0, 2e3)}
 assistant:
 ${String(assistantText || "").slice(0, 4e3)}` }
     ];
-    const out = await callChatCompletionOnce(messages);
+    const out = await callChatCompletionOnce(config, messages);
     const parsed = parseAgentJson(out);
     const sticker = parsed?.sticker;
     if (sticker == null) return null;
@@ -252,7 +268,7 @@ ${String(assistantText || "").slice(0, 4e3)}` }
       return false;
     }
   }
-  async function runAgent(userMessages, port) {
+  async function runAgent(config, userMessages, port) {
     const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
     let disconnected = false;
     const onDisconnect = () => {
@@ -265,7 +281,7 @@ ${String(assistantText || "").slice(0, 4e3)}` }
       let fullResponse = "";
       let phase = "detecting";
       let streamedAny = false;
-      for await (const chunk of streamChatCompletion(messages)) {
+      for await (const chunk of streamChatCompletion(config, messages)) {
         if (disconnected) return;
         fullResponse += chunk;
         if (phase === "streaming") {
@@ -310,7 +326,7 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
       safePost(port, { type: "done" });
       return;
     }
-    for await (const chunk of streamChatCompletion(messages)) {
+    for await (const chunk of streamChatCompletion(config, messages)) {
       if (disconnected) return;
       if (!safePost(port, { type: "chunk", content: chunk })) return;
     }
@@ -319,17 +335,18 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "nahida-chat") return;
     port.onMessage.addListener(async (msg) => {
-      if (!API_KEY) {
-        safePost(port, { type: "error", error: "\u672A\u914D\u7F6E API Key\uFF0C\u8BF7\u5728 .env \u6587\u4EF6\u4E2D\u8BBE\u7F6E LLM_API_KEY \u540E\u91CD\u65B0\u6784\u5EFA\u3002" });
+      const config = await getLlmConfig();
+      if (!config.apiKey) {
+        safePost(port, { type: "error", error: "missing_api_key" });
         return;
       }
       try {
         if (msg.type === "chat") {
-          await runAgent(msg.messages, port);
+          await runAgent(config, msg.messages, port);
           return;
         }
         if (msg.type === "sticker_decide") {
-          const sticker = await decideSticker({ userText: msg.userText, assistantText: msg.assistantText });
+          const sticker = await decideSticker(config, { userText: msg.userText, assistantText: msg.assistantText });
           safePost(port, { type: "sticker_decision", id: msg.id, sticker });
         }
       } catch (error) {

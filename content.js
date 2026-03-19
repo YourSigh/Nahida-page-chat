@@ -6,7 +6,7 @@
   };
 
   // src/ui/styles.css
-  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 112px;\n  height: 112px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.88);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: none;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog::before {\n  content: "";\n  position: absolute;\n  inset: 0;\n  background-image: var(--dialog-bg-url);\n  background-size: cover;\n  background-position: center;\n  background-repeat: no-repeat;\n  opacity: 0.22;\n  pointer-events: none;\n}\n\n.dialog > * {\n  position: relative;\n  z-index: 1;\n}\n\n.dialog.open {\n  display: flex;\n}\n\n.dialog.visible {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, #ddffaa, #ddffaa00);\n  border-bottom: 1px solid rgba(20, 26, 22, 0.10);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  color: rgba(12, 26, 18, 0.88);\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n}\n\n.close-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.close-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.close-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.send {\n  background: transparent;\n  padding: 0;\n  width: 36px;\n  height: 36px;\n  border-radius: 12px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin-bottom: 4px;\n}\n\n.send:hover {\n  transform: none;\n}\n\n.send:disabled {\n  background: transparent;\n}\n\n.send-icon {\n  width: 36px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 10px 8px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  scroll-behavior: smooth;\n}\n\n.msg {\n  max-width: 85%;\n  padding: 8px 12px;\n  border-radius: 14px;\n  font-size: 13px;\n  line-height: 1.5;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n.msg.user {\n  align-self: flex-end;\n  background: linear-gradient(135deg, #6db082, #4a9960);\n  color: #fff;\n  border-bottom-right-radius: 4px;\n}\n\n.msg.assistant {\n  align-self: flex-start;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.92);\n  border-bottom-left-radius: 4px;\n}\n\n.msg.error {\n  align-self: center;\n  background: rgba(200, 50, 50, 0.08);\n  color: rgba(180, 40, 40, 0.9);\n  font-size: 12px;\n  text-align: center;\n}\n\n.msg-welcome {\n  text-align: center;\n  font-size: 12px;\n  color: rgba(20, 26, 22, 0.42);\n  padding: 20px 10px 6px;\n  line-height: 1.5;\n}\n\n.think-block {\n  margin-bottom: 6px;\n}\n\n.think-toggle {\n  all: initial;\n  box-sizing: border-box;\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  cursor: pointer;\n  font-family: inherit;\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  padding: 2px 0;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n.think-toggle:hover {\n  color: rgba(20, 26, 22, 0.7);\n}\n\n.think-arrow {\n  display: inline-block;\n  font-size: 10px;\n  transition: transform 160ms ease;\n}\n\n.think-block.collapsed .think-arrow {\n  transform: rotate(-90deg);\n}\n\n.think-content {\n  margin-top: 4px;\n  padding: 6px 10px;\n  border-left: 2px solid rgba(20, 26, 22, 0.1);\n  font-size: 12px;\n  line-height: 1.5;\n  color: rgba(20, 26, 22, 0.5);\n  white-space: pre-wrap;\n  word-break: break-word;\n  max-height: 200px;\n  overflow-y: auto;\n  transition: max-height 200ms ease, opacity 200ms ease;\n}\n\n.think-block.collapsed .think-content {\n  max-height: 0;\n  overflow: hidden;\n  opacity: 0;\n  margin-top: 0;\n  padding-top: 0;\n  padding-bottom: 0;\n}\n\n.think-block.streaming .think-content {\n  max-height: none;\n}\n\n.sticker {\n  display: block;\n  width: 120px;\n  height: 120px;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n}\n\n.msg.sticker-msg {\n  background: transparent;\n  padding: 2px 0;\n  max-width: none;\n  border-radius: 0;\n}\n\n.reply-content {\n  white-space: normal;\n  word-break: break-word;\n}\n\n.reply-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.reply-content :where(p, ul, ol):last-child {\n  margin-bottom: 0;\n}\n\n.reply-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.reply-content :where(a) {\n  color: rgba(70, 120, 90, 0.95);\n  text-decoration: underline;\n}\n\n.reply-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.reply-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.reply-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.think-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.think-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.think-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.think-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.think-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.typing-indicator {\n  display: inline-flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.typing-indicator span {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: rgba(20, 26, 22, 0.3);\n  animation: typing-bounce 1.2s ease-in-out infinite;\n}\n\n.typing-indicator span:nth-child(2) {\n  animation-delay: 0.15s;\n}\n\n.typing-indicator span:nth-child(3) {\n  animation-delay: 0.3s;\n}\n\n@keyframes typing-bounce {\n  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }\n  30% { transform: translateY(-4px); opacity: 1; }\n}\n\n.composer {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  color: rgba(20, 26, 22, 0.92);\n  caret-color: rgba(20, 26, 22, 0.92);\n  color-scheme: light;\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input::placeholder {\n  color: rgba(20, 26, 22, 0.45);\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n.send:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n';
+  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 112px;\n  height: 112px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.88);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: none;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog::before {\n  content: "";\n  position: absolute;\n  inset: 0;\n  background-image: var(--dialog-bg-url);\n  background-size: cover;\n  background-position: center;\n  background-repeat: no-repeat;\n  opacity: 0.22;\n  pointer-events: none;\n}\n\n.dialog > * {\n  position: relative;\n  z-index: 1;\n}\n\n.dialog.open {\n  display: flex;\n}\n\n.dialog.visible {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, #ddffaa, #ddffaa00);\n  border-bottom: 1px solid rgba(20, 26, 22, 0.10);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  color: rgba(12, 26, 18, 0.88);\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n}\n\n.icon-button[aria-label] {\n  position: relative;\n}\n\n.icon-button[aria-label]::after {\n  content: attr(aria-label);\n  position: absolute;\n  left: 50%;\n  transform: translateX(-50%) translateY(-2px);\n  opacity: 0;\n  pointer-events: none;\n  white-space: nowrap;\n  font-size: 11px;\n  line-height: 1;\n  padding: 7px 9px;\n  border-radius: 10px;\n  background: rgba(20, 26, 22, 0.86);\n  color: rgba(255, 255, 255, 0.94);\n  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 40;\n}\n\n.icon-button[aria-label]::before {\n  content: "";\n  position: absolute;\n  left: 50%;\n  width: 10px;\n  height: 10px;\n  transform: translateX(-50%) rotate(45deg);\n  opacity: 0;\n  pointer-events: none;\n  background: rgba(20, 26, 22, 0.86);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 39;\n}\n\n/* Top-right buttons: tooltip below (avoid dialog overflow clipping) */\n.settings-button[aria-label]::after,\n.close-button[aria-label]::after {\n  top: calc(100% + 10px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  top: calc(100% + 6px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  transform: translateX(-50%) rotate(45deg);\n}\n\n/* Send button: tooltip above (keeps it inside dialog) */\n.send[aria-label]::after {\n  bottom: calc(100% + 10px);\n}\n.send[aria-label]::before {\n  bottom: calc(100% + 6px);\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::after,\n.icon-button[aria-label]:focus-visible::before {\n  opacity: 1;\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::before {\n  transform: translateX(-50%) rotate(45deg) translateY(0);\n}\n\n.send[aria-label]:hover::after,\n.send[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[disabled]::after,\n.icon-button[disabled]::before {\n  display: none;\n}\n\n.close-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.close-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.close-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-actions {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n}\n\n.settings-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.settings-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.settings-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.settings-panel {\n  position: absolute;\n  top: 48px;\n  right: 12px;\n  width: min(340px, calc(100% - 24px));\n  display: none;\n  flex-direction: column;\n  gap: 8px;\n  padding: 12px;\n  border-radius: 14px;\n  background: rgba(255, 255, 255, 0.96);\n  border: 1px solid rgba(20, 26, 22, 0.10);\n  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);\n  backdrop-filter: blur(10px);\n  -webkit-backdrop-filter: blur(10px);\n  z-index: 20;\n}\n\n.settings-panel.open {\n  display: flex;\n}\n\n.settings-title {\n  font-size: 13px;\n  font-weight: 650;\n  color: rgba(20, 26, 22, 0.9);\n  margin-bottom: 2px;\n}\n\n.settings-label {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.55);\n}\n\n.settings-input {\n  width: 100%;\n  box-sizing: border-box;\n  border-radius: 12px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.95);\n  color: rgba(20, 26, 22, 0.92);\n  padding: 8px 10px;\n  font-family: inherit;\n  font-size: 12px;\n  outline: none;\n}\n\n.settings-input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.12);\n}\n\n.settings-hint {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  line-height: 1.4;\n}\n\n.settings-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  margin-top: 4px;\n}\n\n.settings-cancel,\n.settings-save {\n  padding: 8px 10px;\n  border-radius: 12px;\n}\n\n.send {\n  background: transparent;\n  padding: 0;\n  width: 36px;\n  height: 36px;\n  border-radius: 12px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin-bottom: 4px;\n}\n\n.send:hover {\n  transform: none;\n}\n\n.send:disabled {\n  background: transparent;\n}\n\n.send-icon {\n  width: 36px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 10px 8px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  scroll-behavior: smooth;\n}\n\n.msg {\n  max-width: 85%;\n  padding: 8px 12px;\n  border-radius: 14px;\n  font-size: 13px;\n  line-height: 1.5;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n.msg.user {\n  align-self: flex-end;\n  background: linear-gradient(135deg, #6db082, #4a9960);\n  color: #fff;\n  border-bottom-right-radius: 4px;\n}\n\n.msg.assistant {\n  align-self: flex-start;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.92);\n  border-bottom-left-radius: 4px;\n}\n\n.msg.error {\n  align-self: center;\n  background: rgba(200, 50, 50, 0.08);\n  color: rgba(180, 40, 40, 0.9);\n  font-size: 12px;\n  text-align: center;\n}\n\n.msg-welcome {\n  text-align: center;\n  font-size: 12px;\n  color: rgba(20, 26, 22, 0.42);\n  padding: 20px 10px 6px;\n  line-height: 1.5;\n}\n\n.think-block {\n  margin-bottom: 6px;\n}\n\n.think-toggle {\n  all: initial;\n  box-sizing: border-box;\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  cursor: pointer;\n  font-family: inherit;\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  padding: 2px 0;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n.think-toggle:hover {\n  color: rgba(20, 26, 22, 0.7);\n}\n\n.think-arrow {\n  display: inline-block;\n  font-size: 10px;\n  transition: transform 160ms ease;\n}\n\n.think-block.collapsed .think-arrow {\n  transform: rotate(-90deg);\n}\n\n.think-content {\n  margin-top: 4px;\n  padding: 6px 10px;\n  border-left: 2px solid rgba(20, 26, 22, 0.1);\n  font-size: 12px;\n  line-height: 1.5;\n  color: rgba(20, 26, 22, 0.5);\n  white-space: pre-wrap;\n  word-break: break-word;\n  max-height: 200px;\n  overflow-y: auto;\n  transition: max-height 200ms ease, opacity 200ms ease;\n}\n\n.think-block.collapsed .think-content {\n  max-height: 0;\n  overflow: hidden;\n  opacity: 0;\n  margin-top: 0;\n  padding-top: 0;\n  padding-bottom: 0;\n}\n\n.think-block.streaming .think-content {\n  max-height: none;\n}\n\n.sticker {\n  display: block;\n  width: 120px;\n  height: 120px;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n}\n\n.msg.sticker-msg {\n  background: transparent;\n  padding: 2px 0;\n  max-width: none;\n  border-radius: 0;\n}\n\n.reply-content {\n  white-space: normal;\n  word-break: break-word;\n}\n\n.reply-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.reply-content :where(p, ul, ol):last-child {\n  margin-bottom: 0;\n}\n\n.reply-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.reply-content :where(a) {\n  color: rgba(70, 120, 90, 0.95);\n  text-decoration: underline;\n}\n\n.reply-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.reply-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.reply-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.think-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.think-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.think-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.think-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.think-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.typing-indicator {\n  display: inline-flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.typing-indicator span {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: rgba(20, 26, 22, 0.3);\n  animation: typing-bounce 1.2s ease-in-out infinite;\n}\n\n.typing-indicator span:nth-child(2) {\n  animation-delay: 0.15s;\n}\n\n.typing-indicator span:nth-child(3) {\n  animation-delay: 0.3s;\n}\n\n@keyframes typing-bounce {\n  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }\n  30% { transform: translateY(-4px); opacity: 1; }\n}\n\n.composer {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  color: rgba(20, 26, 22, 0.92);\n  caret-color: rgba(20, 26, 22, 0.92);\n  color-scheme: light;\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input::placeholder {\n  color: rgba(20, 26, 22, 0.45);\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n.send:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n';
 
   // node_modules/markdown-it/lib/common/utils.mjs
   var utils_exports = {};
@@ -5596,6 +5596,18 @@
     const title = document.createElement("div");
     title.className = "dialog-title";
     title.textContent = "\u7EB3\u897F\u59B2";
+    const headerActions = document.createElement("div");
+    headerActions.className = "dialog-actions";
+    const settingsButton = document.createElement("button");
+    settingsButton.className = "icon-button settings-button";
+    settingsButton.type = "button";
+    settingsButton.setAttribute("aria-label", "\u8BBE\u7F6E");
+    const settingsImg = document.createElement("img");
+    settingsImg.className = "settings-icon";
+    settingsImg.alt = "";
+    settingsImg.draggable = false;
+    settingsImg.src = chrome.runtime.getURL("assets/setting.png");
+    settingsButton.appendChild(settingsImg);
     const closeButton = document.createElement("button");
     closeButton.className = "icon-button close-button";
     closeButton.type = "button";
@@ -5606,9 +5618,64 @@
     closeImg.draggable = false;
     closeImg.src = chrome.runtime.getURL("assets/close.png");
     closeButton.appendChild(closeImg);
-    header.append(title, closeButton);
+    headerActions.append(settingsButton, closeButton);
+    header.append(title, headerActions);
+    const settingsPanel = document.createElement("div");
+    settingsPanel.className = "settings-panel";
+    settingsPanel.setAttribute("aria-hidden", "true");
+    settingsPanel.addEventListener("pointerdown", (e) => e.stopPropagation());
+    settingsPanel.addEventListener("click", (e) => e.stopPropagation());
     const body = document.createElement("div");
     body.className = "dialog-body";
+    const settingsTitle = document.createElement("div");
+    settingsTitle.className = "settings-title";
+    settingsTitle.textContent = "\u5927\u6A21\u578B\u914D\u7F6E";
+    const fieldBaseUrlLabel = document.createElement("label");
+    fieldBaseUrlLabel.className = "settings-label";
+    fieldBaseUrlLabel.textContent = "API Base URL";
+    const fieldBaseUrl = document.createElement("input");
+    fieldBaseUrl.className = "settings-input";
+    fieldBaseUrl.type = "text";
+    fieldBaseUrl.placeholder = "https://api.openai.com/v1";
+    const fieldModelLabel = document.createElement("label");
+    fieldModelLabel.className = "settings-label";
+    fieldModelLabel.textContent = "Model";
+    const fieldModel = document.createElement("input");
+    fieldModel.className = "settings-input";
+    fieldModel.type = "text";
+    fieldModel.placeholder = "gpt-4o-mini";
+    const fieldKeyLabel = document.createElement("label");
+    fieldKeyLabel.className = "settings-label";
+    fieldKeyLabel.textContent = "API Key";
+    const fieldKey = document.createElement("input");
+    fieldKey.className = "settings-input";
+    fieldKey.type = "password";
+    fieldKey.placeholder = "sk-...";
+    const settingsHint = document.createElement("div");
+    settingsHint.className = "settings-hint";
+    settingsHint.textContent = "\u914D\u7F6E\u4F1A\u4FDD\u5B58\u5728\u672C\u5730\u6D4F\u89C8\u5668\uFF08chrome.storage.local\uFF09\uFF0C\u4E0D\u4F1A\u4E0A\u4F20\u3002";
+    const settingsActions = document.createElement("div");
+    settingsActions.className = "settings-actions";
+    const settingsCancel = document.createElement("button");
+    settingsCancel.className = "icon-button settings-cancel";
+    settingsCancel.type = "button";
+    settingsCancel.textContent = "\u53D6\u6D88";
+    const settingsSave = document.createElement("button");
+    settingsSave.className = "icon-button settings-save";
+    settingsSave.type = "button";
+    settingsSave.textContent = "\u4FDD\u5B58";
+    settingsActions.append(settingsCancel, settingsSave);
+    settingsPanel.append(
+      settingsTitle,
+      fieldBaseUrlLabel,
+      fieldBaseUrl,
+      fieldModelLabel,
+      fieldModel,
+      fieldKeyLabel,
+      fieldKey,
+      settingsHint,
+      settingsActions
+    );
     const messagesEl = document.createElement("div");
     messagesEl.className = "messages";
     const welcome = document.createElement("div");
@@ -5633,10 +5700,66 @@
     sendButton.appendChild(sendImg);
     composer.append(input, sendButton);
     body.append(messagesEl, composer);
-    dialog.append(header, body);
+    dialog.append(header, settingsPanel, body);
     const chatHistory = [];
     let isStreaming = false;
     let activePort = null;
+    const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
+    const DEFAULT_LLM_CONFIG = {
+      apiBaseUrl: "https://api.openai.com/v1",
+      model: "gpt-4o-mini",
+      apiKey: ""
+    };
+    const setSettingsOpen = (open) => {
+      settingsPanel.classList.toggle("open", open);
+      settingsPanel.setAttribute("aria-hidden", open ? "false" : "true");
+      if (open) {
+        fieldKey.focus();
+      } else {
+        input.focus();
+      }
+    };
+    const closeSettingsIfClickOutside = (event) => {
+      if (!settingsPanel.classList.contains("open")) return;
+      const path = event.composedPath?.() || [];
+      if (path.includes(settingsPanel) || path.includes(settingsButton)) return;
+      setSettingsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeSettingsIfClickOutside, true);
+    const loadLlmConfigIntoForm = async () => {
+      try {
+        const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+        const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
+        fieldBaseUrl.value = String(cfg.apiBaseUrl || DEFAULT_LLM_CONFIG.apiBaseUrl);
+        fieldModel.value = String(cfg.model || DEFAULT_LLM_CONFIG.model);
+        fieldKey.value = String(cfg.apiKey || DEFAULT_LLM_CONFIG.apiKey);
+      } catch {
+        fieldBaseUrl.value = DEFAULT_LLM_CONFIG.apiBaseUrl;
+        fieldModel.value = DEFAULT_LLM_CONFIG.model;
+        fieldKey.value = DEFAULT_LLM_CONFIG.apiKey;
+      }
+    };
+    const saveLlmConfigFromForm = async () => {
+      const next = {
+        apiBaseUrl: String(fieldBaseUrl.value || "").trim() || DEFAULT_LLM_CONFIG.apiBaseUrl,
+        model: String(fieldModel.value || "").trim() || DEFAULT_LLM_CONFIG.model,
+        apiKey: String(fieldKey.value || "").trim()
+      };
+      await chrome.storage.local.set({ [STORAGE_KEY_LLM_CONFIG]: next });
+      return next;
+    };
+    const ensureApiKeyOrOpenSettings = async () => {
+      try {
+        const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+        const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
+        const key = String(cfg.apiKey || "").trim();
+        if (key) return true;
+      } catch {
+      }
+      await loadLlmConfigIntoForm();
+      setSettingsOpen(true);
+      return false;
+    };
     const scrollToBottom = () => {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     };
@@ -5736,6 +5859,12 @@ ${trimmed}`);
     const sendChat = () => {
       const text2 = input.value.trim();
       if (!text2 || isStreaming) return;
+      ensureApiKeyOrOpenSettings().then((ok) => {
+        if (!ok) return;
+        doSendChat(text2);
+      });
+    };
+    const doSendChat = (text2) => {
       input.value = "";
       appendMessage("user", text2);
       const pageContext = chatHistory.length === 0 ? getPageContext() : null;
@@ -5886,7 +6015,13 @@ ${text2}` : text2;
         } else if (msg.type === "error") {
           if (typingIndicator.parentNode) typingIndicator.remove();
           assistantEl.classList.replace("assistant", "error");
-          assistantEl.textContent = msg.error;
+          if (msg.error === "missing_api_key") {
+            assistantEl.textContent = "\u8FD8\u6CA1\u6709\u914D\u7F6E API Key\uFF5E\u5148\u53BB\u53F3\u4E0A\u89D2\u8BBE\u7F6E\u4E00\u4E0B\u5427\u3002";
+            loadLlmConfigIntoForm().then(() => setSettingsOpen(true)).catch(() => {
+            });
+          } else {
+            assistantEl.textContent = msg.error;
+          }
           setInputEnabled(true);
           activePort = null;
         }
@@ -6096,6 +6231,21 @@ ${text2}` : text2;
     button.addEventListener("pointercancel", endPointer);
     button.addEventListener("dragstart", (event) => event.preventDefault());
     closeButton.addEventListener("click", () => setDialogOpen(false));
+    settingsButton.addEventListener("click", async () => {
+      await loadLlmConfigIntoForm();
+      setSettingsOpen(true);
+    });
+    settingsCancel.addEventListener("click", () => setSettingsOpen(false));
+    settingsSave.addEventListener("click", async () => {
+      try {
+        const next = await saveLlmConfigFromForm();
+        if (!next.apiKey) {
+          return;
+        }
+        setSettingsOpen(false);
+      } catch {
+      }
+    });
     sendButton.addEventListener("click", () => sendChat());
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
@@ -6113,7 +6263,9 @@ ${text2}` : text2;
     });
     const keyboardIsolationHandler = (event) => {
       if (!isDialogOpen) return;
-      if (shadowRoot.activeElement !== input) return;
+      const activeEl = shadowRoot.activeElement;
+      const isEditable = activeEl === input || activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA");
+      if (!isEditable) return;
       const path = event.composedPath?.() || [];
       if (!path.includes(dialog)) return;
       if (event.type === "keydown" && event.key === "Enter" && event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -6130,6 +6282,11 @@ ${input.value.slice(end)}`;
         return;
       }
       if (event.type === "keydown" && event.key === "Enter" && !event.shiftKey && !event.metaKey && !event.isComposing && !imeComposing) {
+        if (activeEl !== input) {
+          event.stopPropagation();
+          event.stopImmediatePropagation?.();
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation?.();
@@ -6171,6 +6328,9 @@ ${input.value.slice(end)}`;
         return;
       }
       if (closeButton.contains(event.target)) {
+        return;
+      }
+      if (settingsButton.contains(event.target)) {
         return;
       }
       const rect = dialog.getBoundingClientRect();
