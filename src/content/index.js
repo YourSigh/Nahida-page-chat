@@ -141,7 +141,14 @@ const renderMarkdown = (text) => md.render(String(text || ""));
   const sendButton = document.createElement("button");
   sendButton.className = "icon-button send";
   sendButton.type = "button";
-  sendButton.textContent = "发送";
+  sendButton.setAttribute("aria-label", "发送");
+
+  const sendImg = document.createElement("img");
+  sendImg.className = "send-icon";
+  sendImg.alt = "";
+  sendImg.draggable = false;
+  sendImg.src = chrome.runtime.getURL("assets/send.png");
+  sendButton.appendChild(sendImg);
 
   composer.append(input, sendButton);
   body.append(messagesEl, composer);
@@ -536,16 +543,43 @@ const renderMarkdown = (text) => md.render(String(text || ""));
     applyDialogPosition();
   };
 
+  let closeAnimationToken = 0;
+
   const setDialogOpen = (open) => {
+    closeAnimationToken += 1;
+    const token = closeAnimationToken;
     isDialogOpen = open;
-    dialog.classList.toggle("open", open);
     dialog.setAttribute("aria-hidden", open ? "false" : "true");
     wrapper.classList.toggle("hidden", open);
     if (open) {
+      dialog.classList.add("open");
       requestAnimationFrame(() => {
+        if (token !== closeAnimationToken) return;
+        dialog.classList.add("visible");
         computeDialogAnchorPosition();
         input.focus();
       });
+    } else {
+      dialog.classList.remove("visible");
+      const finishClose = () => {
+        if (token !== closeAnimationToken) return;
+        dialog.classList.remove("open");
+      };
+
+      // If transition doesn't run (e.g. already hidden), close immediately.
+      const computed = getComputedStyle(dialog);
+      const duration = parseFloat(computed.transitionDuration) || 0;
+      if (duration <= 0) {
+        finishClose();
+        return;
+      }
+
+      const onEnd = (event) => {
+        if (event.target !== dialog) return;
+        dialog.removeEventListener("transitionend", onEnd);
+        finishClose();
+      };
+      dialog.addEventListener("transitionend", onEnd);
     }
   };
 
