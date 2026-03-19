@@ -3,7 +3,7 @@ const API_KEY = process.env.LLM_API_KEY;
 const MODEL = process.env.LLM_MODEL;
 
 const SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》中的草之神。你聪明、温柔、好奇心旺盛，说话亲切自然，偶尔带一点俏皮。
-你正在帮助用户理解当前网页内容，你可以“请求工具”来实时读取页面 DOM 信息，但你不能直接操作页面。
+你正在帮助用户理解当前网页内容，你可以"请求工具"来实时读取页面 DOM 信息，但你不能直接操作页面。
 
 你可用的工具只有：
 - read_page: 读取当前页面标题/URL/描述/主要文本
@@ -26,56 +26,66 @@ const SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》中
 - 根据对话语境和情绪选择合适的表情
 - 当用户打招呼、表达感谢、或者聊到轻松话题时，很适合发一个表情
 
-你必须严格使用以下 JSON 格式回复（不要输出任何额外文字）：
-1) 当你需要页面信息时：
-{"type":"tool","name":"read_page","args":{"maxChars":2000}}
-{"type":"tool","name":"get_visible_text","args":{"maxChars":2000}}
-{"type":"tool","name":"query","args":{"selector":"...","limit":10,"includeAttrs":["href","aria-label"]}}
-
-2) 当你已经可以回答用户问题时：
-{"type":"final","content":"..."} 
+## 回复方式
+- 需要调用工具时，只输出一行工具调用 JSON，不要输出任何其他文字：
+  {"type":"tool","name":"read_page","args":{"maxChars":2000}}
+  {"type":"tool","name":"get_visible_text","args":{"maxChars":2000}}
+  {"type":"tool","name":"query","args":{"selector":"...","limit":10,"includeAttrs":["href","aria-label"]}}
+- 回答用户时，直接用自然语言回复，不要包裹在任何 JSON 中。
 
 规则：
 - 最多连续调用 5 次工具，否则直接总结你已知信息并给出建议。
 - 用户没有问页面相关问题时，不要调用工具，直接聊天回答。`;
 
-async function callChatCompletion(messages) {
+async function* streamChatCompletion(messages) {
   const url = `${API_BASE_URL}/chat/completions`;
-
-  const body = {
-    model: MODEL,
-    messages,
-    stream: false
-  };
-
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${API_KEY}`
-      },
-      body: JSON.stringify(body)
-    });
-  } catch (error) {
-    throw new Error(`网络请求失败: ${error.message}`);
-  }
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${API_KEY}`
+    },
+    body: JSON.stringify({ model: MODEL, messages, stream: true })
+  });
 
   if (!response.ok) {
     let detail = "";
-    try {
-      detail = await response.text();
-    } catch {}
+    try { detail = await response.text(); } catch {}
     throw new Error(`API 返回 ${response.status}: ${detail.slice(0, 400)}`);
   }
 
-  const json = await response.json();
-  const content = json?.choices?.[0]?.message?.content;
-  if (!content) {
-    throw new Error("模型未返回内容");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith("data: ")) continue;
+      const data = trimmed.slice(6);
+      if (data === "[DONE]") return;
+      try {
+        const json = JSON.parse(data);
+        const content = json?.choices?.[0]?.delta?.content;
+        if (content) yield content;
+      } catch {}
+    }
   }
-  return String(content);
+}
+
+function getReplyAfterThink(text) {
+  const openIdx = text.indexOf("<think>");
+  if (openIdx === -1) return text;
+  const closeIdx = text.indexOf("</think>", openIdx + 7);
+  if (closeIdx === -1) return null;
+  return text.slice(closeIdx + 8);
 }
 
 function safeParseJson(text) {
@@ -192,47 +202,62 @@ async function runAgent(userMessages, port) {
 
   let toolCalls = 0;
   while (toolCalls < 5) {
-    const assistantContent = await callChatCompletion(messages);
-    const parsed = parseAgentJson(assistantContent);
+    let fullResponse = "";
+    let phase = "detecting";
 
-    if (!parsed || !parsed.type) {
-      // Fallback: treat as final answer
-      port.postMessage({ type: "chunk", content: assistantContent });
+    for await (const chunk of streamChatCompletion(messages)) {
+      fullResponse += chunk;
+
+      if (phase === "streaming") {
+        port.postMessage({ type: "chunk", content: chunk });
+        continue;
+      }
+
+      if (phase === "tool_buffering") {
+        continue;
+      }
+
+      const replyPart = getReplyAfterThink(fullResponse);
+      if (replyPart === null) continue;
+
+      const trimmedReply = replyPart.trimStart();
+      if (trimmedReply.length === 0) continue;
+
+      if (trimmedReply[0] === "{") {
+        phase = "tool_buffering";
+      } else {
+        phase = "streaming";
+        port.postMessage({ type: "chunk", content: fullResponse });
+      }
+    }
+
+    if (phase === "streaming") {
       port.postMessage({ type: "done" });
       return;
     }
 
-    if (parsed.type === "final") {
-      port.postMessage({ type: "chunk", content: parsed.content || "" });
-      port.postMessage({ type: "done" });
-      return;
-    }
+    const parsed = parseAgentJson(fullResponse);
 
-    if (parsed.type === "tool") {
+    if (parsed?.type === "tool") {
       toolCalls += 1;
-      const name = parsed.name;
-      const args = parsed.args || {};
-      port.postMessage({ type: "tool_log", name, args });
-      const result = await requestTool(port, name, args);
-      // Keep the original model output to preserve chain of thought / tool intent,
-      // but ensure we don't leak tool JSON to the UI.
+      port.postMessage({ type: "tool_log", name: parsed.name, args: parsed.args || {} });
+      const result = await requestTool(port, parsed.name, parsed.args || {});
       messages.push({ role: "assistant", content: JSON.stringify(parsed) });
-      messages.push({ role: "user", content: `工具结果(${name}):\n${JSON.stringify(result).slice(0, 6000)}` });
+      messages.push({ role: "user", content: `工具结果(${parsed.name}):\n${JSON.stringify(result).slice(0, 6000)}` });
       continue;
     }
 
-    port.postMessage({ type: "chunk", content: assistantContent });
+    if (parsed?.type === "final") {
+      port.postMessage({ type: "chunk", content: parsed.content || "" });
+    } else {
+      port.postMessage({ type: "chunk", content: fullResponse });
+    }
     port.postMessage({ type: "done" });
     return;
   }
 
-  // tool limit reached
-  const assistantContent = await callChatCompletion(messages);
-  const parsed = parseAgentJson(assistantContent);
-  if (parsed?.type === "final") {
-    port.postMessage({ type: "chunk", content: parsed.content || "" });
-  } else {
-    port.postMessage({ type: "chunk", content: assistantContent });
+  for await (const chunk of streamChatCompletion(messages)) {
+    port.postMessage({ type: "chunk", content: chunk });
   }
   port.postMessage({ type: "done" });
 }
