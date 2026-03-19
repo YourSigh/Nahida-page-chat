@@ -136,7 +136,7 @@ const renderMarkdown = (text) => md.render(String(text || ""));
   const input = document.createElement("textarea");
   input.className = "input";
   input.rows = 2;
-  input.placeholder = "输入消息，Enter 发送，Shift+Enter 换行";
+  input.placeholder = "输入消息，Enter 发送，Shift/⌘+Enter 换行";
 
   const sendButton = document.createElement("button");
   sendButton.className = "icon-button send";
@@ -693,6 +693,43 @@ const renderMarkdown = (text) => md.render(String(text || ""));
     if (shadowRoot.activeElement !== input) return;
     const path = event.composedPath?.() || [];
     if (!path.includes(dialog)) return;
+
+    // Cmd+Enter -> newline (not send).
+    if (
+      event.type === "keydown" &&
+      event.key === "Enter" &&
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? input.value.length;
+      input.value = `${input.value.slice(0, start)}\n${input.value.slice(end)}`;
+      const nextPos = start + 1;
+      input.setSelectionRange(nextPos, nextPos);
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "insertLineBreak", data: "\n" }));
+      return;
+    }
+
+    // Handle "Enter to send" here because we intercept keyboard events in capture phase.
+    if (
+      event.type === "keydown" &&
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.metaKey &&
+      !event.isComposing &&
+      !imeComposing
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      sendChat();
+      return;
+    }
 
     event.stopPropagation();
     event.stopImmediatePropagation?.();
