@@ -96,6 +96,8 @@ const renderMarkdown = (text) => md.render(String(text || ""));
   dialog.addEventListener("pointerdown", (event) => event.stopPropagation());
   dialog.addEventListener("click", (event) => event.stopPropagation());
 
+  dialog.style.setProperty("--dialog-bg-url", `url(\"${chrome.runtime.getURL("assets/background.jpeg")}\")`);
+
   const header = document.createElement("div");
   header.className = "dialog-header";
 
