@@ -5935,6 +5935,7 @@ ${text2}` : text2;
       dialog.setAttribute("aria-hidden", open ? "false" : "true");
       wrapper.classList.toggle("hidden", open);
       if (open) {
+        enableKeyboardIsolation();
         dialog.classList.add("open");
         dialog.offsetWidth;
         if (token !== closeAnimationToken) return;
@@ -5942,6 +5943,7 @@ ${text2}` : text2;
         computeDialogAnchorPosition();
         input.focus();
       } else {
+        disableKeyboardIsolation();
         dialog.classList.remove("visible");
         const finishClose = () => {
           if (token !== closeAnimationToken) return;
@@ -6040,14 +6042,42 @@ ${text2}` : text2;
         sendChat();
       }
     });
-    window.addEventListener("keydown", (event) => {
-      if (!isDialogOpen) {
-        return;
-      }
-      if (event.key === "Escape") {
-        setDialogOpen(false);
-      }
+    let keyboardIsolationEnabled = false;
+    let imeComposing = false;
+    input.addEventListener("compositionstart", () => {
+      imeComposing = true;
     });
+    input.addEventListener("compositionend", () => {
+      imeComposing = false;
+    });
+    const keyboardIsolationHandler = (event) => {
+      if (!isDialogOpen) return;
+      if (shadowRoot.activeElement !== input) return;
+      const path = event.composedPath?.() || [];
+      if (!path.includes(dialog)) return;
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+      if (event.key === "Escape") {
+        if (!event.isComposing && !imeComposing) {
+          event.preventDefault();
+          setDialogOpen(false);
+        }
+      }
+    };
+    const enableKeyboardIsolation = () => {
+      if (keyboardIsolationEnabled) return;
+      keyboardIsolationEnabled = true;
+      document.addEventListener("keydown", keyboardIsolationHandler, true);
+      document.addEventListener("keyup", keyboardIsolationHandler, true);
+      document.addEventListener("keypress", keyboardIsolationHandler, true);
+    };
+    const disableKeyboardIsolation = () => {
+      if (!keyboardIsolationEnabled) return;
+      keyboardIsolationEnabled = false;
+      document.removeEventListener("keydown", keyboardIsolationHandler, true);
+      document.removeEventListener("keyup", keyboardIsolationHandler, true);
+      document.removeEventListener("keypress", keyboardIsolationHandler, true);
+    };
     window.addEventListener("resize", () => {
       iconPosition = clampIconPosition(iconPosition, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
       renderIcon();
