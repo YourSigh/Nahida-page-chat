@@ -174,6 +174,14 @@
     if (parsed && typeof parsed === "object") return parsed;
     return null;
   }
+  function looksLikeToolCallPayload(replyText) {
+    const t = String(replyText || "").trimStart();
+    if (!t) return false;
+    if (t[0] === "{") return true;
+    if (t.includes("\n{") || t.includes("\r\n{")) return true;
+    if (t.includes('{"type":"tool"') || t.includes('"type":"tool"')) return true;
+    return false;
+  }
   async function callChatCompletionOnce(messages) {
     const url = `${API_BASE_URL}/chat/completions`;
     const response = await fetch(url, {
@@ -210,7 +218,13 @@
         resolve(msg.result);
       };
       port.onMessage.addListener(handler);
-      port.postMessage({ type: "tool", id, name, args });
+      try {
+        port.postMessage({ type: "tool", id, name, args });
+      } catch (e) {
+        clearTimeout(timeout);
+        port.onMessage.removeListener(handler);
+        reject(new Error(`Port \u5DF2\u65AD\u5F00\uFF0C\u65E0\u6CD5\u8C03\u7528\u5DE5\u5177: ${name}`));
+      }
     });
   }
   async function decideSticker({ userText, assistantText }) {
@@ -230,16 +244,33 @@ ${String(assistantText || "").slice(0, 4e3)}` }
     if (!allowed.has(sticker)) return null;
     return sticker;
   }
+  function safePost(port, msg) {
+    try {
+      port.postMessage(msg);
+      return true;
+    } catch {
+      return false;
+    }
+  }
   async function runAgent(userMessages, port) {
     const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
+    let disconnected = false;
+    const onDisconnect = () => {
+      disconnected = true;
+    };
+    port.onDisconnect.addListener(onDisconnect);
     let toolCalls = 0;
     while (toolCalls < 5) {
+      if (disconnected) return;
       let fullResponse = "";
       let phase = "detecting";
+      let streamedAny = false;
       for await (const chunk of streamChatCompletion(messages)) {
+        if (disconnected) return;
         fullResponse += chunk;
         if (phase === "streaming") {
-          port.postMessage({ type: "chunk", content: chunk });
+          if (!safePost(port, { type: "chunk", content: chunk })) return;
+          streamedAny = true;
           continue;
         }
         if (phase === "tool_buffering") {
@@ -249,45 +280,47 @@ ${String(assistantText || "").slice(0, 4e3)}` }
         if (replyPart === null) continue;
         const trimmedReply = replyPart.trimStart();
         if (trimmedReply.length === 0) continue;
-        if (trimmedReply[0] === "{") {
+        if (looksLikeToolCallPayload(trimmedReply)) {
           phase = "tool_buffering";
         } else {
           phase = "streaming";
-          port.postMessage({ type: "chunk", content: fullResponse });
+          if (!safePost(port, { type: "chunk", content: fullResponse })) return;
+          streamedAny = true;
         }
       }
-      if (phase === "streaming") {
-        port.postMessage({ type: "done" });
-        return;
-      }
-      const parsed = parseAgentJson(fullResponse);
-      if (parsed?.type === "tool") {
+      const parsedAtEnd = parseAgentJson(fullResponse);
+      if (parsedAtEnd?.type === "tool") {
         toolCalls += 1;
-        port.postMessage({ type: "tool_log", name: parsed.name, args: parsed.args || {} });
-        const result = await requestTool(port, parsed.name, parsed.args || {});
-        messages.push({ role: "assistant", content: JSON.stringify(parsed) });
-        messages.push({ role: "user", content: `\u5DE5\u5177\u7ED3\u679C(${parsed.name}):
+        if (!safePost(port, { type: "tool_log", name: parsedAtEnd.name, args: parsedAtEnd.args || {} })) return;
+        const result = await requestTool(port, parsedAtEnd.name, parsedAtEnd.args || {});
+        messages.push({ role: "assistant", content: JSON.stringify(parsedAtEnd) });
+        messages.push({ role: "user", content: `\u5DE5\u5177\u7ED3\u679C(${parsedAtEnd.name}):
 ${JSON.stringify(result).slice(0, 6e3)}` });
         continue;
       }
-      if (parsed?.type === "final") {
-        port.postMessage({ type: "chunk", content: parsed.content || "" });
-      } else {
-        port.postMessage({ type: "chunk", content: fullResponse });
+      if (streamedAny) {
+        safePost(port, { type: "done" });
+        return;
       }
-      port.postMessage({ type: "done" });
+      if (parsedAtEnd?.type === "final") {
+        if (!safePost(port, { type: "chunk", content: parsedAtEnd.content || "" })) return;
+      } else {
+        if (!safePost(port, { type: "chunk", content: fullResponse })) return;
+      }
+      safePost(port, { type: "done" });
       return;
     }
     for await (const chunk of streamChatCompletion(messages)) {
-      port.postMessage({ type: "chunk", content: chunk });
+      if (disconnected) return;
+      if (!safePost(port, { type: "chunk", content: chunk })) return;
     }
-    port.postMessage({ type: "done" });
+    safePost(port, { type: "done" });
   }
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "nahida-chat") return;
     port.onMessage.addListener(async (msg) => {
       if (!API_KEY) {
-        port.postMessage({ type: "error", error: "\u672A\u914D\u7F6E API Key\uFF0C\u8BF7\u5728 .env \u6587\u4EF6\u4E2D\u8BBE\u7F6E LLM_API_KEY \u540E\u91CD\u65B0\u6784\u5EFA\u3002" });
+        safePost(port, { type: "error", error: "\u672A\u914D\u7F6E API Key\uFF0C\u8BF7\u5728 .env \u6587\u4EF6\u4E2D\u8BBE\u7F6E LLM_API_KEY \u540E\u91CD\u65B0\u6784\u5EFA\u3002" });
         return;
       }
       try {
@@ -297,10 +330,10 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
         }
         if (msg.type === "sticker_decide") {
           const sticker = await decideSticker({ userText: msg.userText, assistantText: msg.assistantText });
-          port.postMessage({ type: "sticker_decision", id: msg.id, sticker });
+          safePost(port, { type: "sticker_decision", id: msg.id, sticker });
         }
       } catch (error) {
-        port.postMessage({ type: "error", error: String(error?.message || error) });
+        safePost(port, { type: "error", error: String(error?.message || error) });
       }
     });
   });
