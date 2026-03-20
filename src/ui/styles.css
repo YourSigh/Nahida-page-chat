@@ -9,8 +9,8 @@
   position: absolute;
   left: 0;
   top: 0;
-  width: 112px;
-  height: 112px;
+  width: 100px;
+  height: 100px;
   pointer-events: none;
   transition: transform 140ms ease;
   will-change: left, top, transform;
