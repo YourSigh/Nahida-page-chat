@@ -5995,26 +5995,44 @@ ${text2}` : text2;
       let replyContentEl = null;
       const turnUserText = text2;
       const parseThinkAndReply = (raw) => {
-        const openTag = "<think>";
-        const closeTag = "</think>";
-        let thinkText = "";
-        let replyText = "";
-        let thinkClosed = false;
-        const openIdx = raw.indexOf(openTag);
+        const OPEN = "\0THINK_O\0";
+        const CLOSE = "\0THINK_C\0";
+        const OPEN_HTML = "<think>";
+        const OPEN_MD = "`think`";
+        const CLOSE_HTML = "</think>";
+        const CLOSE_MD = "`/think`";
+        let work = String(raw).split(OPEN_HTML).join(OPEN).split(OPEN_MD).join(OPEN).split(CLOSE_HTML).join(CLOSE).split(CLOSE_MD).join(CLOSE);
+        const openIdx = work.indexOf(OPEN);
         if (openIdx === -1) {
           return { thinkText: "", replyText: raw, thinkClosed: true };
         }
-        const afterOpen = openIdx + openTag.length;
-        const closeIdx = raw.indexOf(closeTag, afterOpen);
+        const afterOpen = openIdx + OPEN.length;
+        const closeIdx = work.indexOf(CLOSE, afterOpen);
         if (closeIdx === -1) {
-          thinkText = raw.slice(afterOpen);
-          thinkClosed = false;
-          replyText = "";
-        } else {
-          thinkText = raw.slice(afterOpen, closeIdx);
-          thinkClosed = true;
-          replyText = raw.slice(closeIdx + closeTag.length);
+          return { thinkText: work.slice(afterOpen), replyText: "", thinkClosed: false };
         }
+        let thinkText = work.slice(afterOpen, closeIdx);
+        let replyText = work.slice(closeIdx + CLOSE.length);
+        let thinkClosed = true;
+        while (true) {
+          const o2 = replyText.indexOf(OPEN);
+          if (o2 === -1) break;
+          const after2 = o2 + OPEN.length;
+          const c2 = replyText.indexOf(CLOSE, after2);
+          if (c2 === -1) {
+            thinkText += `
+
+${replyText.slice(after2)}`;
+            replyText = replyText.slice(0, o2);
+            thinkClosed = false;
+            break;
+          }
+          thinkText += `
+
+${replyText.slice(after2, c2)}`;
+          replyText = replyText.slice(0, o2) + replyText.slice(c2 + CLOSE.length);
+        }
+        replyText = replyText.split(OPEN).join("").split(CLOSE).join("").trim();
         return { thinkText, replyText, thinkClosed };
       };
       const ensureThinkBlock = () => {
@@ -6077,6 +6095,12 @@ ${text2}` : text2;
           return;
         }
         if (msg?.type === "tool_log") {
+          return;
+        }
+        if (msg.type === "chunk_reset") {
+          if (typingIndicator.parentNode) typingIndicator.remove();
+          rawResponse = String(msg.content ?? "");
+          renderStream(false);
           return;
         }
         if (msg.type === "chunk") {

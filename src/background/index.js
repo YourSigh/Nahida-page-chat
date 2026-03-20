@@ -86,11 +86,27 @@ async function* streamChatCompletion(config, messages) {
 }
 
 function getReplyAfterThink(text) {
-  const openIdx = text.indexOf("<think>");
-  if (openIdx === -1) return text;
-  const closeIdx = text.indexOf("</think>", openIdx + 7);
-  if (closeIdx === -1) return null;
-  return text.slice(closeIdx + 8);
+  const t = String(text);
+  const openHtml = t.indexOf("<think>");
+  const openMd = t.indexOf("`think`");
+  let openIdx = -1;
+  const openLen = 7; // ` ` and `think` are both length 7
+  if (openHtml === -1 && openMd === -1) return t;
+  if (openHtml === -1) openIdx = openMd;
+  else if (openMd === -1) openIdx = openHtml;
+  else openIdx = Math.min(openHtml, openMd);
+
+  const afterOpen = openIdx + openLen;
+  const closeHtml = t.indexOf("</think>", afterOpen);
+  const closeMd = t.indexOf("`/think`", afterOpen);
+  const closeLen = 8;
+  if (closeHtml === -1 && closeMd === -1) return null;
+  let closeIdx = -1;
+  if (closeHtml === -1) closeIdx = closeMd;
+  else if (closeMd === -1) closeIdx = closeHtml;
+  else closeIdx = Math.min(closeHtml, closeMd);
+
+  return t.slice(closeIdx + closeLen);
 }
 
 function safeParseJson(text) {
@@ -193,6 +209,39 @@ function looksLikeToolCallPayload(replyText) {
   return false;
 }
 
+function removeAllCompleteToolJsonObjects(text) {
+  let s = String(text);
+  let guard = 0;
+  while (guard < 50) {
+    guard += 1;
+    const extracted = extractFirstJsonObject(s);
+    if (!extracted) break;
+    const fixed = fixUnescapedNewlines(extracted);
+    const parsed = safeParseJson(fixed);
+    if (parsed?.type !== "tool") break;
+    const start = s.indexOf(extracted);
+    if (start === -1) break;
+    s = `${s.slice(0, start)}${s.slice(start + extracted.length)}`;
+    s = s.replace(/\n{3,}/g, "\n\n");
+  }
+  return s;
+}
+
+/** Strip tool-call JSON from text shown in chat while streaming (handles preface + JSON). */
+function uiSafeAssistantStreamText(fullResponse) {
+  let s = removeAllCompleteToolJsonObjects(fullResponse);
+  const lastBrace = s.lastIndexOf("{");
+  if (lastBrace === -1) return s;
+  const tail = s.slice(lastBrace);
+  if (tail.length <= 1 || tail.length > 12000) return s;
+  const complete = extractFirstJsonObject(tail);
+  if (complete) return s;
+  if (/"type"\s*:\s*"tool"/.test(tail) || /"type"\s*:\s*'tool'/.test(tail)) {
+    return s.slice(0, lastBrace).replace(/\s+$/u, "");
+  }
+  return s;
+}
+
 async function callChatCompletionOnce(config, messages) {
   const url = `${config.apiBaseUrl}/chat/completions`;
   const response = await fetch(url, {
@@ -275,18 +324,26 @@ async function runAgent(config, userMessages, port) {
     let fullResponse = "";
     let phase = "detecting";
     let streamedAny = false;
+    let uiSentLen = 0;
 
     for await (const chunk of streamChatCompletion(config, messages)) {
       if (disconnected) return;
       fullResponse += chunk;
 
-      if (phase === "streaming") {
-        if (!safePost(port, { type: "chunk", content: chunk })) return;
-        streamedAny = true;
+      if (phase === "tool_buffering") {
         continue;
       }
 
-      if (phase === "tool_buffering") {
+      if (phase === "streaming") {
+        const safe = uiSafeAssistantStreamText(fullResponse);
+        if (safe.length > uiSentLen) {
+          if (!safePost(port, { type: "chunk", content: safe.slice(uiSentLen) })) return;
+          uiSentLen = safe.length;
+        } else if (safe.length < uiSentLen) {
+          if (!safePost(port, { type: "chunk_reset", content: safe })) return;
+          uiSentLen = safe.length;
+        }
+        streamedAny = true;
         continue;
       }
 
@@ -300,7 +357,9 @@ async function runAgent(config, userMessages, port) {
         phase = "tool_buffering";
       } else {
         phase = "streaming";
-        if (!safePost(port, { type: "chunk", content: fullResponse })) return;
+        const safe = uiSafeAssistantStreamText(fullResponse);
+        if (!safePost(port, { type: "chunk", content: safe })) return;
+        uiSentLen = safe.length;
         streamedAny = true;
       }
     }
@@ -332,9 +391,19 @@ async function runAgent(config, userMessages, port) {
     return;
   }
 
+  let fullTail = "";
+  let uiSentLenTail = 0;
   for await (const chunk of streamChatCompletion(config, messages)) {
     if (disconnected) return;
-    if (!safePost(port, { type: "chunk", content: chunk })) return;
+    fullTail += chunk;
+    const safe = uiSafeAssistantStreamText(fullTail);
+    if (safe.length > uiSentLenTail) {
+      if (!safePost(port, { type: "chunk", content: safe.slice(uiSentLenTail) })) return;
+      uiSentLenTail = safe.length;
+    } else if (safe.length < uiSentLenTail) {
+      if (!safePost(port, { type: "chunk_reset", content: safe })) return;
+      uiSentLenTail = safe.length;
+    }
   }
   safePost(port, { type: "done" });
 }
