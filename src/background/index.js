@@ -24,9 +24,9 @@ const SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》中
 你正在帮助用户理解当前网页内容，你可以"请求工具"来实时读取页面 DOM 信息，但你不能直接操作页面。
 
 你可用的工具只有：
-- read_page: 读取当前页面标题/URL/描述/主要文本
-- get_visible_text: 读取当前视口附近的可见文本（更实时、更相关）
-- query: 用 CSS selector 查询元素列表（返回 text/tag/attributes 等）
+- read_page: 读取当前页面标题/URL/描述/主要文本（会尽量合并同源及可注入的 iframe 内正文）
+- get_visible_text: 读取当前视口附近的可见文本（会合并各 frame 内当前视口可见片段）
+- query: 用 CSS selector 查询元素列表（返回 text/tag/attributes 等；会在所有可注入的 frame 中查询并合并）
 
 ## 回复方式
 - 需要调用工具时，只输出一行工具调用 JSON，不要输出任何其他文字：
@@ -338,6 +338,150 @@ async function runAgent(config, userMessages, port) {
   }
   safePost(port, { type: "done" });
 }
+
+function nahidaInjectReadFrame(maxPerFrame) {
+  const max = Math.min(12000, Math.max(200, Number(maxPerFrame) || 2000));
+  const url = String(location.href || "");
+  const title = String(document.title || "");
+  const isTop = window === window.top;
+  let text = "";
+  try {
+    const mainEl = document.querySelector("main, article, [role='main']");
+    const root = mainEl || document.body;
+    const bodyText = root ? String(root.innerText || "") : "";
+    text = bodyText.slice(0, max).trim();
+  } catch (e) {
+    text = "";
+  }
+  return { url, title, text, isTop };
+}
+
+function nahidaInjectVisibleFrame(maxPerFrame) {
+  const max = Math.min(8000, Math.max(200, Number(maxPerFrame) || 2000));
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const sel =
+    "p, li, h1, h2, h3, h4, h5, h6, article, main, section, div, span, a, button, td, th";
+  const chunks = [];
+  try {
+    const nodes = Array.from(document.querySelectorAll(sel)).slice(0, 800);
+    for (let i = 0; i < nodes.length; i += 1) {
+      const el = nodes[i];
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      const visible = rect.bottom >= 0 && rect.right >= 0 && rect.top <= vh && rect.left <= vw;
+      if (!visible) continue;
+      const t = String(el.innerText || el.textContent || "").trim();
+      if (!t) continue;
+      chunks.push(t.replace(/\s+/g, " "));
+      if (chunks.join("\n").length >= max) break;
+    }
+  } catch (e) {}
+  return {
+    url: String(location.href || ""),
+    text: chunks.join("\n").slice(0, max),
+    isTop: window === window.top
+  };
+}
+
+function nahidaInjectQueryFrame(selector, limit, includeAttrs) {
+  const lim = Math.min(50, Math.max(1, Number(limit) || 10));
+  const attrs = Array.isArray(includeAttrs) ? includeAttrs : [];
+  const url = String(location.href || "");
+  let elements = [];
+  try {
+    elements = Array.from(document.querySelectorAll(String(selector || ""))).slice(0, lim);
+  } catch (e) {
+    return { url, error: String(e?.message || e), results: [] };
+  }
+  const results = elements.map((el) => {
+    const at = {};
+    for (let i = 0; i < attrs.length; i += 1) {
+      const k = attrs[i];
+      const v = el.getAttribute?.(k);
+      if (v != null) at[k] = v;
+    }
+    const rect = el.getBoundingClientRect();
+    return {
+      tag: el.tagName?.toLowerCase?.() || "",
+      text: String(el.innerText || el.textContent || "").trim().slice(0, 500),
+      attrs: at,
+      rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
+    };
+  });
+  return { url, results };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || typeof msg.type !== "string") return false;
+
+  if (msg.type === "nahida_read_iframe_frames") {
+    const tabId = sender.tab?.id;
+    if (tabId == null) {
+      sendResponse({ error: "no_tab", frames: [] });
+      return false;
+    }
+    const maxPerFrame = msg.maxPerFrame || 2000;
+    chrome.scripting
+      .executeScript({
+        target: { tabId, allFrames: true },
+        func: nahidaInjectReadFrame,
+        args: [maxPerFrame]
+      })
+      .then((injectionResults) => {
+        const frames = (injectionResults || [])
+          .map((r) => r.result)
+          .filter((f) => f && !f.isTop && f.text);
+        sendResponse({ frames });
+      })
+      .catch((e) => sendResponse({ error: String(e?.message || e), frames: [] }));
+    return true;
+  }
+
+  if (msg.type === "nahida_visible_all_frames") {
+    const tabId = sender.tab?.id;
+    if (tabId == null) {
+      sendResponse({ error: "no_tab", frames: [] });
+      return false;
+    }
+    const maxPerFrame = msg.maxPerFrame || 800;
+    chrome.scripting
+      .executeScript({
+        target: { tabId, allFrames: true },
+        func: nahidaInjectVisibleFrame,
+        args: [maxPerFrame]
+      })
+      .then((injectionResults) => {
+        const frames = (injectionResults || []).map((r) => r.result).filter(Boolean);
+        sendResponse({ frames });
+      })
+      .catch((e) => sendResponse({ error: String(e?.message || e), frames: [] }));
+    return true;
+  }
+
+  if (msg.type === "nahida_query_all_frames") {
+    const tabId = sender.tab?.id;
+    if (tabId == null) {
+      sendResponse({ error: "no_tab", perFrame: [] });
+      return false;
+    }
+    const { selector, limit, includeAttrs } = msg;
+    chrome.scripting
+      .executeScript({
+        target: { tabId, allFrames: true },
+        func: nahidaInjectQueryFrame,
+        args: [selector, limit, includeAttrs || []]
+      })
+      .then((injectionResults) => {
+        const perFrame = (injectionResults || []).map((r) => r.result).filter(Boolean);
+        sendResponse({ perFrame });
+      })
+      .catch((e) => sendResponse({ error: String(e?.message || e), perFrame: [] }));
+    return true;
+  }
+
+  return false;
+});
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "nahida-chat") return;

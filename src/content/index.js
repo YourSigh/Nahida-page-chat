@@ -372,7 +372,22 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     return parts.join("\n");
   };
 
-  const tool_read_page = ({ maxChars = 2000 } = {}) => {
+  const sendRuntimeMessage = (payload) =>
+    new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage(payload, (resp) => {
+          if (chrome.runtime.lastError) {
+            resolve({ error: chrome.runtime.lastError.message });
+            return;
+          }
+          resolve(resp || {});
+        });
+      } catch (e) {
+        resolve({ error: String(e?.message || e) });
+      }
+    });
+
+  const tool_read_page = async ({ maxChars = 2000 } = {}) => {
     const titleText = document.title || "";
     const metaDesc = document.querySelector('meta[name="description"]')?.content || "";
     const url = location.href;
@@ -382,14 +397,44 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       const bodyText = (mainEl || document.body).innerText || "";
       text = bodyText.slice(0, maxChars).trim();
     } catch {}
-    return { title: titleText, url, description: metaDesc, text };
+
+    let iframeSupplement = "";
+    let iframeCount = 0;
+    try {
+      const resp = await sendRuntimeMessage({
+        type: "nahida_read_iframe_frames",
+        maxPerFrame: Math.min(6000, maxChars)
+      });
+      const frames = resp.frames || [];
+      iframeCount = frames.length;
+      let budget = Math.max(0, maxChars - text.length - 40);
+      for (const f of frames) {
+        if (budget <= 0) break;
+        const block = `\n\n[iframe 内]\nURL: ${f.url}\n标题: ${f.title || ""}\n---\n${f.text}`;
+        const take = block.slice(0, budget);
+        iframeSupplement += take;
+        budget -= take.length;
+      }
+    } catch {}
+
+    const merged = (text + iframeSupplement).slice(0, maxChars);
+    return {
+      title: titleText,
+      url,
+      description: metaDesc,
+      text: merged,
+      iframeSnapshotsMerged: iframeCount
+    };
   };
 
-  const tool_get_visible_text = ({ maxChars = 2000 } = {}) => {
+  const getVisibleTextTopFrameOnly = ({ maxChars = 2000 } = {}) => {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    const nodes = Array.from(document.querySelectorAll("p, li, h1, h2, h3, h4, h5, h6, article, main, section, div, span, a, button"))
-      .slice(0, 800);
+    const nodes = Array.from(
+      document.querySelectorAll(
+        "p, li, h1, h2, h3, h4, h5, h6, article, main, section, div, span, a, button, td, th"
+      )
+    ).slice(0, 800);
     const chunks = [];
     for (const el of nodes) {
       const rect = el.getBoundingClientRect();
@@ -399,17 +444,39 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       const t = (el.innerText || el.textContent || "").trim();
       if (!t) continue;
       chunks.push(t.replace(/\s+/g, " "));
-      const joined = chunks.join("\n");
-      if (joined.length >= maxChars) break;
+      if (chunks.join("\n").length >= maxChars) break;
     }
-    const text = chunks.join("\n").slice(0, maxChars);
-    return { url: location.href, text };
+    return chunks.join("\n").slice(0, maxChars);
   };
 
-  const tool_query = ({ selector, limit = 10, includeAttrs = [] } = {}) => {
-    if (!selector || typeof selector !== "string") {
-      return { error: "selector 必填" };
+  const tool_get_visible_text = async ({ maxChars = 2000 } = {}) => {
+    const fallback = getVisibleTextTopFrameOnly({ maxChars });
+    try {
+      const resp = await sendRuntimeMessage({
+        type: "nahida_visible_all_frames",
+        maxPerFrame: Math.min(4000, Math.ceil(maxChars / 2))
+      });
+      if (resp.error || !resp.frames?.length) {
+        return { url: location.href, text: fallback };
+      }
+      const parts = [];
+      let budget = maxChars;
+      for (const f of resp.frames) {
+        if (!f?.text || budget <= 0) continue;
+        const label = f.isTop ? "[顶栏 frame]" : "[子 frame]";
+        const piece = `${label} ${f.url}\n${f.text}\n\n`;
+        const take = piece.slice(0, budget);
+        parts.push(take);
+        budget -= take.length;
+      }
+      const merged = parts.join("").trim().slice(0, maxChars);
+      return { url: location.href, text: merged || fallback };
+    } catch {
+      return { url: location.href, text: fallback };
     }
+  };
+
+  const tool_query_top_only = ({ selector, limit = 10, includeAttrs = [] } = {}) => {
     let elements = [];
     try {
       elements = Array.from(document.querySelectorAll(selector)).slice(0, Math.max(1, Math.min(50, limit)));
@@ -427,10 +494,44 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         tag: el.tagName?.toLowerCase?.() || "",
         text: (el.innerText || el.textContent || "").trim().slice(0, 500),
         attrs,
-        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+        frameUrl: location.href
       };
     });
     return { selector, count: results.length, results };
+  };
+
+  const tool_query = async ({ selector, limit = 10, includeAttrs = [] } = {}) => {
+    if (!selector || typeof selector !== "string") {
+      return { error: "selector 必填" };
+    }
+    const lim = Math.max(1, Math.min(50, limit));
+    try {
+      const resp = await sendRuntimeMessage({
+        type: "nahida_query_all_frames",
+        selector,
+        limit: lim,
+        includeAttrs
+      });
+      if (resp.error || !resp.perFrame?.length) {
+        return tool_query_top_only({ selector, limit: lim, includeAttrs });
+      }
+      const merged = [];
+      for (const pf of resp.perFrame) {
+        if (pf.error) continue;
+        for (const r of pf.results || []) {
+          merged.push({ ...r, frameUrl: pf.url });
+          if (merged.length >= lim) break;
+        }
+        if (merged.length >= lim) break;
+      }
+      if (!merged.length) {
+        return tool_query_top_only({ selector, limit: lim, includeAttrs });
+      }
+      return { selector, count: merged.length, results: merged.slice(0, lim) };
+    } catch (e) {
+      return tool_query_top_only({ selector, limit: lim, includeAttrs });
+    }
   };
 
   const runTool = async (name, args) => {

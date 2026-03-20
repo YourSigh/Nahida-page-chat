@@ -23,9 +23,9 @@
 \u4F60\u6B63\u5728\u5E2E\u52A9\u7528\u6237\u7406\u89E3\u5F53\u524D\u7F51\u9875\u5185\u5BB9\uFF0C\u4F60\u53EF\u4EE5"\u8BF7\u6C42\u5DE5\u5177"\u6765\u5B9E\u65F6\u8BFB\u53D6\u9875\u9762 DOM \u4FE1\u606F\uFF0C\u4F46\u4F60\u4E0D\u80FD\u76F4\u63A5\u64CD\u4F5C\u9875\u9762\u3002
 
 \u4F60\u53EF\u7528\u7684\u5DE5\u5177\u53EA\u6709\uFF1A
-- read_page: \u8BFB\u53D6\u5F53\u524D\u9875\u9762\u6807\u9898/URL/\u63CF\u8FF0/\u4E3B\u8981\u6587\u672C
-- get_visible_text: \u8BFB\u53D6\u5F53\u524D\u89C6\u53E3\u9644\u8FD1\u7684\u53EF\u89C1\u6587\u672C\uFF08\u66F4\u5B9E\u65F6\u3001\u66F4\u76F8\u5173\uFF09
-- query: \u7528 CSS selector \u67E5\u8BE2\u5143\u7D20\u5217\u8868\uFF08\u8FD4\u56DE text/tag/attributes \u7B49\uFF09
+- read_page: \u8BFB\u53D6\u5F53\u524D\u9875\u9762\u6807\u9898/URL/\u63CF\u8FF0/\u4E3B\u8981\u6587\u672C\uFF08\u4F1A\u5C3D\u91CF\u5408\u5E76\u540C\u6E90\u53CA\u53EF\u6CE8\u5165\u7684 iframe \u5185\u6B63\u6587\uFF09
+- get_visible_text: \u8BFB\u53D6\u5F53\u524D\u89C6\u53E3\u9644\u8FD1\u7684\u53EF\u89C1\u6587\u672C\uFF08\u4F1A\u5408\u5E76\u5404 frame \u5185\u5F53\u524D\u89C6\u53E3\u53EF\u89C1\u7247\u6BB5\uFF09
+- query: \u7528 CSS selector \u67E5\u8BE2\u5143\u7D20\u5217\u8868\uFF08\u8FD4\u56DE text/tag/attributes \u7B49\uFF1B\u4F1A\u5728\u6240\u6709\u53EF\u6CE8\u5165\u7684 frame \u4E2D\u67E5\u8BE2\u5E76\u5408\u5E76\uFF09
 
 ## \u56DE\u590D\u65B9\u5F0F
 - \u9700\u8981\u8C03\u7528\u5DE5\u5177\u65F6\uFF0C\u53EA\u8F93\u51FA\u4E00\u884C\u5DE5\u5177\u8C03\u7528 JSON\uFF0C\u4E0D\u8981\u8F93\u51FA\u4EFB\u4F55\u5176\u4ED6\u6587\u5B57\uFF1A
@@ -332,6 +332,131 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
     }
     safePost(port, { type: "done" });
   }
+  function nahidaInjectReadFrame(maxPerFrame) {
+    const max = Math.min(12e3, Math.max(200, Number(maxPerFrame) || 2e3));
+    const url = String(location.href || "");
+    const title = String(document.title || "");
+    const isTop = window === window.top;
+    let text = "";
+    try {
+      const mainEl = document.querySelector("main, article, [role='main']");
+      const root = mainEl || document.body;
+      const bodyText = root ? String(root.innerText || "") : "";
+      text = bodyText.slice(0, max).trim();
+    } catch (e) {
+      text = "";
+    }
+    return { url, title, text, isTop };
+  }
+  function nahidaInjectVisibleFrame(maxPerFrame) {
+    const max = Math.min(8e3, Math.max(200, Number(maxPerFrame) || 2e3));
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const sel = "p, li, h1, h2, h3, h4, h5, h6, article, main, section, div, span, a, button, td, th";
+    const chunks = [];
+    try {
+      const nodes = Array.from(document.querySelectorAll(sel)).slice(0, 800);
+      for (let i = 0; i < nodes.length; i += 1) {
+        const el = nodes[i];
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) continue;
+        const visible = rect.bottom >= 0 && rect.right >= 0 && rect.top <= vh && rect.left <= vw;
+        if (!visible) continue;
+        const t = String(el.innerText || el.textContent || "").trim();
+        if (!t) continue;
+        chunks.push(t.replace(/\s+/g, " "));
+        if (chunks.join("\n").length >= max) break;
+      }
+    } catch (e) {
+    }
+    return {
+      url: String(location.href || ""),
+      text: chunks.join("\n").slice(0, max),
+      isTop: window === window.top
+    };
+  }
+  function nahidaInjectQueryFrame(selector, limit, includeAttrs) {
+    const lim = Math.min(50, Math.max(1, Number(limit) || 10));
+    const attrs = Array.isArray(includeAttrs) ? includeAttrs : [];
+    const url = String(location.href || "");
+    let elements = [];
+    try {
+      elements = Array.from(document.querySelectorAll(String(selector || ""))).slice(0, lim);
+    } catch (e) {
+      return { url, error: String(e?.message || e), results: [] };
+    }
+    const results = elements.map((el) => {
+      const at = {};
+      for (let i = 0; i < attrs.length; i += 1) {
+        const k = attrs[i];
+        const v = el.getAttribute?.(k);
+        if (v != null) at[k] = v;
+      }
+      const rect = el.getBoundingClientRect();
+      return {
+        tag: el.tagName?.toLowerCase?.() || "",
+        text: String(el.innerText || el.textContent || "").trim().slice(0, 500),
+        attrs: at,
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
+      };
+    });
+    return { url, results };
+  }
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg || typeof msg.type !== "string") return false;
+    if (msg.type === "nahida_read_iframe_frames") {
+      const tabId = sender.tab?.id;
+      if (tabId == null) {
+        sendResponse({ error: "no_tab", frames: [] });
+        return false;
+      }
+      const maxPerFrame = msg.maxPerFrame || 2e3;
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: nahidaInjectReadFrame,
+        args: [maxPerFrame]
+      }).then((injectionResults) => {
+        const frames = (injectionResults || []).map((r) => r.result).filter((f) => f && !f.isTop && f.text);
+        sendResponse({ frames });
+      }).catch((e) => sendResponse({ error: String(e?.message || e), frames: [] }));
+      return true;
+    }
+    if (msg.type === "nahida_visible_all_frames") {
+      const tabId = sender.tab?.id;
+      if (tabId == null) {
+        sendResponse({ error: "no_tab", frames: [] });
+        return false;
+      }
+      const maxPerFrame = msg.maxPerFrame || 800;
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: nahidaInjectVisibleFrame,
+        args: [maxPerFrame]
+      }).then((injectionResults) => {
+        const frames = (injectionResults || []).map((r) => r.result).filter(Boolean);
+        sendResponse({ frames });
+      }).catch((e) => sendResponse({ error: String(e?.message || e), frames: [] }));
+      return true;
+    }
+    if (msg.type === "nahida_query_all_frames") {
+      const tabId = sender.tab?.id;
+      if (tabId == null) {
+        sendResponse({ error: "no_tab", perFrame: [] });
+        return false;
+      }
+      const { selector, limit, includeAttrs } = msg;
+      chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        func: nahidaInjectQueryFrame,
+        args: [selector, limit, includeAttrs || []]
+      }).then((injectionResults) => {
+        const perFrame = (injectionResults || []).map((r) => r.result).filter(Boolean);
+        sendResponse({ perFrame });
+      }).catch((e) => sendResponse({ error: String(e?.message || e), perFrame: [] }));
+      return true;
+    }
+    return false;
+  });
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "nahida-chat") return;
     port.onMessage.addListener(async (msg) => {
