@@ -5555,7 +5555,6 @@
     image2.alt = "";
     image2.draggable = false;
     const croppedPngIconUrl = chrome.runtime.getURL("assets/floating-icon-cropped.png");
-    const svgIconUrl = chrome.runtime.getURL("assets/floating-icon.svg");
     const pngIconUrl = chrome.runtime.getURL("assets/floating-icon.png");
     image2.src = croppedPngIconUrl;
     fetch(croppedPngIconUrl).then((response) => {
@@ -5563,23 +5562,9 @@
         image2.src = croppedPngIconUrl;
         return;
       }
-      return fetch(pngIconUrl).then((pngResponse) => {
-        if (pngResponse.ok) {
-          image2.src = pngIconUrl;
-        } else {
-          image2.src = svgIconUrl;
-        }
-      });
+      image2.src = pngIconUrl;
     }).catch(() => {
-      fetch(pngIconUrl).then((response) => {
-        if (response.ok) {
-          image2.src = pngIconUrl;
-        } else {
-          image2.src = svgIconUrl;
-        }
-      }).catch(() => {
-        image2.src = svgIconUrl;
-      });
+      image2.src = pngIconUrl;
     });
     button.appendChild(image2);
     wrapper.appendChild(button);

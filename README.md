@@ -13,7 +13,7 @@
 - 对话框显示时悬浮图标会自动隐藏，关闭对话框后恢复显示
 - 对话框支持背景图（`assets/background.jpeg`）
 - 扩展栏图标也会使用你的图片
-- 当前图标资源放在 `assets/floating-icon.svg`
+- 主 Logo 为 `assets/floating-icon.png`（见下方「图标资源」）
 - 支持 AI 对话（OpenAI 兼容接口），回复支持 Markdown 渲染
 - 支持 `<think>...</think>` 思考过程展示（可折叠，类似 DeepSeek）
 - 内置“只读网页智能体”：模型可按需实时读取当前页面 DOM（不做跨页面/跨浏览器操作）
@@ -37,7 +37,8 @@
 - `background.js`: MV3 service worker（由 `src/` 打包产物，负责调用大模型 API / 工具调度）
 - `src/content/index.js`: 悬浮图标 + 对话框 UI + 工具执行（读取 DOM）
 - `src/background/index.js`: AI 对话与工具调用循环
-- `assets/floating-icon.svg`: 当前默认展示的悬浮图标
+- `assets/floating-icon.png`: 主 Logo（你维护的源图，不会被脚本覆盖）
+- `assets/floating-icon-cropped.png`: 由 `npm run icons` 从主图去边后生成，页面悬浮球优先使用
 
 ## 本地加载方式
 
@@ -72,18 +73,18 @@ npm run build
 npm run dev
 ```
 
-## 替换成你自己的原图
+## 图标资源（Logo）
 
-如果你后面想把图标换成你手里的原始图片，只需要：
+1. 把你的主图放到 **`assets/floating-icon.png`**（建议带透明背景，方便自动去边）。
+2. 生成扩展栏用 `icon-*.png` 和悬浮球用的 **`floating-icon-cropped.png`**（会按透明像素 **trim** 掉一圈空隙，再缩放进方框；**不会改写** 你的 `floating-icon.png`）：
 
-1. 把你的原图放到 `assets/floating-icon.png`
-2. 回到扩展管理页点击重新加载
+```bash
+npm install
+npm run icons
+```
 
-插件会优先使用 `assets/floating-icon.png`，如果没有这个文件，才会自动回退到当前的 `assets/floating-icon.svg`。
+3. `npm run build` 后，在 `chrome://extensions` **重新加载**扩展。
 
-如果 `assets/floating-icon.png` 已经存在，还可以继续生成扩展栏需要的多尺寸图标文件：
+页面悬浮球：**优先** `floating-icon-cropped.png`，没有或加载失败则用 **`floating-icon.png`**。
 
-- `assets/icon-16.png`
-- `assets/icon-32.png`
-- `assets/icon-48.png`
-- `assets/icon-128.png`
+若源图没有透明通道、四周颜色与主体接近，自动 trim 可能效果不大，需要在画图软件里把画布裁紧一点再导出。
