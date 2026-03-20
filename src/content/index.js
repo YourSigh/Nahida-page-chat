@@ -94,7 +94,6 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   image.alt = "";
   image.draggable = false;
   const croppedPngIconUrl = chrome.runtime.getURL("assets/floating-icon-cropped.png");
-  const svgIconUrl = chrome.runtime.getURL("assets/floating-icon.svg");
   const pngIconUrl = chrome.runtime.getURL("assets/floating-icon.png");
   image.src = croppedPngIconUrl;
 
@@ -104,27 +103,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         image.src = croppedPngIconUrl;
         return;
       }
-
-      return fetch(pngIconUrl).then((pngResponse) => {
-        if (pngResponse.ok) {
-          image.src = pngIconUrl;
-        } else {
-          image.src = svgIconUrl;
-        }
-      });
+      image.src = pngIconUrl;
     })
     .catch(() => {
-      fetch(pngIconUrl)
-        .then((response) => {
-          if (response.ok) {
-            image.src = pngIconUrl;
-          } else {
-            image.src = svgIconUrl;
-          }
-        })
-        .catch(() => {
-          image.src = svgIconUrl;
-        });
+      image.src = pngIconUrl;
     });
 
   button.appendChild(image);
