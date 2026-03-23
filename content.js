@@ -5536,6 +5536,331 @@
     const EDGE_GAP = 20;
     const DIALOG_GAP = 12;
     const DRAG_THRESHOLD_PX = 6;
+    const NETWORK_HOOKED_KEY = "__nahida_network_hooked__";
+    const apiBuffer = [];
+    const API_BUFFER_MAX = 800;
+    const apiRespBuffer = [];
+    const API_RESP_BUFFER_MAX = 80;
+    let apiListenerInstalled = false;
+    let apiHookInjected = false;
+    const pushApiItem = (item) => {
+      if (!item || typeof item.url !== "string") return;
+      if (apiBuffer.length >= API_BUFFER_MAX) apiBuffer.shift();
+      apiBuffer.push(item);
+    };
+    const pushApiRespItem = (item) => {
+      if (!item || typeof item.url !== "string") return;
+      if (apiRespBuffer.length >= API_RESP_BUFFER_MAX) apiRespBuffer.shift();
+      apiRespBuffer.push(item);
+    };
+    const ensureApiHooked = () => {
+      if (apiHookInjected || window[NETWORK_HOOKED_KEY]) return;
+      apiHookInjected = true;
+      window[NETWORK_HOOKED_KEY] = true;
+      if (!apiListenerInstalled) {
+        apiListenerInstalled = true;
+        window.addEventListener(
+          "message",
+          (event) => {
+            const data = event?.data;
+            if (!data || data.__nahidaNet !== true) return;
+            const kind = data.item?.kind;
+            if (kind === "fetch" || kind === "xhr") {
+              pushApiItem(data.item);
+            } else if (kind === "fetch_resp" || kind === "xhr_resp") {
+              pushApiRespItem(data.item);
+            }
+          },
+          false
+        );
+      }
+      try {
+        const injected = `(() => {
+        try {
+          if (window.__nahidaApiCaptureInstalled) return;
+          window.__nahidaApiCaptureInstalled = true;
+
+          const send = (item) => {
+            try { window.postMessage({ __nahidaNet: true, item }, "*"); } catch(e) {}
+          };
+
+          const normalizeUrl = (rawUrl) => {
+            try { return new URL(String(rawUrl || ""), window.location.href).toString(); } catch(e) { return String(rawUrl || ""); }
+          };
+
+          const getCfg = () => window.__nahidaNetCaptureConfig || {};
+          const shouldCapture = () => {
+            const cfg = getCfg();
+            return !!cfg.enabled && !!cfg.captureResponses;
+          };
+
+          const canCaptureAnother = () => {
+            const cfg = getCfg();
+            const max = Number(cfg.maxResponses);
+            const cap = Number.isFinite(max) && max > 0 ? max : 20;
+            const cur = Number(window.__nahidaNetRespCount || 0);
+            return cur < cap;
+          };
+
+          const incRespCount = () => {
+            const cur = Number(window.__nahidaNetRespCount || 0);
+            window.__nahidaNetRespCount = cur + 1;
+            return window.__nahidaNetRespCount;
+          };
+
+          const tryCaptureFetchResponse = async (resp, meta) => {
+            if (!shouldCapture()) return;
+            if (!canCaptureAnother()) return;
+            try { incRespCount(); } catch(e) {}
+            try {
+              const status = resp?.status;
+              const ok = resp?.ok;
+              const contentType = resp?.headers?.get?.("content-type") || "";
+              let text = "";
+              try {
+                const cloned = resp && resp.clone ? resp.clone() : null;
+                if (cloned) text = await cloned.text();
+              } catch(e) {}
+
+              const cfg = getCfg();
+              const maxChars = Number(cfg.maxResponseChars);
+              if (Number.isFinite(maxChars) && maxChars > 0 && typeof text === "string" && text.length > maxChars) {
+                text = text.slice(0, maxChars);
+              }
+
+              send({
+                kind: "fetch_resp",
+                method: meta?.method || "GET",
+                url: meta?.url || "",
+                status,
+                ok,
+                contentType,
+                responseText: text,
+                ts: Date.now()
+              });
+            } catch(e) {}
+          };
+
+          const originalFetch = window.fetch;
+          if (typeof originalFetch === "function") {
+            window.fetch = function(input, init) {
+              const method = (init && init.method ? String(init.method) : "GET").toUpperCase();
+              const rawUrl = (typeof input === "string") ? input : (input && input.url ? input.url : "");
+              const url = normalizeUrl(rawUrl);
+
+              send({ kind: "fetch", method, url, ts: Date.now() });
+
+              const meta = { method, url };
+              const p = originalFetch.apply(this, arguments);
+              try {
+                if (p && typeof p.then === "function") {
+                  p.then((resp) => { tryCaptureFetchResponse(resp, meta); }).catch(() => {});
+                }
+              } catch(e) {}
+              return p;
+            };
+          }
+
+          const proto = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
+          if (proto && typeof proto.open === "function") {
+            const originalOpen = proto.open;
+            proto.open = function(method, url) {
+              const m = String(method || "").toUpperCase() || "GET";
+              const u = normalizeUrl(url);
+
+              send({ kind: "xhr", method: m, url: u, ts: Date.now() });
+              this.__nahidaNetMeta = { method: m, url: u };
+              return originalOpen.apply(this, arguments);
+            };
+
+            const originalSend = proto.send;
+            if (typeof originalSend === "function") {
+              proto.send = function(body) {
+                try {
+                  const xhr = this;
+                  const handler = () => {
+                    try {
+                      if (!window.__nahidaNetCaptureConfig?.enabled || !window.__nahidaNetCaptureConfig?.captureResponses) return;
+                      if (!canCaptureAnother()) return;
+                      incRespCount();
+
+                      const meta = xhr.__nahidaNetMeta || { method: "GET", url: "" };
+                      const status = xhr.status;
+                      const ok = status >= 200 && status < 300;
+                      const contentType = xhr.getResponseHeader ? (xhr.getResponseHeader("content-type") || "") : "";
+                      let text = "";
+                      try { text = xhr.responseText; } catch(e) { text = ""; }
+
+                      const cfg = getCfg();
+                      const maxChars = Number(cfg.maxResponseChars);
+                      if (Number.isFinite(maxChars) && maxChars > 0 && typeof text === "string" && text.length > maxChars) {
+                        text = text.slice(0, maxChars);
+                      }
+
+                      send({
+                        kind: "xhr_resp",
+                        method: meta?.method || "GET",
+                        url: meta?.url || "",
+                        status,
+                        ok,
+                        contentType,
+                        responseText: text,
+                        ts: Date.now()
+                      });
+                    } catch(e) {}
+                  };
+                  xhr.addEventListener("loadend", handler, { once: true });
+                } catch(e) {}
+                return originalSend.apply(this, arguments);
+              };
+            }
+          }
+        } catch(e) {}
+      })();`;
+        const script = document.createElement("script");
+        script.textContent = injected;
+        (document.head || document.documentElement).appendChild(script);
+        script.remove();
+      } catch {
+      }
+    };
+    const tool_get_api_endpoints = async ({
+      waitMs = 1500,
+      maxEntries = 200,
+      stripQuery = true,
+      reset = false
+    } = {}) => {
+      ensureApiHooked();
+      if (reset) apiBuffer.length = 0;
+      const stripFn = (url) => {
+        if (!stripQuery) return url;
+        try {
+          const u = new URL(String(url || ""), window.location.href);
+          u.search = "";
+          u.hash = "";
+          return u.toString();
+        } catch {
+          return String(url || "");
+        }
+      };
+      const ms = Number(waitMs);
+      if (Number.isFinite(ms) && ms > 0) {
+        await new Promise((r) => setTimeout(r, ms));
+      }
+      const perfItems = [];
+      try {
+        const resources = performance?.getEntriesByType?.("resource") || [];
+        const timeOrigin = performance?.timeOrigin || Date.now() - performance?.now?.();
+        for (const e of resources) {
+          const it = String(e?.initiatorType || "");
+          if (it !== "fetch" && it !== "xmlhttprequest") continue;
+          const name = String(e?.name || "");
+          if (!name) continue;
+          const ts = (Number.isFinite(e?.startTime) ? e.startTime : 0) + (Number.isFinite(timeOrigin) ? timeOrigin : Date.now());
+          perfItems.push({ kind: "perf", method: "GET", url: stripFn(name), ts });
+        }
+      } catch {
+      }
+      const all = apiBuffer.map((x) => ({
+        ...x,
+        url: stripFn(x.url)
+      })).concat(perfItems);
+      const slice = all.slice(Math.max(0, all.length - Math.max(1, Math.min(2e3, maxEntries))));
+      const map2 = /* @__PURE__ */ new Map();
+      for (const item of slice) {
+        const key = `${item?.method || "GET"} ${item?.url || ""}`;
+        if (!map2.has(key)) {
+          map2.set(key, {
+            method: item?.method || "GET",
+            url: item?.url || "",
+            kinds: /* @__PURE__ */ new Set([item?.kind || "unknown"]),
+            count: 1,
+            lastTs: item?.ts || 0
+          });
+        } else {
+          const v = map2.get(key);
+          v.count += 1;
+          v.lastTs = Math.max(v.lastTs, item?.ts || 0);
+          v.kinds.add(item?.kind || "unknown");
+        }
+      }
+      const endpoints = Array.from(map2.values()).map((v) => ({
+        method: v.method,
+        url: v.url,
+        count: v.count,
+        kinds: Array.from(v.kinds)
+      }));
+      endpoints.sort((a, b) => b.count - a.count || b.lastTs - a.lastTs);
+      return {
+        pageUrl: location.href,
+        capturedBufferSize: all.length,
+        returnedEndpoints: endpoints.slice(0, Math.max(1, Math.min(200, maxEntries))),
+        stripQuery
+      };
+    };
+    const tool_get_api_responses = async ({
+      waitMs = 2500,
+      maxEntries = 20,
+      stripQuery = true,
+      reset = true,
+      maxResponseChars = 4e3
+    } = {}) => {
+      ensureApiHooked();
+      if (reset) apiRespBuffer.length = 0;
+      const stripFn = (url) => {
+        if (!stripQuery) return url;
+        try {
+          const u = new URL(String(url || ""), window.location.href);
+          u.search = "";
+          u.hash = "";
+          return u.toString();
+        } catch {
+          return String(url || "");
+        }
+      };
+      const setCaptureCfg = (cfg) => {
+        try {
+          const script = document.createElement("script");
+          script.textContent = `window.__nahidaNetRespCount = 0; window.__nahidaNetCaptureConfig = ${JSON.stringify(cfg)};`;
+          (document.head || document.documentElement).appendChild(script);
+          script.remove();
+        } catch {
+        }
+      };
+      setCaptureCfg({
+        enabled: true,
+        captureResponses: true,
+        maxResponses: Math.max(1, Math.min(200, Number(maxEntries) || 20)),
+        maxResponseChars: Math.max(256, Math.min(2e4, Number(maxResponseChars) || 4e3))
+      });
+      const ms = Number(waitMs);
+      if (Number.isFinite(ms) && ms > 0) {
+        await new Promise((r) => setTimeout(r, ms));
+      }
+      setCaptureCfg({
+        enabled: false,
+        captureResponses: false,
+        maxResponses: Math.max(1, Math.min(200, Number(maxEntries) || 20)),
+        maxResponseChars: Math.max(256, Math.min(2e4, Number(maxResponseChars) || 4e3))
+      });
+      const all = Array.isArray(apiRespBuffer) ? apiRespBuffer : [];
+      const slice = all.slice(Math.max(0, all.length - Math.max(1, Math.min(2e3, maxEntries))));
+      const responses = slice.map((x) => ({
+        kind: x?.kind,
+        method: x?.method || "GET",
+        url: stripFn(x?.url),
+        status: x?.status,
+        ok: x?.ok,
+        contentType: x?.contentType,
+        responseText: typeof x?.responseText === "string" ? x.responseText : ""
+      })).sort((a, b) => (b.ok ? 1 : 0) - (a.ok ? 1 : 0));
+      return {
+        pageUrl: location.href,
+        capturedResponseCount: all.length,
+        returnedResponses: responses.slice(0, Math.max(1, Math.min(200, maxEntries))),
+        stripQuery
+      };
+    };
     if (document.getElementById(ROOT_ID)) {
       return;
     }
@@ -5945,6 +6270,8 @@ ${f.text}
       if (name === "read_page") return tool_read_page(args);
       if (name === "get_visible_text") return tool_get_visible_text(args);
       if (name === "query") return tool_query(args);
+      if (name === "get_api_endpoints") return tool_get_api_endpoints(args);
+      if (name === "get_api_responses") return tool_get_api_responses(args);
       return { error: `\u672A\u77E5\u5DE5\u5177: ${name}` };
     };
     const sendChat = () => {
