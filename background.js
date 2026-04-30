@@ -91,8 +91,9 @@
       buffer = lines.pop() || "";
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data: ")) continue;
-        const data = trimmed.slice(6);
+        if (!trimmed || !trimmed.startsWith("data:")) continue;
+        let data = trimmed.slice(5);
+        if (data.startsWith(" ")) data = data.slice(1);
         if (data === "[DONE]") return;
         try {
           const json = JSON.parse(data);
