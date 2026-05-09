@@ -472,8 +472,10 @@
   background: transparent;
 }
 
-.send-icon {
+.send-icon,
+.stop-icon {
   width: 36px;
+  height: 36px;
   object-fit: contain;
   display: block;
 }

@@ -593,6 +593,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   input.rows = 2;
   input.placeholder = "输入消息，Enter 发送，Shift/⌘+Enter 换行";
 
+  const sendIconUrl = chrome.runtime.getURL("assets/send.png");
+  const stopIconUrl = chrome.runtime.getURL("assets/stop.png");
+
   const sendButton = document.createElement("button");
   sendButton.className = "icon-button send";
   sendButton.type = "button";
@@ -602,7 +605,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   sendImg.className = "send-icon";
   sendImg.alt = "";
   sendImg.draggable = false;
-  sendImg.src = chrome.runtime.getURL("assets/send.png");
+  sendImg.src = sendIconUrl;
   sendButton.appendChild(sendImg);
 
   composer.append(input, sendButton);
@@ -613,6 +616,35 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const chatHistory = [];
   let isStreaming = false;
   let activePort = null;
+  /** 当前一轮对话的 port，用于「停止」发 abort / disconnect */
+  let chatStreamPort = null;
+  let streamWatchdogId = 0;
+
+  const clearStreamWatchdog = () => {
+    if (streamWatchdogId) {
+      clearTimeout(streamWatchdogId);
+      streamWatchdogId = 0;
+    }
+  };
+
+  const armStreamWatchdog = () => {
+    clearStreamWatchdog();
+    streamWatchdogId = setTimeout(() => {
+      streamWatchdogId = 0;
+      if (!isStreaming) return;
+      const p = chatStreamPort;
+      try {
+        p?.postMessage({ type: "abort_chat" });
+      } catch {}
+      setTimeout(() => {
+        if (!isStreaming) return;
+        try {
+          p?.disconnect();
+        } catch {}
+        chatStreamPort = null;
+      }, 150);
+    }, 180_000);
+  };
   const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
   const DEFAULT_LLM_CONFIG = {
     apiBaseUrl: "https://api.openai.com/v1",
@@ -688,10 +720,37 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     return el;
   };
 
+  const stopStreamingChat = () => {
+    const p = chatStreamPort;
+    if (!p) return;
+    try {
+      p.postMessage({ type: "abort_chat" });
+    } catch {}
+    setTimeout(() => {
+      if (!isStreaming) return;
+      try {
+        p.disconnect();
+      } catch {}
+      chatStreamPort = null;
+    }, 150);
+  };
+
   const setInputEnabled = (enabled) => {
     input.disabled = !enabled;
-    sendButton.disabled = !enabled;
     isStreaming = !enabled;
+    if (enabled) {
+      clearStreamWatchdog();
+      sendButton.setAttribute("aria-label", "发送");
+      sendImg.src = sendIconUrl;
+      sendImg.className = "send-icon";
+      sendButton.disabled = false;
+    } else {
+      armStreamWatchdog();
+      sendButton.setAttribute("aria-label", "停止生成");
+      sendImg.src = stopIconUrl;
+      sendImg.className = "stop-icon";
+      sendButton.disabled = false;
+    }
   };
 
   const getPageContext = () => {
@@ -920,6 +979,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     let thinkContentEl = null;
     let replyContentEl = null;
     const turnUserText = text;
+    let turnHandled = false;
 
     const parseThinkAndReply = (raw) => {
       const OPEN = "\x00THINK_O\x00";
@@ -1022,10 +1082,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
     try {
       activePort = chrome.runtime.connect({ name: "nahida-chat" });
+      chatStreamPort = activePort;
     } catch (error) {
       typingIndicator.remove();
       assistantEl.classList.replace("assistant", "error");
       assistantEl.textContent = `连接扩展失败: ${error.message}`;
+      chatStreamPort = null;
       setInputEnabled(true);
       return;
     }
@@ -1059,6 +1121,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         rawResponse += msg.content;
         renderStream(false);
       } else if (msg.type === "done") {
+        if (turnHandled) return;
+        turnHandled = true;
+        chatStreamPort = null;
+        clearStreamWatchdog();
         if (typingIndicator.parentNode) typingIndicator.remove();
         renderStream(true);
         const { replyText } = parseThinkAndReply(rawResponse);
@@ -1099,6 +1165,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
         activePort = null;
       } else if (msg.type === "error") {
+        if (turnHandled) return;
+        turnHandled = true;
+        chatStreamPort = null;
+        clearStreamWatchdog();
         if (typingIndicator.parentNode) typingIndicator.remove();
         assistantEl.classList.replace("assistant", "error");
         if (msg.error === "missing_api_key") {
@@ -1113,7 +1183,14 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     });
 
     activePort.onDisconnect.addListener(() => {
+      chatStreamPort = null;
+      if (turnHandled) {
+        activePort = null;
+        return;
+      }
       if (isStreaming) {
+        turnHandled = true;
+        clearStreamWatchdog();
         if (typingIndicator.parentNode) typingIndicator.remove();
         renderStream(true);
         const { replyText } = parseThinkAndReply(rawResponse);
@@ -1130,6 +1207,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
           chatHistory.push({ role: "assistant", content: reply || rawResponse });
         }
         setInputEnabled(true);
+        activePort = null;
+      } else {
         activePort = null;
       }
     });
@@ -1366,7 +1445,13 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       setSettingsOpen(false);
     } catch {}
   });
-  sendButton.addEventListener("click", () => sendChat());
+  sendButton.addEventListener("click", () => {
+    if (isStreaming) {
+      stopStreamingChat();
+      return;
+    }
+    sendChat();
+  });
 
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
