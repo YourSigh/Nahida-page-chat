@@ -62,7 +62,7 @@
 - \u5982\u679C\u51FA\u73B0\u201C\u610F\u5916/\u60CA\u8BB6/\u592A\u79BB\u8C31\u201D\uFF0C\u53EF\u80FD surprised
 - \u5982\u679C\u8BA8\u8BBA\u201C\u4F11\u606F/\u6162\u6162\u6765/\u4E0D\u6025\u201D\uFF0C\u53EF\u80FD relaxed
 - \u5982\u679C\u8868\u8FBE\u201C\u51B2/\u5F00\u59CB/\u5B8C\u6210/\u592A\u68D2\u4E86\u201D\uFF0C\u53EF\u80FD excited`;
-  async function* streamChatCompletion(config, messages) {
+  async function* streamChatCompletion(config, messages, signal) {
     const url = `${config.apiBaseUrl}/chat/completions`;
     const response = await fetch(url, {
       method: "POST",
@@ -70,7 +70,8 @@
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.apiKey}`
       },
-      body: JSON.stringify({ model: config.model, messages, stream: true })
+      body: JSON.stringify({ model: config.model, messages, stream: true }),
+      signal
     });
     if (!response.ok) {
       let detail = "";
@@ -83,24 +84,31 @@
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data:")) continue;
-        let data = trimmed.slice(5);
-        if (data.startsWith(" ")) data = data.slice(1);
-        if (data === "[DONE]") return;
-        try {
-          const json = JSON.parse(data);
-          const content = json?.choices?.[0]?.delta?.content;
-          if (content) yield content;
-        } catch {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data:")) continue;
+          let data = trimmed.slice(5);
+          if (data.startsWith(" ")) data = data.slice(1);
+          if (data === "[DONE]") return;
+          try {
+            const json = JSON.parse(data);
+            const content = json?.choices?.[0]?.delta?.content;
+            if (content) yield content;
+          } catch {
+          }
         }
+      }
+    } finally {
+      try {
+        reader.releaseLock();
+      } catch {
       }
     }
   }
@@ -273,21 +281,32 @@
   async function requestTool(port, name, args) {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     return await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error(`\u5DE5\u5177\u8C03\u7528\u8D85\u65F6: ${name}`));
-      }, 15e3);
+      let timeoutId = 0;
+      const cleanup = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = 0;
+        port.onMessage.removeListener(handler);
+        port.onDisconnect.removeListener(onDisconnect);
+      };
+      const onDisconnect = () => {
+        cleanup();
+        reject(new Error("\u5DF2\u53D6\u6D88\uFF08\u8FDE\u63A5\u65AD\u5F00\uFF09"));
+      };
       const handler = (msg) => {
         if (msg?.type !== "tool_result" || msg?.id !== id) return;
-        clearTimeout(timeout);
-        port.onMessage.removeListener(handler);
+        cleanup();
         resolve(msg.result);
       };
       port.onMessage.addListener(handler);
+      port.onDisconnect.addListener(onDisconnect);
+      timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error(`\u5DE5\u5177\u8C03\u7528\u8D85\u65F6: ${name}`));
+      }, 15e3);
       try {
         port.postMessage({ type: "tool", id, name, args });
       } catch (e) {
-        clearTimeout(timeout);
-        port.onMessage.removeListener(handler);
+        cleanup();
         reject(new Error(`Port \u5DF2\u65AD\u5F00\uFF0C\u65E0\u6CD5\u8C03\u7528\u5DE5\u5177: ${name}`));
       }
     });
@@ -317,7 +336,11 @@ ${String(assistantText || "").slice(0, 4e3)}` }
       return false;
     }
   }
-  async function runAgent(config, userMessages, port) {
+  function isAbortError(e) {
+    const name = e?.name;
+    return name === "AbortError" || typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError";
+  }
+  async function runAgent(config, userMessages, port, signal) {
     const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
     let disconnected = false;
     const onDisconnect = () => {
@@ -327,47 +350,74 @@ ${String(assistantText || "").slice(0, 4e3)}` }
     let toolCalls = 0;
     while (toolCalls < 5) {
       if (disconnected) return;
+      if (signal?.aborted) {
+        safePost(port, { type: "done" });
+        return;
+      }
       let fullResponse = "";
       let phase = "detecting";
       let streamedAny = false;
       let uiSentLen = 0;
-      for await (const chunk of streamChatCompletion(config, messages)) {
-        if (disconnected) return;
-        fullResponse += chunk;
-        if (phase === "tool_buffering") {
-          continue;
-        }
-        if (phase === "streaming") {
-          const safe = uiSafeAssistantStreamText(fullResponse);
-          if (safe.length > uiSentLen) {
-            if (!safePost(port, { type: "chunk", content: safe.slice(uiSentLen) })) return;
-            uiSentLen = safe.length;
-          } else if (safe.length < uiSentLen) {
-            if (!safePost(port, { type: "chunk_reset", content: safe })) return;
-            uiSentLen = safe.length;
+      try {
+        for await (const chunk of streamChatCompletion(config, messages, signal)) {
+          if (disconnected) return;
+          if (signal?.aborted) {
+            safePost(port, { type: "done" });
+            return;
           }
-          streamedAny = true;
-          continue;
+          fullResponse += chunk;
+          if (phase === "tool_buffering") {
+            continue;
+          }
+          if (phase === "streaming") {
+            const safe = uiSafeAssistantStreamText(fullResponse);
+            if (safe.length > uiSentLen) {
+              if (!safePost(port, { type: "chunk", content: safe.slice(uiSentLen) })) return;
+              uiSentLen = safe.length;
+            } else if (safe.length < uiSentLen) {
+              if (!safePost(port, { type: "chunk_reset", content: safe })) return;
+              uiSentLen = safe.length;
+            }
+            streamedAny = true;
+            continue;
+          }
+          const replyPart = getReplyAfterThink(fullResponse);
+          if (replyPart === null) continue;
+          const trimmedReply = replyPart.trimStart();
+          if (trimmedReply.length === 0) continue;
+          if (looksLikeToolCallPayload(trimmedReply)) {
+            phase = "tool_buffering";
+          } else {
+            phase = "streaming";
+            const safe = uiSafeAssistantStreamText(fullResponse);
+            if (!safePost(port, { type: "chunk", content: safe })) return;
+            uiSentLen = safe.length;
+            streamedAny = true;
+          }
         }
-        const replyPart = getReplyAfterThink(fullResponse);
-        if (replyPart === null) continue;
-        const trimmedReply = replyPart.trimStart();
-        if (trimmedReply.length === 0) continue;
-        if (looksLikeToolCallPayload(trimmedReply)) {
-          phase = "tool_buffering";
-        } else {
-          phase = "streaming";
-          const safe = uiSafeAssistantStreamText(fullResponse);
-          if (!safePost(port, { type: "chunk", content: safe })) return;
-          uiSentLen = safe.length;
-          streamedAny = true;
+      } catch (e) {
+        if (signal?.aborted || isAbortError(e)) {
+          safePost(port, { type: "done" });
+          return;
         }
+        throw e;
       }
       const parsedAtEnd = parseAgentJson(fullResponse);
       if (parsedAtEnd?.type === "tool") {
         toolCalls += 1;
         if (!safePost(port, { type: "tool_log", name: parsedAtEnd.name, args: parsedAtEnd.args || {} })) return;
-        const result = await requestTool(port, parsedAtEnd.name, parsedAtEnd.args || {});
+        let result;
+        try {
+          result = await requestTool(port, parsedAtEnd.name, parsedAtEnd.args || {});
+        } catch (err) {
+          if (disconnected) return;
+          if (signal?.aborted) {
+            safePost(port, { type: "done" });
+            return;
+          }
+          safePost(port, { type: "error", error: String(err?.message || err) });
+          return;
+        }
         messages.push({ role: "assistant", content: JSON.stringify(parsedAtEnd) });
         messages.push({ role: "user", content: `\u5DE5\u5177\u7ED3\u679C(${parsedAtEnd.name}):
 ${JSON.stringify(result).slice(0, 6e3)}` });
@@ -387,17 +437,29 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
     }
     let fullTail = "";
     let uiSentLenTail = 0;
-    for await (const chunk of streamChatCompletion(config, messages)) {
-      if (disconnected) return;
-      fullTail += chunk;
-      const safe = uiSafeAssistantStreamText(fullTail);
-      if (safe.length > uiSentLenTail) {
-        if (!safePost(port, { type: "chunk", content: safe.slice(uiSentLenTail) })) return;
-        uiSentLenTail = safe.length;
-      } else if (safe.length < uiSentLenTail) {
-        if (!safePost(port, { type: "chunk_reset", content: safe })) return;
-        uiSentLenTail = safe.length;
+    try {
+      for await (const chunk of streamChatCompletion(config, messages, signal)) {
+        if (disconnected) return;
+        if (signal?.aborted) {
+          safePost(port, { type: "done" });
+          return;
+        }
+        fullTail += chunk;
+        const safe = uiSafeAssistantStreamText(fullTail);
+        if (safe.length > uiSentLenTail) {
+          if (!safePost(port, { type: "chunk", content: safe.slice(uiSentLenTail) })) return;
+          uiSentLenTail = safe.length;
+        } else if (safe.length < uiSentLenTail) {
+          if (!safePost(port, { type: "chunk_reset", content: safe })) return;
+          uiSentLenTail = safe.length;
+        }
       }
+    } catch (e) {
+      if (signal?.aborted || isAbortError(e)) {
+        safePost(port, { type: "done" });
+        return;
+      }
+      throw e;
     }
     safePost(port, { type: "done" });
   }
@@ -528,7 +590,12 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
   });
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "nahida-chat") return;
+    const abortController = new AbortController();
     port.onMessage.addListener(async (msg) => {
+      if (msg?.type === "abort_chat") {
+        abortController.abort();
+        return;
+      }
       const config = await getLlmConfig();
       if (!config.apiKey) {
         safePost(port, { type: "error", error: "missing_api_key" });
@@ -536,7 +603,7 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
       }
       try {
         if (msg.type === "chat") {
-          await runAgent(config, msg.messages, port);
+          await runAgent(config, msg.messages, port, abortController.signal);
           return;
         }
         if (msg.type === "sticker_decide") {
