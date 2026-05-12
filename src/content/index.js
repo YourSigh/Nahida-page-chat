@@ -1163,15 +1163,21 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     });
   };
 
-  const doSendChat = (text, imageDataUrls = []) => {
+  const doSendChat = (text, imageDataUrls = [], streamOptions = {}) => {
     const trimmed = String(text || "").trim();
     const urls = Array.isArray(imageDataUrls) ? imageDataUrls.filter(Boolean) : [];
     if (!trimmed && !urls.length) return;
 
-    const bubbleText = trimmed || (urls.length ? "（附图）" : "");
+    const includePageContext = streamOptions.includePageContext !== false;
+    let bubbleText =
+      streamOptions.bubbleText != null ? String(streamOptions.bubbleText || "").trim() : "";
+    if (!bubbleText) {
+      bubbleText = trimmed || (urls.length ? "（附图）" : "");
+    }
     appendMessage("user", bubbleText, { imageUrls: urls });
 
-    const pageContext = chatHistory.length === 0 ? getPageContext() : null;
+    const pageContext =
+      includePageContext && chatHistory.length === 0 ? getPageContext() : null;
 
     const questionLine =
       trimmed || "（用户仅上传了图片，请根据图片回答。）";
@@ -1197,7 +1203,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     let thinkBlockEl = null;
     let thinkContentEl = null;
     let replyContentEl = null;
-    const turnUserText = trimmed || (urls.length ? "[用户上传了图片]" : "");
+    const turnUserText =
+      streamOptions.turnUserText != null
+        ? String(streamOptions.turnUserText || "")
+        : trimmed || (urls.length ? "[用户上传了图片]" : "");
     let turnHandled = false;
 
     const parseThinkAndReply = (raw) => {
@@ -1444,7 +1453,113 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   });
   dialog.append(...resizeHandles);
 
-  shadowRoot.append(style, wrapper, dialog);
+  const MAX_SELECTION_TRANSLATE_CHARS = 24_000;
+
+  const selectionMenu = document.createElement("div");
+  selectionMenu.className = "selection-action-menu";
+  selectionMenu.setAttribute("role", "menu");
+  selectionMenu.hidden = true;
+
+  const translateMenuBtn = document.createElement("button");
+  translateMenuBtn.type = "button";
+  translateMenuBtn.className = "selection-action-item";
+  translateMenuBtn.textContent = "翻译";
+  translateMenuBtn.setAttribute("role", "menuitem");
+  selectionMenu.appendChild(translateMenuBtn);
+
+  let selectionMenuOpen = false;
+  let pendingSelectionText = "";
+
+  const selectionAnchoredInExtensionUi = (sel) => {
+    if (!sel || sel.rangeCount === 0) return false;
+    try {
+      const roots = [sel.anchorNode, sel.focusNode].filter(Boolean);
+      for (const n of roots) {
+        const el = n.nodeType === Node.TEXT_NODE ? n.parentElement : n;
+        if (el && host.contains(el)) return true;
+      }
+    } catch {}
+    return false;
+  };
+
+  const hideSelectionMenu = () => {
+    selectionMenu.classList.remove("open");
+    selectionMenu.hidden = true;
+    selectionMenuOpen = false;
+    pendingSelectionText = "";
+  };
+
+  const positionSelectionMenu = (sel) => {
+    const range = sel.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const pad = 8;
+    const mw = selectionMenu.offsetWidth || 108;
+    const mh = selectionMenu.offsetHeight || 40;
+    let left = rect.left + rect.width / 2 - mw / 2;
+    let top = rect.bottom + 8;
+    if (left < pad) left = pad;
+    if (left + mw > window.innerWidth - pad) left = window.innerWidth - pad - mw;
+    if (top + mh > window.innerHeight - pad) {
+      top = rect.top - mh - 8;
+    }
+    if (top < pad) top = pad;
+    selectionMenu.style.left = `${Math.round(left)}px`;
+    selectionMenu.style.top = `${Math.round(top)}px`;
+  };
+
+  const syncSelectionMenuFromDocument = () => {
+    const sel = document.getSelection();
+    if (!sel || sel.isCollapsed || selectionAnchoredInExtensionUi(sel)) {
+      hideSelectionMenu();
+      return;
+    }
+    const text = String(sel.toString() || "")
+      .replace(/\u200b/g, "")
+      .trim();
+    if (!text) {
+      hideSelectionMenu();
+      return;
+    }
+    if (text.length > MAX_SELECTION_TRANSLATE_CHARS) {
+      hideSelectionMenu();
+      setDialogOpen(true);
+      showComposerHint(`选中文本过长（>${MAX_SELECTION_TRANSLATE_CHARS} 字），请先缩短范围。`);
+      return;
+    }
+    pendingSelectionText = text;
+    selectionMenu.hidden = false;
+    selectionMenu.classList.add("open");
+    selectionMenuOpen = true;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!selectionMenuOpen) return;
+        try {
+          positionSelectionMenu(sel);
+        } catch {
+          hideSelectionMenu();
+        }
+      });
+    });
+  };
+
+  const onDocumentMouseUpForSelectionMenu = (event) => {
+    const path = event.composedPath?.() || [];
+    if (path.includes(selectionMenu)) return;
+    if (path.includes(host)) {
+      hideSelectionMenu();
+      return;
+    }
+    requestAnimationFrame(() => syncSelectionMenuFromDocument());
+  };
+
+  const onPointerDownCloseSelectionMenu = (event) => {
+    if (!selectionMenuOpen) return;
+    const path = event.composedPath?.() || [];
+    if (path.includes(selectionMenu)) return;
+    hideSelectionMenu();
+  };
+
+  shadowRoot.append(style, wrapper, dialog, selectionMenu);
 
   const mount = () => {
     const target = document.documentElement || document.body;
@@ -1532,6 +1647,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     dialog.setAttribute("aria-hidden", open ? "false" : "true");
     wrapper.classList.toggle("hidden", open);
     if (open) {
+      hideSelectionMenu();
       enableKeyboardIsolation();
       dialog.classList.add("open");
       // Force a reflow so the transition reliably runs, then show.
@@ -1566,6 +1682,40 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       dialog.addEventListener("transitionend", onEnd);
     }
   };
+
+  translateMenuBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+  });
+  translateMenuBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const text = pendingSelectionText;
+    hideSelectionMenu();
+    if (!String(text || "").trim()) return;
+    if (isStreaming) {
+      setDialogOpen(true);
+      showComposerHint("当前正在回复，请稍后再试翻译。");
+      return;
+    }
+    ensureApiKeyOrOpenSettings()
+      .then((ok) => {
+        if (!ok) return;
+        setDialogOpen(true);
+        const body = String(text);
+        const instruction = `请将下面这段文本翻译：若原文主要为非中文，译为自然流畅的中文；若原文主要为中文，译为自然流畅的英文。只输出译文正文，不要额外说明或标题。\n\n---\n${body}\n---`;
+        const preview = body.length > 120 ? `${body.slice(0, 120)}…` : body;
+        doSendChat(instruction, [], {
+          bubbleText: `翻译选中文本：${preview}`,
+          includePageContext: false,
+          turnUserText: body.slice(0, 800)
+        });
+      })
+      .catch(() => {});
+  });
+
+  document.addEventListener("mouseup", onDocumentMouseUpForSelectionMenu, false);
+  document.addEventListener("pointerdown", onPointerDownCloseSelectionMenu, true);
+  window.addEventListener("scroll", hideSelectionMenu, true);
+  window.addEventListener("resize", hideSelectionMenu);
 
   const toggleDialog = () => setDialogOpen(!isDialogOpen);
 
