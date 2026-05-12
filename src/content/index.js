@@ -583,15 +583,45 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const welcome = document.createElement("div");
   welcome.className = "msg-welcome";
   welcome.textContent = "你好呀～我是纳西妲！有什么我可以帮你的吗？";
-  messagesEl.appendChild(welcome);
+ 
+  const composerWrap = document.createElement("div");
+  composerWrap.className = "composer-wrap";
+
+  const imagePreviewRow = document.createElement("div");
+  imagePreviewRow.className = "image-preview-row";
+  imagePreviewRow.hidden = true;
+
+  const composerHint = document.createElement("div");
+  composerHint.className = "composer-hint";
+  composerHint.hidden = true;
 
   const composer = document.createElement("div");
   composer.className = "composer";
 
+  const attachSlot = document.createElement("div");
+  attachSlot.className = "icon-button attach attach-slot";
+  attachSlot.id = `nahida-attach-${Math.random().toString(36).slice(2)}`;
+  attachSlot.setAttribute("aria-label", "添加图片");
+
+  const fileInput = document.createElement("input");
+  fileInput.type = "file";
+  /** 不设 accept：部分系统/浏览器会误筛掉 MIME 为空的图片，选完却进不了 change */
+  fileInput.multiple = true;
+  fileInput.className = "image-file-input";
+  fileInput.setAttribute("aria-labelledby", attachSlot.id);
+
+  const attachIconLayer = document.createElement("div");
+  attachIconLayer.className = "attach-icon-layer";
+  attachIconLayer.innerHTML =
+    '<svg class="attach-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.66 1.34-3 3-3s3 1.34 3 3v10.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5V6h-2v9.5c0 1.93 1.57 3.5 3.5 3.5s3.5-1.57 3.5-3.5V5c0-2.76-2.24-5-5-5s-5 2.24-5 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-2z"/></svg>';
+
+  attachSlot.append(attachIconLayer, fileInput);
+
   const input = document.createElement("textarea");
   input.className = "input";
   input.rows = 2;
-  input.placeholder = "输入消息，Enter 发送，Shift/⌘+Enter 换行";
+  input.placeholder =
+    "输入消息，Enter 发送；回形针选图，或在此 Ctrl+V 粘贴截图 / 拖入图片";
 
   const sendIconUrl = chrome.runtime.getURL("assets/send.png");
   const stopIconUrl = chrome.runtime.getURL("assets/stop.png");
@@ -608,12 +638,50 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   sendImg.src = sendIconUrl;
   sendButton.appendChild(sendImg);
 
-  composer.append(input, sendButton);
-  body.append(messagesEl, composer);
+  composer.append(attachSlot, input, sendButton);
+  composerWrap.append(imagePreviewRow, composerHint, composer);
+  body.append(messagesEl, composerWrap);
   dialog.append(header, settingsPanel, body);
 
   // --- Chat state & logic ---
   const chatHistory = [];
+  const MAX_CHAT_IMAGES = 8;
+  const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+
+  const canDecodeAsImage = async (file) => {
+    if (!file || file.size === 0 || file.size > MAX_IMAGE_BYTES) return false;
+    try {
+      const bmp = await createImageBitmap(file);
+      try {
+        bmp.close();
+      } catch {}
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const clipboardImageFiles = (event) => {
+    const dt = event?.clipboardData;
+    if (!dt) return [];
+    const out = [];
+    try {
+      for (const item of Array.from(dt.items || [])) {
+        if (item.kind !== "file") continue;
+        const f = item.getAsFile();
+        if (f) out.push(f);
+      }
+      if (out.length) return out;
+      return Array.from(dt.files || []).filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+  /** @type {{ id: number, file: File, previewUrl: string }[]} */
+  let pendingImages = [];
+  let pendingImageId = 0;
+  let composerHintTimer = 0;
+
   let isStreaming = false;
   let activePort = null;
   /** 当前一轮对话的 port，用于「停止」发 abort / disconnect */
@@ -711,13 +779,148 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   };
 
-  const appendMessage = (role, text) => {
+  const appendMessage = (role, text, opts = {}) => {
     const el = document.createElement("div");
     el.className = `msg ${role}`;
-    el.textContent = text;
+    const urls = opts.imageUrls || [];
+    if (urls.length) {
+      const gallery = document.createElement("div");
+      gallery.className = "msg-images";
+      for (const url of urls) {
+        const img = document.createElement("img");
+        img.className = "msg-image";
+        img.src = url;
+        img.alt = "";
+        gallery.appendChild(img);
+      }
+      el.appendChild(gallery);
+    }
+    const piece = String(text || "").trim();
+    if (piece) {
+      const textEl = document.createElement("div");
+      textEl.className = "msg-text";
+      textEl.textContent = piece;
+      el.appendChild(textEl);
+    }
     messagesEl.appendChild(el);
     scrollToBottom();
     return el;
+  };
+
+  const readFileAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ""));
+      r.onerror = () => reject(new Error("读取图片失败"));
+      r.readAsDataURL(file);
+    });
+
+  const showComposerHint = (text) => {
+    composerHint.textContent = text;
+    composerHint.hidden = false;
+    if (composerHintTimer) clearTimeout(composerHintTimer);
+    composerHintTimer = setTimeout(() => {
+      composerHintTimer = 0;
+      composerHint.hidden = true;
+    }, 5000);
+  };
+
+  const refreshImagePreviewRow = () => {
+    imagePreviewRow.innerHTML = "";
+    const n = pendingImages.length;
+    imagePreviewRow.hidden = n === 0;
+    if (n === 0) return;
+    const meta = document.createElement("div");
+    meta.className = "image-preview-meta";
+    meta.textContent = `已选 ${n} 张`;
+    imagePreviewRow.appendChild(meta);
+    for (const item of pendingImages) {
+      const wrap = document.createElement("div");
+      wrap.className = "image-preview-item";
+      const img = document.createElement("img");
+      img.className = "image-preview-thumb";
+      img.src = item.previewUrl;
+      img.alt = item.file.name || "image";
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "image-preview-remove";
+      removeBtn.setAttribute("aria-label", "移除");
+      removeBtn.textContent = "×";
+      removeBtn.addEventListener("click", () => {
+        try {
+          URL.revokeObjectURL(item.previewUrl);
+        } catch {}
+        pendingImages = pendingImages.filter((p) => p.id !== item.id);
+        refreshImagePreviewRow();
+      });
+      wrap.append(img, removeBtn);
+      imagePreviewRow.appendChild(wrap);
+    }
+  };
+
+  const revokeAllPendingPreviewUrls = () => {
+    for (const p of pendingImages) {
+      try {
+        URL.revokeObjectURL(p.previewUrl);
+      } catch {}
+    }
+  };
+
+  const addPendingImageFiles = async (files) => {
+    const raw = Array.from(files || []).filter(Boolean);
+    const beforeLen = pendingImages.length;
+    let remaining = MAX_CHAT_IMAGES - pendingImages.length;
+    if (remaining <= 0) {
+      if (raw.length) showComposerHint("已达到 8 张上限，请先移除部分预览图再继续添加。");
+      return;
+    }
+    let skippedBig = 0;
+    let skippedDecode = 0;
+    for (const file of raw) {
+      if (remaining <= 0) break;
+      if (file.size > MAX_IMAGE_BYTES) {
+        skippedBig += 1;
+        continue;
+      }
+      if (!(await canDecodeAsImage(file))) {
+        skippedDecode += 1;
+        continue;
+      }
+      try {
+        const previewUrl = URL.createObjectURL(file);
+        pendingImages.push({
+          id: pendingImageId++,
+          file,
+          previewUrl
+        });
+        remaining -= 1;
+      } catch {}
+    }
+    refreshImagePreviewRow();
+    try {
+      imagePreviewRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    } catch {}
+    const added = pendingImages.length - beforeLen;
+    if (raw.length > 0 && added === 0) {
+      if (skippedBig === raw.length) {
+        showComposerHint(`图片过大：单张需小于 ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB。`);
+      } else if (skippedDecode === raw.length) {
+        showComposerHint("无法识别为图片：请用 JPG/PNG/WebP 等，或截图后 Ctrl+V 粘贴。");
+      } else {
+        showComposerHint("没有加入任何图片，请换文件或格式后再试。");
+      }
+    }
+  };
+
+  const buildUserApiMessage = (textBlock, imageDataUrls) => {
+    if (!imageDataUrls?.length) return { role: "user", content: textBlock };
+    return {
+      role: "user",
+      content: [
+        { type: "text", text: textBlock },
+        ...imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } }))
+      ]
+    };
   };
 
   const stopStreamingChat = () => {
@@ -737,6 +940,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const setInputEnabled = (enabled) => {
     input.disabled = !enabled;
+    fileInput.disabled = !enabled;
+    attachSlot.classList.toggle("attach-disabled", !enabled);
     isStreaming = !enabled;
     if (enabled) {
       clearStreamWatchdog();
@@ -943,25 +1148,39 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const sendChat = () => {
     const text = input.value.trim();
-    if (!text || isStreaming) return;
-    ensureApiKeyOrOpenSettings().then((ok) => {
+    const hasImages = pendingImages.length > 0;
+    if ((!text && !hasImages) || isStreaming) return;
+    ensureApiKeyOrOpenSettings().then(async (ok) => {
       if (!ok) return;
-      doSendChat(text);
+      const snapshotFiles = pendingImages.map((p) => p.file);
+      revokeAllPendingPreviewUrls();
+      pendingImages = [];
+      refreshImagePreviewRow();
+      input.value = "";
+      const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
+      const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
+      doSendChat(text, urls);
     });
   };
 
-  const doSendChat = (text) => {
+  const doSendChat = (text, imageDataUrls = []) => {
+    const trimmed = String(text || "").trim();
+    const urls = Array.isArray(imageDataUrls) ? imageDataUrls.filter(Boolean) : [];
+    if (!trimmed && !urls.length) return;
 
-    input.value = "";
-    appendMessage("user", text);
+    const bubbleText = trimmed || (urls.length ? "（附图）" : "");
+    appendMessage("user", bubbleText, { imageUrls: urls });
 
     const pageContext = chatHistory.length === 0 ? getPageContext() : null;
 
-    const userContent = pageContext
-      ? `[以下是用户当前浏览的页面信息]\n${pageContext}\n\n[用户的问题]\n${text}`
-      : text;
+    const questionLine =
+      trimmed || "（用户仅上传了图片，请根据图片回答。）";
 
-    chatHistory.push({ role: "user", content: userContent });
+    const textBlock = pageContext
+      ? `[以下是用户当前浏览的页面信息]\n${pageContext}\n\n[用户的问题]\n${questionLine}`
+      : questionLine;
+
+    chatHistory.push(buildUserApiMessage(textBlock, urls));
 
     setInputEnabled(false);
 
@@ -978,7 +1197,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     let thinkBlockEl = null;
     let thinkContentEl = null;
     let replyContentEl = null;
-    const turnUserText = text;
+    const turnUserText = trimmed || (urls.length ? "[用户上传了图片]" : "");
     let turnHandled = false;
 
     const parseThinkAndReply = (raw) => {
@@ -1444,6 +1663,46 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
       setSettingsOpen(false);
     } catch {}
+  });
+  fileInput.addEventListener("change", () => {
+    // 注意：FileList 在部分浏览器实现里是“活的引用”，清空 input.value 可能导致同一引用变空
+    const snapshot = Array.from(fileInput.files || []);
+    fileInput.value = "";
+    if (!snapshot.length) return;
+    addPendingImageFiles(snapshot).catch(() => {});
+  });
+
+  input.addEventListener("paste", (e) => {
+    if (isStreaming) return;
+    const files = clipboardImageFiles(e);
+    if (!files.length) return;
+    e.preventDefault();
+    addPendingImageFiles(files).catch(() => {});
+  });
+
+  ["dragenter", "dragover"].forEach((type) => {
+    composerWrap.addEventListener(type, (e) => {
+      if (isStreaming) return;
+      const types = e.dataTransfer?.types;
+      if (!types || ![...types].includes("Files")) return;
+      e.preventDefault();
+      try {
+        e.dataTransfer.dropEffect = "copy";
+      } catch {}
+      if (type === "dragover") composerWrap.classList.add("composer-drag");
+    });
+  });
+  composerWrap.addEventListener("dragleave", (e) => {
+    const related = e.relatedTarget;
+    if (related && composerWrap.contains(related)) return;
+    composerWrap.classList.remove("composer-drag");
+  });
+  composerWrap.addEventListener("drop", (e) => {
+    composerWrap.classList.remove("composer-drag");
+    if (isStreaming) return;
+    e.preventDefault();
+    const fl = e.dataTransfer?.files;
+    if (fl?.length) addPendingImageFiles(fl).catch(() => {});
   });
   sendButton.addEventListener("click", () => {
     if (isStreaming) {
