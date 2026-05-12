@@ -6,7 +6,7 @@
   };
 
   // src/ui/styles.css
-  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 100px;\n  height: 100px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.88);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: none;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog::before {\n  content: "";\n  position: absolute;\n  inset: 0;\n  background-image: var(--dialog-bg-url);\n  background-size: cover;\n  background-position: center;\n  background-repeat: no-repeat;\n  opacity: 0.22;\n  pointer-events: none;\n}\n\n.dialog > * {\n  position: relative;\n  z-index: 1;\n}\n\n.dialog.open {\n  display: flex;\n}\n\n.dialog.visible {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, #ddffaa, #ddffaa00);\n  border-bottom: 1px solid rgba(20, 26, 22, 0.10);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  color: rgba(12, 26, 18, 0.88);\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n}\n\n.icon-button[aria-label] {\n  position: relative;\n}\n\n.icon-button[aria-label]::after {\n  content: attr(aria-label);\n  position: absolute;\n  left: 50%;\n  transform: translateX(-50%) translateY(-2px);\n  opacity: 0;\n  pointer-events: none;\n  white-space: nowrap;\n  font-size: 11px;\n  line-height: 1;\n  padding: 7px 9px;\n  border-radius: 10px;\n  background: rgba(20, 26, 22, 0.86);\n  color: rgba(255, 255, 255, 0.94);\n  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 40;\n}\n\n.icon-button[aria-label]::before {\n  content: "";\n  position: absolute;\n  left: 50%;\n  width: 10px;\n  height: 10px;\n  transform: translateX(-50%) rotate(45deg);\n  opacity: 0;\n  pointer-events: none;\n  background: rgba(20, 26, 22, 0.86);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 39;\n}\n\n/* Top-right buttons: tooltip below (avoid dialog overflow clipping) */\n.settings-button[aria-label]::after,\n.close-button[aria-label]::after {\n  top: calc(100% + 10px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  top: calc(100% + 6px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  transform: translateX(-50%) rotate(45deg);\n}\n\n/* Send button: tooltip above (keeps it inside dialog) */\n.send[aria-label]::after {\n  bottom: calc(100% + 10px);\n}\n.send[aria-label]::before {\n  bottom: calc(100% + 6px);\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::after,\n.icon-button[aria-label]:focus-visible::before {\n  opacity: 1;\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::before {\n  transform: translateX(-50%) rotate(45deg) translateY(0);\n}\n\n.send[aria-label]:hover::after,\n.send[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[disabled]::after,\n.icon-button[disabled]::before {\n  display: none;\n}\n\n.close-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.close-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.close-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-actions {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n}\n\n.settings-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.settings-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.settings-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.settings-panel {\n  position: absolute;\n  top: 48px;\n  right: 12px;\n  width: min(340px, calc(100% - 24px));\n  display: none;\n  flex-direction: column;\n  gap: 8px;\n  padding: 12px;\n  border-radius: 14px;\n  background: rgba(255, 255, 255, 0.96);\n  border: 1px solid rgba(20, 26, 22, 0.10);\n  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);\n  backdrop-filter: blur(10px);\n  -webkit-backdrop-filter: blur(10px);\n  z-index: 20;\n}\n\n.settings-panel.open {\n  display: flex;\n}\n\n.settings-title {\n  font-size: 13px;\n  font-weight: 650;\n  color: rgba(20, 26, 22, 0.9);\n  margin-bottom: 2px;\n}\n\n.settings-label {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.55);\n}\n\n.settings-input {\n  width: 100%;\n  box-sizing: border-box;\n  border-radius: 12px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.95);\n  color: rgba(20, 26, 22, 0.92);\n  padding: 8px 10px;\n  font-family: inherit;\n  font-size: 12px;\n  outline: none;\n}\n\n.settings-input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.12);\n}\n\n.settings-hint {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  line-height: 1.4;\n}\n\n.settings-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  margin-top: 4px;\n}\n\n.settings-cancel,\n.settings-save {\n  padding: 8px 10px;\n  border-radius: 12px;\n}\n\n.send {\n  background: transparent;\n  padding: 0;\n  width: 36px;\n  height: 36px;\n  border-radius: 12px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin-bottom: 4px;\n}\n\n.send:hover {\n  transform: none;\n}\n\n.send:disabled {\n  background: transparent;\n}\n\n.send-icon,\n.stop-icon {\n  width: 36px;\n  height: 36px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 10px 8px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  scroll-behavior: smooth;\n}\n\n.msg {\n  max-width: 85%;\n  padding: 8px 12px;\n  border-radius: 14px;\n  font-size: 13px;\n  line-height: 1.5;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n.msg.user {\n  align-self: flex-end;\n  background: linear-gradient(135deg, #6db082, #4a9960);\n  color: #fff;\n  border-bottom-right-radius: 4px;\n}\n\n.msg.assistant {\n  align-self: flex-start;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.92);\n  border-bottom-left-radius: 4px;\n}\n\n.msg.error {\n  align-self: center;\n  background: rgba(200, 50, 50, 0.08);\n  color: rgba(180, 40, 40, 0.9);\n  font-size: 12px;\n  text-align: center;\n}\n\n.msg-welcome {\n  text-align: center;\n  font-size: 12px;\n  color: rgba(20, 26, 22, 0.42);\n  padding: 20px 10px 6px;\n  line-height: 1.5;\n}\n\n.think-block {\n  margin-bottom: 6px;\n}\n\n.think-toggle {\n  all: initial;\n  box-sizing: border-box;\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  cursor: pointer;\n  font-family: inherit;\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  padding: 2px 0;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n.think-toggle:hover {\n  color: rgba(20, 26, 22, 0.7);\n}\n\n.think-arrow {\n  display: inline-block;\n  font-size: 10px;\n  transition: transform 160ms ease;\n}\n\n.think-block.collapsed .think-arrow {\n  transform: rotate(-90deg);\n}\n\n.think-content {\n  margin-top: 4px;\n  padding: 6px 10px;\n  border-left: 2px solid rgba(20, 26, 22, 0.1);\n  font-size: 12px;\n  line-height: 1.5;\n  color: rgba(20, 26, 22, 0.5);\n  white-space: pre-wrap;\n  word-break: break-word;\n  max-height: 200px;\n  overflow-y: auto;\n  transition: max-height 200ms ease, opacity 200ms ease;\n}\n\n.think-block.collapsed .think-content {\n  max-height: 0;\n  overflow: hidden;\n  opacity: 0;\n  margin-top: 0;\n  padding-top: 0;\n  padding-bottom: 0;\n}\n\n.think-block.streaming .think-content {\n  max-height: none;\n}\n\n.sticker {\n  display: block;\n  width: 120px;\n  height: 120px;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n}\n\n.msg.sticker-msg {\n  background: transparent;\n  padding: 2px 0;\n  max-width: none;\n  border-radius: 0;\n}\n\n.reply-content {\n  white-space: normal;\n  word-break: break-word;\n}\n\n.reply-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.reply-content :where(p, ul, ol):last-child {\n  margin-bottom: 0;\n}\n\n.reply-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.reply-content :where(a) {\n  color: rgba(70, 120, 90, 0.95);\n  text-decoration: underline;\n}\n\n.reply-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.reply-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.reply-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.think-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.think-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.think-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.think-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.think-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.typing-indicator {\n  display: inline-flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.typing-indicator span {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: rgba(20, 26, 22, 0.3);\n  animation: typing-bounce 1.2s ease-in-out infinite;\n}\n\n.typing-indicator span:nth-child(2) {\n  animation-delay: 0.15s;\n}\n\n.typing-indicator span:nth-child(3) {\n  animation-delay: 0.3s;\n}\n\n@keyframes typing-bounce {\n  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }\n  30% { transform: translateY(-4px); opacity: 1; }\n}\n\n.composer {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  color: rgba(20, 26, 22, 0.92);\n  caret-color: rgba(20, 26, 22, 0.92);\n  color-scheme: light;\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input::placeholder {\n  color: rgba(20, 26, 22, 0.45);\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n.send:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n';
+  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 100px;\n  height: 100px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.88);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: none;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog::before {\n  content: "";\n  position: absolute;\n  inset: 0;\n  background-image: var(--dialog-bg-url);\n  background-size: cover;\n  background-position: center;\n  background-repeat: no-repeat;\n  opacity: 0.22;\n  pointer-events: none;\n}\n\n.dialog > * {\n  position: relative;\n  z-index: 1;\n}\n\n.dialog.open {\n  display: flex;\n}\n\n.dialog.visible {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, #ddffaa, #ddffaa00);\n  border-bottom: 1px solid rgba(20, 26, 22, 0.10);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  color: rgba(12, 26, 18, 0.88);\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n}\n\n.icon-button[aria-label] {\n  position: relative;\n}\n\n.icon-button[aria-label]::after {\n  content: attr(aria-label);\n  position: absolute;\n  left: 50%;\n  transform: translateX(-50%) translateY(-2px);\n  opacity: 0;\n  pointer-events: none;\n  white-space: nowrap;\n  font-size: 11px;\n  line-height: 1;\n  padding: 7px 9px;\n  border-radius: 10px;\n  background: rgba(20, 26, 22, 0.86);\n  color: rgba(255, 255, 255, 0.94);\n  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 40;\n}\n\n.icon-button[aria-label]::before {\n  content: "";\n  position: absolute;\n  left: 50%;\n  width: 10px;\n  height: 10px;\n  transform: translateX(-50%) rotate(45deg);\n  opacity: 0;\n  pointer-events: none;\n  background: rgba(20, 26, 22, 0.86);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 39;\n}\n\n/* Top-right buttons: tooltip below (avoid dialog overflow clipping) */\n.settings-button[aria-label]::after,\n.close-button[aria-label]::after {\n  top: calc(100% + 10px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  top: calc(100% + 6px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  transform: translateX(-50%) rotate(45deg);\n}\n\n/* Send button: tooltip above (keeps it inside dialog) */\n.send[aria-label]::after {\n  bottom: calc(100% + 10px);\n}\n.send[aria-label]::before {\n  bottom: calc(100% + 6px);\n}\n\n.attach[aria-label]::after {\n  bottom: calc(100% + 10px);\n}\n.attach[aria-label]::before {\n  bottom: calc(100% + 6px);\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::after,\n.icon-button[aria-label]:focus-visible::before {\n  opacity: 1;\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::before {\n  transform: translateX(-50%) rotate(45deg) translateY(0);\n}\n\n.send[aria-label]:hover::after,\n.send[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[disabled]::after,\n.icon-button[disabled]::before {\n  display: none;\n}\n\n.close-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.close-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.close-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-actions {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n}\n\n.settings-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.settings-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.settings-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.settings-panel {\n  position: absolute;\n  top: 48px;\n  right: 12px;\n  width: min(340px, calc(100% - 24px));\n  display: none;\n  flex-direction: column;\n  gap: 8px;\n  padding: 12px;\n  border-radius: 14px;\n  background: rgba(255, 255, 255, 0.96);\n  border: 1px solid rgba(20, 26, 22, 0.10);\n  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);\n  backdrop-filter: blur(10px);\n  -webkit-backdrop-filter: blur(10px);\n  z-index: 20;\n}\n\n.settings-panel.open {\n  display: flex;\n}\n\n.settings-title {\n  font-size: 13px;\n  font-weight: 650;\n  color: rgba(20, 26, 22, 0.9);\n  margin-bottom: 2px;\n}\n\n.settings-label {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.55);\n}\n\n.settings-input {\n  width: 100%;\n  box-sizing: border-box;\n  border-radius: 12px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.95);\n  color: rgba(20, 26, 22, 0.92);\n  padding: 8px 10px;\n  font-family: inherit;\n  font-size: 12px;\n  outline: none;\n}\n\n.settings-input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.12);\n}\n\n.settings-hint {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  line-height: 1.4;\n}\n\n.settings-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  margin-top: 4px;\n}\n\n.settings-cancel,\n.settings-save {\n  padding: 8px 10px;\n  border-radius: 12px;\n}\n\n.send {\n  background: transparent;\n  padding: 0;\n  width: 36px;\n  height: 36px;\n  border-radius: 12px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin-bottom: 4px;\n}\n\n.send:hover {\n  transform: none;\n}\n\n.send:disabled {\n  background: transparent;\n}\n\n.send-icon,\n.stop-icon {\n  width: 36px;\n  height: 36px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 10px 8px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  scroll-behavior: smooth;\n}\n\n.msg {\n  max-width: 85%;\n  padding: 8px 12px;\n  border-radius: 14px;\n  font-size: 13px;\n  line-height: 1.5;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n.msg.user {\n  align-self: flex-end;\n  background: linear-gradient(135deg, #6db082, #4a9960);\n  color: #fff;\n  border-bottom-right-radius: 4px;\n}\n\n.msg.assistant {\n  align-self: flex-start;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.92);\n  border-bottom-left-radius: 4px;\n}\n\n.msg.error {\n  align-self: center;\n  background: rgba(200, 50, 50, 0.08);\n  color: rgba(180, 40, 40, 0.9);\n  font-size: 12px;\n  text-align: center;\n}\n\n.msg-welcome {\n  text-align: center;\n  font-size: 12px;\n  color: rgba(20, 26, 22, 0.42);\n  padding: 20px 10px 6px;\n  line-height: 1.5;\n}\n\n.think-block {\n  margin-bottom: 6px;\n}\n\n.think-toggle {\n  all: initial;\n  box-sizing: border-box;\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  cursor: pointer;\n  font-family: inherit;\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  padding: 2px 0;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n.think-toggle:hover {\n  color: rgba(20, 26, 22, 0.7);\n}\n\n.think-arrow {\n  display: inline-block;\n  font-size: 10px;\n  transition: transform 160ms ease;\n}\n\n.think-block.collapsed .think-arrow {\n  transform: rotate(-90deg);\n}\n\n.think-content {\n  margin-top: 4px;\n  padding: 6px 10px;\n  border-left: 2px solid rgba(20, 26, 22, 0.1);\n  font-size: 12px;\n  line-height: 1.5;\n  color: rgba(20, 26, 22, 0.5);\n  white-space: pre-wrap;\n  word-break: break-word;\n  max-height: 200px;\n  overflow-y: auto;\n  transition: max-height 200ms ease, opacity 200ms ease;\n}\n\n.think-block.collapsed .think-content {\n  max-height: 0;\n  overflow: hidden;\n  opacity: 0;\n  margin-top: 0;\n  padding-top: 0;\n  padding-bottom: 0;\n}\n\n.think-block.streaming .think-content {\n  max-height: none;\n}\n\n.sticker {\n  display: block;\n  width: 120px;\n  height: 120px;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n}\n\n.msg.sticker-msg {\n  background: transparent;\n  padding: 2px 0;\n  max-width: none;\n  border-radius: 0;\n}\n\n.reply-content {\n  white-space: normal;\n  word-break: break-word;\n}\n\n.reply-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.reply-content :where(p, ul, ol):last-child {\n  margin-bottom: 0;\n}\n\n.reply-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.reply-content :where(a) {\n  color: rgba(70, 120, 90, 0.95);\n  text-decoration: underline;\n}\n\n.reply-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.reply-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.reply-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.think-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.think-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.think-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.think-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.think-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.typing-indicator {\n  display: inline-flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.typing-indicator span {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: rgba(20, 26, 22, 0.3);\n  animation: typing-bounce 1.2s ease-in-out infinite;\n}\n\n.typing-indicator span:nth-child(2) {\n  animation-delay: 0.15s;\n}\n\n.typing-indicator span:nth-child(3) {\n  animation-delay: 0.3s;\n}\n\n@keyframes typing-bounce {\n  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }\n  30% { transform: translateY(-4px); opacity: 1; }\n}\n/* \u900F\u660E file \u53E0\u5728\u56FE\u6807\u4E0A\uFF1A\u6BD4 label \u5D4C\u5957 input \u5728\u6269\u5C55\u91CC\u66F4\u53EF\u9760 */\n.attach-slot {\n  position: relative;\n  flex-shrink: 0;\n  width: 40px;\n  height: 40px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  border-radius: 12px;\n  color: rgba(20, 26, 22, 0.72);\n}\n\n.attach-slot .image-file-input {\n  position: absolute;\n  inset: 0;\n  width: 100%;\n  height: 100%;\n  margin: 0;\n  padding: 0;\n  opacity: 0;\n  cursor: pointer;\n  z-index: 2;\n  font-size: 0;\n}\n\n.attach-icon-layer {\n  position: absolute;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  z-index: 1;\n  pointer-events: none;\n}\n\n.attach-slot.attach-disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n\n.attach-slot.attach-disabled .image-file-input {\n  cursor: not-allowed;\n  pointer-events: none;\n}\n\n.composer-wrap {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  flex-shrink: 0;\n  position: relative;\n  border-radius: 14px;\n  transition: box-shadow 120ms ease, background 120ms ease;\n}\n\n.composer-wrap.composer-drag {\n  box-shadow: inset 0 0 0 2px rgba(70, 120, 90, 0.55);\n  background: rgba(70, 120, 90, 0.06);\n}\n\n.composer-hint {\n  font-size: 11px;\n  line-height: 1.35;\n  color: rgba(180, 60, 50, 0.95);\n  padding: 4px 2px 0;\n}\n\n.image-preview-row {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  align-items: flex-start;\n  max-height: 132px;\n  overflow-y: auto;\n}\n\n.image-preview-meta {\n  flex: 1 0 100%;\n  font-size: 11px;\n  line-height: 1.3;\n  color: rgba(20, 26, 22, 0.52);\n}\n\n.image-preview-item {\n  position: relative;\n  width: 56px;\n  height: 56px;\n  border-radius: 10px;\n  overflow: hidden;\n  flex-shrink: 0;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.65);\n}\n\n.image-preview-thumb {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  display: block;\n}\n\n.image-preview-remove {\n  all: initial;\n  position: absolute;\n  top: 2px;\n  right: 2px;\n  width: 20px;\n  height: 20px;\n  border-radius: 50%;\n  background: rgba(0, 0, 0, 0.55);\n  color: #fff;\n  font-size: 14px;\n  line-height: 20px;\n  text-align: center;\n  cursor: pointer;\n  font-family: inherit;\n}\n\n.image-preview-remove:hover {\n  background: rgba(0, 0, 0, 0.72);\n}\n\n.composer {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.attach-icon {\n  display: block;\n}\n\n.msg-images {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 6px;\n  margin-bottom: 6px;\n}\n\n.msg-image {\n  max-width: 140px;\n  max-height: 140px;\n  border-radius: 10px;\n  object-fit: cover;\n  border: 1px solid rgba(20, 26, 22, 0.08);\n}\n\n.msg.user .msg-text {\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  color: rgba(20, 26, 22, 0.92);\n  caret-color: rgba(20, 26, 22, 0.92);\n  color-scheme: light;\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input::placeholder {\n  color: rgba(20, 26, 22, 0.45);\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n.send:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n';
 
   // node_modules/markdown-it/lib/common/utils.mjs
   var utils_exports = {};
@@ -5991,13 +5991,33 @@
     const welcome = document.createElement("div");
     welcome.className = "msg-welcome";
     welcome.textContent = "\u4F60\u597D\u5440\uFF5E\u6211\u662F\u7EB3\u897F\u59B2\uFF01\u6709\u4EC0\u4E48\u6211\u53EF\u4EE5\u5E2E\u4F60\u7684\u5417\uFF1F";
-    messagesEl.appendChild(welcome);
+    const composerWrap = document.createElement("div");
+    composerWrap.className = "composer-wrap";
+    const imagePreviewRow = document.createElement("div");
+    imagePreviewRow.className = "image-preview-row";
+    imagePreviewRow.hidden = true;
+    const composerHint = document.createElement("div");
+    composerHint.className = "composer-hint";
+    composerHint.hidden = true;
     const composer = document.createElement("div");
     composer.className = "composer";
+    const attachSlot = document.createElement("div");
+    attachSlot.className = "icon-button attach attach-slot";
+    attachSlot.id = `nahida-attach-${Math.random().toString(36).slice(2)}`;
+    attachSlot.setAttribute("aria-label", "\u6DFB\u52A0\u56FE\u7247");
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.multiple = true;
+    fileInput.className = "image-file-input";
+    fileInput.setAttribute("aria-labelledby", attachSlot.id);
+    const attachIconLayer = document.createElement("div");
+    attachIconLayer.className = "attach-icon-layer";
+    attachIconLayer.innerHTML = '<svg class="attach-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.66 1.34-3 3-3s3 1.34 3 3v10.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5V6h-2v9.5c0 1.93 1.57 3.5 3.5 3.5s3.5-1.57 3.5-3.5V5c0-2.76-2.24-5-5-5s-5 2.24-5 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-2z"/></svg>';
+    attachSlot.append(attachIconLayer, fileInput);
     const input = document.createElement("textarea");
     input.className = "input";
     input.rows = 2;
-    input.placeholder = "\u8F93\u5165\u6D88\u606F\uFF0CEnter \u53D1\u9001\uFF0CShift/\u2318+Enter \u6362\u884C";
+    input.placeholder = "\u8F93\u5165\u6D88\u606F\uFF0CEnter \u53D1\u9001\uFF1B\u56DE\u5F62\u9488\u9009\u56FE\uFF0C\u6216\u5728\u6B64 Ctrl+V \u7C98\u8D34\u622A\u56FE / \u62D6\u5165\u56FE\u7247";
     const sendIconUrl = chrome.runtime.getURL("assets/send.png");
     const stopIconUrl = chrome.runtime.getURL("assets/stop.png");
     const sendButton = document.createElement("button");
@@ -6010,10 +6030,45 @@
     sendImg.draggable = false;
     sendImg.src = sendIconUrl;
     sendButton.appendChild(sendImg);
-    composer.append(input, sendButton);
-    body.append(messagesEl, composer);
+    composer.append(attachSlot, input, sendButton);
+    composerWrap.append(imagePreviewRow, composerHint, composer);
+    body.append(messagesEl, composerWrap);
     dialog.append(header, settingsPanel, body);
     const chatHistory = [];
+    const MAX_CHAT_IMAGES = 8;
+    const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+    const canDecodeAsImage = async (file) => {
+      if (!file || file.size === 0 || file.size > MAX_IMAGE_BYTES) return false;
+      try {
+        const bmp = await createImageBitmap(file);
+        try {
+          bmp.close();
+        } catch {
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const clipboardImageFiles = (event) => {
+      const dt = event?.clipboardData;
+      if (!dt) return [];
+      const out = [];
+      try {
+        for (const item of Array.from(dt.items || [])) {
+          if (item.kind !== "file") continue;
+          const f = item.getAsFile();
+          if (f) out.push(f);
+        }
+        if (out.length) return out;
+        return Array.from(dt.files || []).filter(Boolean);
+      } catch {
+        return [];
+      }
+    };
+    let pendingImages = [];
+    let pendingImageId = 0;
+    let composerHintTimer = 0;
     let isStreaming = false;
     let activePort = null;
     let chatStreamPort = null;
@@ -6103,13 +6158,145 @@
     const scrollToBottom = () => {
       messagesEl.scrollTop = messagesEl.scrollHeight;
     };
-    const appendMessage = (role, text2) => {
+    const appendMessage = (role, text2, opts = {}) => {
       const el = document.createElement("div");
       el.className = `msg ${role}`;
-      el.textContent = text2;
+      const urls = opts.imageUrls || [];
+      if (urls.length) {
+        const gallery = document.createElement("div");
+        gallery.className = "msg-images";
+        for (const url of urls) {
+          const img = document.createElement("img");
+          img.className = "msg-image";
+          img.src = url;
+          img.alt = "";
+          gallery.appendChild(img);
+        }
+        el.appendChild(gallery);
+      }
+      const piece = String(text2 || "").trim();
+      if (piece) {
+        const textEl = document.createElement("div");
+        textEl.className = "msg-text";
+        textEl.textContent = piece;
+        el.appendChild(textEl);
+      }
       messagesEl.appendChild(el);
       scrollToBottom();
       return el;
+    };
+    const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result || ""));
+      r.onerror = () => reject(new Error("\u8BFB\u53D6\u56FE\u7247\u5931\u8D25"));
+      r.readAsDataURL(file);
+    });
+    const showComposerHint = (text2) => {
+      composerHint.textContent = text2;
+      composerHint.hidden = false;
+      if (composerHintTimer) clearTimeout(composerHintTimer);
+      composerHintTimer = setTimeout(() => {
+        composerHintTimer = 0;
+        composerHint.hidden = true;
+      }, 5e3);
+    };
+    const refreshImagePreviewRow = () => {
+      imagePreviewRow.innerHTML = "";
+      const n = pendingImages.length;
+      imagePreviewRow.hidden = n === 0;
+      if (n === 0) return;
+      const meta = document.createElement("div");
+      meta.className = "image-preview-meta";
+      meta.textContent = `\u5DF2\u9009 ${n} \u5F20`;
+      imagePreviewRow.appendChild(meta);
+      for (const item of pendingImages) {
+        const wrap = document.createElement("div");
+        wrap.className = "image-preview-item";
+        const img = document.createElement("img");
+        img.className = "image-preview-thumb";
+        img.src = item.previewUrl;
+        img.alt = item.file.name || "image";
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "image-preview-remove";
+        removeBtn.setAttribute("aria-label", "\u79FB\u9664");
+        removeBtn.textContent = "\xD7";
+        removeBtn.addEventListener("click", () => {
+          try {
+            URL.revokeObjectURL(item.previewUrl);
+          } catch {
+          }
+          pendingImages = pendingImages.filter((p) => p.id !== item.id);
+          refreshImagePreviewRow();
+        });
+        wrap.append(img, removeBtn);
+        imagePreviewRow.appendChild(wrap);
+      }
+    };
+    const revokeAllPendingPreviewUrls = () => {
+      for (const p of pendingImages) {
+        try {
+          URL.revokeObjectURL(p.previewUrl);
+        } catch {
+        }
+      }
+    };
+    const addPendingImageFiles = async (files) => {
+      const raw = Array.from(files || []).filter(Boolean);
+      const beforeLen = pendingImages.length;
+      let remaining = MAX_CHAT_IMAGES - pendingImages.length;
+      if (remaining <= 0) {
+        if (raw.length) showComposerHint("\u5DF2\u8FBE\u5230 8 \u5F20\u4E0A\u9650\uFF0C\u8BF7\u5148\u79FB\u9664\u90E8\u5206\u9884\u89C8\u56FE\u518D\u7EE7\u7EED\u6DFB\u52A0\u3002");
+        return;
+      }
+      let skippedBig = 0;
+      let skippedDecode = 0;
+      for (const file of raw) {
+        if (remaining <= 0) break;
+        if (file.size > MAX_IMAGE_BYTES) {
+          skippedBig += 1;
+          continue;
+        }
+        if (!await canDecodeAsImage(file)) {
+          skippedDecode += 1;
+          continue;
+        }
+        try {
+          const previewUrl = URL.createObjectURL(file);
+          pendingImages.push({
+            id: pendingImageId++,
+            file,
+            previewUrl
+          });
+          remaining -= 1;
+        } catch {
+        }
+      }
+      refreshImagePreviewRow();
+      try {
+        imagePreviewRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } catch {
+      }
+      const added = pendingImages.length - beforeLen;
+      if (raw.length > 0 && added === 0) {
+        if (skippedBig === raw.length) {
+          showComposerHint(`\u56FE\u7247\u8FC7\u5927\uFF1A\u5355\u5F20\u9700\u5C0F\u4E8E ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB\u3002`);
+        } else if (skippedDecode === raw.length) {
+          showComposerHint("\u65E0\u6CD5\u8BC6\u522B\u4E3A\u56FE\u7247\uFF1A\u8BF7\u7528 JPG/PNG/WebP \u7B49\uFF0C\u6216\u622A\u56FE\u540E Ctrl+V \u7C98\u8D34\u3002");
+        } else {
+          showComposerHint("\u6CA1\u6709\u52A0\u5165\u4EFB\u4F55\u56FE\u7247\uFF0C\u8BF7\u6362\u6587\u4EF6\u6216\u683C\u5F0F\u540E\u518D\u8BD5\u3002");
+        }
+      }
+    };
+    const buildUserApiMessage = (textBlock, imageDataUrls) => {
+      if (!imageDataUrls?.length) return { role: "user", content: textBlock };
+      return {
+        role: "user",
+        content: [
+          { type: "text", text: textBlock },
+          ...imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } }))
+        ]
+      };
     };
     const stopStreamingChat = () => {
       const p = chatStreamPort;
@@ -6129,6 +6316,8 @@
     };
     const setInputEnabled = (enabled) => {
       input.disabled = !enabled;
+      fileInput.disabled = !enabled;
+      attachSlot.classList.toggle("attach-disabled", !enabled);
       isStreaming = !enabled;
       if (enabled) {
         clearStreamWatchdog();
@@ -6334,22 +6523,34 @@ ${f.text}
     };
     const sendChat = () => {
       const text2 = input.value.trim();
-      if (!text2 || isStreaming) return;
-      ensureApiKeyOrOpenSettings().then((ok) => {
+      const hasImages = pendingImages.length > 0;
+      if (!text2 && !hasImages || isStreaming) return;
+      ensureApiKeyOrOpenSettings().then(async (ok) => {
         if (!ok) return;
-        doSendChat(text2);
+        const snapshotFiles = pendingImages.map((p) => p.file);
+        revokeAllPendingPreviewUrls();
+        pendingImages = [];
+        refreshImagePreviewRow();
+        input.value = "";
+        const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
+        const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
+        doSendChat(text2, urls);
       });
     };
-    const doSendChat = (text2) => {
-      input.value = "";
-      appendMessage("user", text2);
+    const doSendChat = (text2, imageDataUrls = []) => {
+      const trimmed = String(text2 || "").trim();
+      const urls = Array.isArray(imageDataUrls) ? imageDataUrls.filter(Boolean) : [];
+      if (!trimmed && !urls.length) return;
+      const bubbleText = trimmed || (urls.length ? "\uFF08\u9644\u56FE\uFF09" : "");
+      appendMessage("user", bubbleText, { imageUrls: urls });
       const pageContext = chatHistory.length === 0 ? getPageContext() : null;
-      const userContent = pageContext ? `[\u4EE5\u4E0B\u662F\u7528\u6237\u5F53\u524D\u6D4F\u89C8\u7684\u9875\u9762\u4FE1\u606F]
+      const questionLine = trimmed || "\uFF08\u7528\u6237\u4EC5\u4E0A\u4F20\u4E86\u56FE\u7247\uFF0C\u8BF7\u6839\u636E\u56FE\u7247\u56DE\u7B54\u3002\uFF09";
+      const textBlock = pageContext ? `[\u4EE5\u4E0B\u662F\u7528\u6237\u5F53\u524D\u6D4F\u89C8\u7684\u9875\u9762\u4FE1\u606F]
 ${pageContext}
 
 [\u7528\u6237\u7684\u95EE\u9898]
-${text2}` : text2;
-      chatHistory.push({ role: "user", content: userContent });
+${questionLine}` : questionLine;
+      chatHistory.push(buildUserApiMessage(textBlock, urls));
       setInputEnabled(false);
       const assistantEl = document.createElement("div");
       assistantEl.className = "msg assistant";
@@ -6363,7 +6564,7 @@ ${text2}` : text2;
       let thinkBlockEl = null;
       let thinkContentEl = null;
       let replyContentEl = null;
-      const turnUserText = text2;
+      const turnUserText = trimmed || (urls.length ? "[\u7528\u6237\u4E0A\u4F20\u4E86\u56FE\u7247]" : "");
       let turnHandled = false;
       const parseThinkAndReply = (raw) => {
         const OPEN = "\0THINK_O\0";
@@ -6765,6 +6966,47 @@ ${replyText.slice(after2, c2)}`;
         setSettingsOpen(false);
       } catch {
       }
+    });
+    fileInput.addEventListener("change", () => {
+      const snapshot = Array.from(fileInput.files || []);
+      fileInput.value = "";
+      if (!snapshot.length) return;
+      addPendingImageFiles(snapshot).catch(() => {
+      });
+    });
+    input.addEventListener("paste", (e) => {
+      if (isStreaming) return;
+      const files = clipboardImageFiles(e);
+      if (!files.length) return;
+      e.preventDefault();
+      addPendingImageFiles(files).catch(() => {
+      });
+    });
+    ["dragenter", "dragover"].forEach((type) => {
+      composerWrap.addEventListener(type, (e) => {
+        if (isStreaming) return;
+        const types = e.dataTransfer?.types;
+        if (!types || ![...types].includes("Files")) return;
+        e.preventDefault();
+        try {
+          e.dataTransfer.dropEffect = "copy";
+        } catch {
+        }
+        if (type === "dragover") composerWrap.classList.add("composer-drag");
+      });
+    });
+    composerWrap.addEventListener("dragleave", (e) => {
+      const related = e.relatedTarget;
+      if (related && composerWrap.contains(related)) return;
+      composerWrap.classList.remove("composer-drag");
+    });
+    composerWrap.addEventListener("drop", (e) => {
+      composerWrap.classList.remove("composer-drag");
+      if (isStreaming) return;
+      e.preventDefault();
+      const fl = e.dataTransfer?.files;
+      if (fl?.length) addPendingImageFiles(fl).catch(() => {
+      });
     });
     sendButton.addEventListener("click", () => {
       if (isStreaming) {
