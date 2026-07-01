@@ -5417,6 +5417,27 @@
     x: clamp(x, edgeGap, Math.max(edgeGap, viewportWidth - buttonSize - edgeGap)),
     y: clamp(y, edgeGap, Math.max(edgeGap, viewportHeight - buttonSize - edgeGap))
   });
+  var anchorIconPosition = (position, options) => {
+    const clamped = clampIconPosition(position, options);
+    const { buttonSize, viewportWidth } = options;
+    const horizontalAnchor = clamped.x + buttonSize / 2 <= viewportWidth / 2 ? "left" : "right";
+    const horizontalOffset = horizontalAnchor === "left" ? clamped.x : viewportWidth - buttonSize - clamped.x;
+    return { ...clamped, horizontalAnchor, horizontalOffset };
+  };
+  var resolveAnchoredIconPosition = (position, options) => {
+    const { buttonSize, viewportWidth } = options;
+    const hasAnchor = ["left", "right"].includes(position?.horizontalAnchor) && Number.isFinite(position?.horizontalOffset);
+    if (!hasAnchor) {
+      return anchorIconPosition(position, options);
+    }
+    const x = position.horizontalAnchor === "left" ? position.horizontalOffset : viewportWidth - buttonSize - position.horizontalOffset;
+    const clamped = clampIconPosition({ x, y: position.y }, options);
+    return {
+      ...clamped,
+      horizontalAnchor: position.horizontalAnchor,
+      horizontalOffset: position.horizontalOffset
+    };
+  };
   var getDefaultIconPosition = ({ edgeGap, buttonSize, viewportWidth, viewportHeight }) => ({
     x: Math.max(edgeGap, viewportWidth - buttonSize - edgeGap),
     y: clamp(Math.round(viewportHeight * 0.22), edgeGap, Math.max(edgeGap, viewportHeight - buttonSize - edgeGap))
@@ -6888,11 +6909,14 @@ ${replyText.slice(after2, c2)}`;
     };
     mount();
     const viewport = () => ({ viewportWidth: window.innerWidth, viewportHeight: window.innerHeight });
-    let iconPosition = getDefaultIconPosition({
-      edgeGap: EDGE_GAP,
-      buttonSize: BUTTON_SIZE,
-      ...viewport()
-    });
+    let iconPosition = anchorIconPosition(
+      getDefaultIconPosition({
+        edgeGap: EDGE_GAP,
+        buttonSize: BUTTON_SIZE,
+        ...viewport()
+      }),
+      { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+    );
     let dragState = null;
     let pendingPointerDown = null;
     let isDialogOpen = false;
@@ -7045,7 +7069,7 @@ ${body2}
           return;
         }
       }
-      iconPosition = clampIconPosition(
+      iconPosition = anchorIconPosition(
         { x: event.clientX - dragState.offsetX, y: event.clientY - dragState.offsetY },
         { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
       );
@@ -7061,7 +7085,10 @@ ${body2}
         if (button.hasPointerCapture(event.pointerId)) {
           button.releasePointerCapture(event.pointerId);
         }
-        iconPosition = clampIconPosition(iconPosition, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+        iconPosition = resolveAnchoredIconPosition(
+          iconPosition,
+          { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+        );
         renderIcon();
         await safeWritePosition(STORAGE_KEY, iconPosition);
       } else {
@@ -7078,7 +7105,10 @@ ${body2}
       if (!nextValue || !Number.isFinite(nextValue.x) || !Number.isFinite(nextValue.y)) {
         return;
       }
-      iconPosition = clampIconPosition(nextValue, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+      iconPosition = resolveAnchoredIconPosition(
+        nextValue,
+        { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+      );
       renderIcon();
     };
     button.addEventListener("pointerdown", beginPointer);
@@ -7220,7 +7250,10 @@ ${input.value.slice(end)}`;
       document.removeEventListener("keypress", keyboardIsolationHandler, true);
     };
     window.addEventListener("resize", () => {
-      iconPosition = clampIconPosition(iconPosition, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+      iconPosition = resolveAnchoredIconPosition(
+        iconPosition,
+        { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+      );
       renderIcon();
       if (isDialogOpen) {
         clampDialogIntoViewport();
@@ -7377,7 +7410,10 @@ ${input.value.slice(end)}`;
       renderIcon();
       const stored = await safeReadPosition(STORAGE_KEY);
       if (stored) {
-        iconPosition = clampIconPosition(stored, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+        iconPosition = resolveAnchoredIconPosition(
+          stored,
+          { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+        );
         renderIcon();
       }
     };
