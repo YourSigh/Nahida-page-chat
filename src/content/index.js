@@ -1,10 +1,11 @@
 import stylesText from "../ui/styles.css";
 import MarkdownIt from "markdown-it";
 import {
-  clampIconPosition,
+  anchorIconPosition,
   computeAnchoredDialogPosition,
   getDefaultIconPosition,
-  clampDialogPosition
+  clampDialogPosition,
+  resolveAnchoredIconPosition
 } from "../utils/geometry.js";
 import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.js";
 
@@ -1573,11 +1574,14 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const viewport = () => ({ viewportWidth: window.innerWidth, viewportHeight: window.innerHeight });
 
-  let iconPosition = getDefaultIconPosition({
-    edgeGap: EDGE_GAP,
-    buttonSize: BUTTON_SIZE,
-    ...viewport()
-  });
+  let iconPosition = anchorIconPosition(
+    getDefaultIconPosition({
+      edgeGap: EDGE_GAP,
+      buttonSize: BUTTON_SIZE,
+      ...viewport()
+    }),
+    { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+  );
 
   let dragState = null;
   let pendingPointerDown = null;
@@ -1751,7 +1755,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
     }
 
-    iconPosition = clampIconPosition(
+    iconPosition = anchorIconPosition(
       { x: event.clientX - dragState.offsetX, y: event.clientY - dragState.offsetY },
       { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
     );
@@ -1769,7 +1773,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       if (button.hasPointerCapture(event.pointerId)) {
         button.releasePointerCapture(event.pointerId);
       }
-      iconPosition = clampIconPosition(iconPosition, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+      iconPosition = resolveAnchoredIconPosition(
+        iconPosition,
+        { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+      );
       renderIcon();
       await safeWritePosition(STORAGE_KEY, iconPosition);
     } else {
@@ -1788,7 +1795,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     if (!nextValue || !Number.isFinite(nextValue.x) || !Number.isFinite(nextValue.y)) {
       return;
     }
-    iconPosition = clampIconPosition(nextValue, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+    iconPosition = resolveAnchoredIconPosition(
+      nextValue,
+      { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+    );
     renderIcon();
   };
 
@@ -1960,7 +1970,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   };
 
   window.addEventListener("resize", () => {
-    iconPosition = clampIconPosition(iconPosition, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+    iconPosition = resolveAnchoredIconPosition(
+      iconPosition,
+      { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+    );
     renderIcon();
     if (isDialogOpen) {
       clampDialogIntoViewport();
@@ -2140,11 +2153,13 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     renderIcon();
     const stored = await safeReadPosition(STORAGE_KEY);
     if (stored) {
-      iconPosition = clampIconPosition(stored, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+      iconPosition = resolveAnchoredIconPosition(
+        stored,
+        { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+      );
       renderIcon();
     }
   };
 
   bootstrap();
 })();
-
