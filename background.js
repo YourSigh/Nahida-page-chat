@@ -8,9 +8,10 @@
     "\u4F60\u6B63\u5728\u5E2E\u52A9\u7528\u6237\u7406\u89E3\u548C\u64CD\u4F5C\u5F53\u524D\u6D4F\u89C8\u5668\u9875\u9762\u3002\u4F60\u62E5\u6709\u539F\u751F\u5DE5\u5177\u8C03\u7528\u80FD\u529B\uFF1A\u9700\u8981\u67E5\u770B\u6216\u64CD\u4F5C\u9875\u9762\u65F6\u76F4\u63A5\u8C03\u7528\u5DE5\u5177\uFF0C\u7EDD\u4E0D\u8981\u628A\u5DE5\u5177\u8C03\u7528\u5199\u6210\u666E\u901A\u6587\u672C\u6216 JSON\u3002",
     "",
     "\u5DE5\u4F5C\u65B9\u5F0F\uFF1A",
-    "- \u7528\u6237\u8981\u4F60\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u5148\u8C03\u7528 get_page_state\uFF0C\u8BFB\u53D6\u53EF\u89C1\u6587\u672C\u548C\u53EF\u64CD\u4F5C\u76EE\u6807\u3002\u6BCF\u4E2A\u76EE\u6807\u90FD\u6709\u4E34\u65F6 targetId\uFF1B\u9875\u9762\u66F4\u65B0\u3001\u8DF3\u8F6C\u6216\u518D\u6B21\u8BFB\u53D6\u72B6\u6001\u540E\uFF0C\u65E7 ID \u4F1A\u5931\u6548\u3002",
-    "- \u70B9\u51FB\u3001\u8F93\u5165\u3001\u9009\u62E9\u548C\u6309\u952E\u90FD\u53EA\u80FD\u4F7F\u7528\u521A\u8BFB\u53D6\u5230\u7684 targetId\uFF0C\u4E0D\u80FD\u731C\u6D4B\u9875\u9762\u5143\u7D20\uFF0C\u4E5F\u4E0D\u80FD\u51ED CSS selector \u64CD\u4F5C\u3002",
-    "- \u5BF9\u70B9\u51FB\u540E\u7684\u52A8\u6001\u9875\u9762\uFF0C\u8C03\u7528 wait\uFF08\u901A\u5E38 500-1200ms\uFF09\u540E\u91CD\u65B0 get_page_state\uFF0C\u518D\u51B3\u5B9A\u4E0B\u4E00\u6B65\u3002",
+    "- \u7528\u6237\u8981\u4F60\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u5148\u8C03\u7528 get_page_state\uFF0C\u8BFB\u53D6\u53EF\u89C1\u6587\u672C\u548C\u53EF\u64CD\u4F5C\u8BED\u4E49\u76EE\u6807\u3002\u76EE\u6807\u53EF\u80FD\u662F\u539F\u751F\u63A7\u4EF6\uFF0C\u4E5F\u53EF\u80FD\u662F Vue/React \u7684\u81EA\u5B9A\u4E49 radio\u3001checkbox\u3001switch \u6216\u6309\u94AE\uFF1B\u4E0D\u80FD\u56E0\u4E3A\u5217\u8868\u91CC\u6682\u65F6\u6CA1\u6709\u76EE\u6807\u5C31\u65AD\u8A00\u9875\u9762\u662F canvas\u3002",
+    "- \u521D\u59CB\u5217\u8868\u6309\u89C6\u53E3\u548C\u8868\u5355\u4E0A\u4E0B\u6587\u6392\u5E8F\u3002\u76EE\u6807\u4E0D\u5728\u5217\u8868\u4E2D\u65F6\uFF0C\u8C03\u7528 list_targets\uFF0C\u4F7F\u7528 region=below\u3001above \u6216 all \u5E76\u7FFB\u9875\uFF1B\u4E0D\u80FD\u731C\u6D4B\u9875\u9762\u5143\u7D20\uFF0C\u4E5F\u4E0D\u80FD\u51ED CSS selector \u64CD\u4F5C\u3002",
+    "- \u70B9\u51FB\u3001\u8F93\u5165\u3001\u9009\u62E9\u548C\u6309\u952E\u90FD\u53EA\u80FD\u4F7F\u7528\u5DE5\u5177\u8FD4\u56DE\u7684 targetId\u3002radio\u3001checkbox\u3001switch \u4F18\u5148\u4F7F\u7528 check\uFF1B\u52A8\u4F5C\u7ED3\u679C\u4F1A\u5305\u542B verified/status/evidence\u3002\u82E5\u672A\u9A8C\u8BC1\uFF0C\u5148 get_target_state \u6216\u91CD\u65B0 get_page_state\uFF0C\u518D\u51B3\u5B9A\u4E0B\u4E00\u6B65\uFF0C\u7EDD\u4E0D\u628A\u672A\u9A8C\u8BC1\u7ED3\u679C\u8BF4\u6210\u6210\u529F\u3002",
+    "- \u9875\u9762\u91CD\u7ED8\u65F6\u8FD0\u884C\u65F6\u4F1A\u5C1D\u8BD5\u6309\u8BED\u4E49\u6307\u7EB9\u91CD\u7ED1\u540C\u4E00\u4E2A\u76EE\u6807\uFF0C\u4F46\u53D1\u751F\u660E\u663E\u9875\u9762\u53D8\u5316\u540E\u4ECD\u5E94\u91CD\u65B0\u8BFB\u53D6\u72B6\u6001\u3002\u5BF9\u70B9\u51FB\u540E\u7684\u52A8\u6001\u9875\u9762\uFF0C\u8C03\u7528 wait\uFF08\u901A\u5E38 500-1200ms\uFF09\u540E\u518D\u89C2\u5BDF\u3002",
     "- \u5DE5\u5177\u4F1A\u5728\u524D\u7AEF\u663E\u793A\u64CD\u4F5C\u72B6\u6001\u3002\u82E5\u5DE5\u5177\u7ED3\u679C\u663E\u793A\u5168\u5C40\u9875\u9762\u64CD\u4F5C\u5DF2\u5173\u95ED\uFF0C\u544A\u8BC9\u7528\u6237\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\uFF1B\u4E0D\u8981\u53CD\u590D\u8BF7\u6C42\u540C\u4E00\u64CD\u4F5C\u3002",
     "- \u8F93\u5165\u3001\u63D0\u4EA4\u3001\u53D1\u9001\u3001\u5220\u9664\u3001\u8D2D\u4E70\u3001\u53D1\u5E03\u3001\u767B\u5F55\u3001\u6743\u9650\u4FEE\u6539\u7B49\u6709\u5F71\u54CD\u7684\u52A8\u4F5C\u5FC5\u987B\u6765\u81EA\u7528\u6237\u5F53\u524D\u5BF9\u8BDD\u7684\u660E\u786E\u8BF7\u6C42\u3002\u4E0D\u8981\u4E3B\u52A8\u586B\u5199\u5BC6\u7801\u3001\u9A8C\u8BC1\u7801\u3001\u652F\u4ED8\u4FE1\u606F\u3001API Key \u6216\u5176\u4ED6\u79D8\u5BC6\u3002",
     "- \u4E0D\u8981\u6279\u91CF\u70B9\u51FB\u6216\u6279\u91CF\u586B\u5199\uFF1B\u4E00\u6B21\u53EA\u5904\u7406\u4E00\u4E2A\u660E\u786E\u76EE\u6807\u3002\u9875\u9762\u8DF3\u8F6C\u540E\u5F53\u524D\u5BF9\u8BDD\u4F1A\u7ED3\u675F\uFF0C\u65B0\u9875\u9762\u4F1A\u91CD\u65B0\u5EFA\u7ACB\u5BF9\u8BDD\u3002",
@@ -28,8 +29,39 @@
           type: "object",
           properties: {
             maxElements: { type: "integer", minimum: 10, maximum: 60, description: "\u6700\u591A\u8FD4\u56DE\u591A\u5C11\u4E2A\u53EF\u64CD\u4F5C\u5143\u7D20" },
-            maxText: { type: "integer", minimum: 500, maximum: 6e3, description: "\u6700\u591A\u8FD4\u56DE\u591A\u5C11\u5B57\u7B26\u7684\u6B63\u6587" }
+            maxText: { type: "integer", minimum: 500, maximum: 6e3, description: "\u6700\u591A\u8FD4\u56DE\u591A\u5C11\u5B57\u7B26\u7684\u6B63\u6587" },
+            page: { type: "integer", minimum: 1, maximum: 36, description: "\u76EE\u6807\u5217\u8868\u9875\u7801\uFF0C\u9ED8\u8BA4 1" },
+            region: { type: "string", enum: ["viewport", "nearby", "above", "below", "all"], description: "\u76EE\u6807\u533A\u57DF\uFF0C\u9ED8\u8BA4 nearby" }
           },
+          additionalProperties: false
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "list_targets",
+        description: "\u6309\u533A\u57DF\u548C\u9875\u7801\u5217\u51FA\u53EF\u4EA4\u4E92\u8BED\u4E49\u76EE\u6807\u3002\u76EE\u6807\u672A\u51FA\u73B0\u5728\u521D\u59CB\u9875\u9762\u72B6\u6001\u4E2D\u65F6\u4F7F\u7528\uFF1B\u4E0D\u4F1A\u8BFB\u53D6\u6574\u9875\u6B63\u6587\u3002",
+        parameters: {
+          type: "object",
+          properties: {
+            region: { type: "string", enum: ["viewport", "nearby", "above", "below", "all"], description: "\u8981\u5217\u51FA\u7684\u533A\u57DF" },
+            page: { type: "integer", minimum: 1, maximum: 36, description: "\u9875\u7801" },
+            pageSize: { type: "integer", minimum: 10, maximum: 60, description: "\u6BCF\u9875\u76EE\u6807\u6570" }
+          },
+          additionalProperties: false
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "get_target_state",
+        description: "\u8BFB\u53D6\u4E00\u4E2A targetId \u5F53\u524D\u7684\u9009\u4E2D\u3001\u5C55\u5F00\u3001\u8F93\u5165\u503C\u7B49\u72B6\u6001\uFF1B\u7528\u4E8E\u786E\u8BA4\u52A8\u4F5C\u7ED3\u679C\u6216\u68C0\u67E5\u91CD\u7ED8\u540E\u7684\u76EE\u6807\u3002",
+        parameters: {
+          type: "object",
+          properties: { targetId: { type: "string" } },
+          required: ["targetId"],
           additionalProperties: false
         }
       }
@@ -62,10 +94,23 @@
       type: "function",
       function: {
         name: "click",
-        description: "\u70B9\u51FB\u4E00\u4E2A get_page_state \u8FD4\u56DE\u7684 targetId\u3002\u70B9\u51FB\u53EF\u80FD\u5BFC\u81F4\u9875\u9762\u8DF3\u8F6C\u3002",
+        description: "\u70B9\u51FB\u4E00\u4E2A\u5DE5\u5177\u8FD4\u56DE\u7684 targetId\u3002\u8FD0\u884C\u65F6\u4F1A\u9A8C\u8BC1\u53EF\u89C2\u5BDF\u5230\u7684\u72B6\u6001\u53D8\u5316\uFF1B\u53EF\u80FD\u8DF3\u8F6C\u7684\u94FE\u63A5\u6216\u63D0\u4EA4\u6309\u94AE\u4F1A\u5148\u786E\u8BA4\u8C03\u5EA6\u3002",
         parameters: {
           type: "object",
           properties: { targetId: { type: "string", description: "get_page_state \u8FD4\u56DE\u7684\u76EE\u6807 ID" } },
+          required: ["targetId"],
+          additionalProperties: false
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "check",
+        description: "\u5C06 radio\u3001checkbox \u6216 switch \u76EE\u6807\u8BBE\u7F6E\u4E3A\u5DF2\u9009\u4E2D/\u5F00\u542F\uFF0C\u5E76\u9A8C\u8BC1\u6700\u7EC8\u72B6\u6001\u3002",
+        parameters: {
+          type: "object",
+          properties: { targetId: { type: "string" } },
           required: ["targetId"],
           additionalProperties: false
         }
@@ -254,19 +299,33 @@
     const compact = {
       ok: value.ok,
       error: value.error,
+      status: value.status,
+      verified: value.verified,
       title: value.title,
       url: value.url,
       scroll: value.scroll,
+      snapshotVersion: value.snapshotVersion,
+      region: value.region,
+      page: value.page,
+      pageSize: value.pageSize,
+      pageCount: value.pageCount,
+      totalTargets: value.totalTargets,
+      hasMore: value.hasMore,
       text: typeof value.text === "string" ? value.text.slice(0, 2400) : void 0,
       targets: Array.isArray(value.targets) ? value.targets.slice(0, 28).map((target) => ({
         id: target.id,
         kind: target.kind,
+        role: target.role,
         name: target.name,
         text: target.text,
+        group: target.group,
+        checked: target.checked,
         inputType: target.inputType,
         placeholder: target.placeholder,
         disabled: target.disabled,
         inViewport: target.inViewport,
+        visible: target.visible,
+        confidence: target.confidence,
         options: Array.isArray(target.options) ? target.options.slice(0, 12).map((option) => ({ value: option.value, label: option.label, selected: option.selected })) : void 0
       })) : void 0,
       truncated: true,
@@ -393,17 +452,22 @@
 
 \u5F53\u524D\u6A21\u578B\u63A5\u53E3\u4E0D\u652F\u6301\u539F\u751F\u5DE5\u5177\u8C03\u7528\u3002\u9700\u8981\u8BFB\u53D6\u6216\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u4E25\u683C\u53EA\u8F93\u51FA\u4E00\u884C JSON\uFF0C\u4E0D\u8981\u8F93\u51FA\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF1A
 {"type":"tool","name":"get_page_state","args":{"maxElements":35,"maxText":3000}}
+{"type":"tool","name":"list_targets","args":{"region":"below","page":1,"pageSize":35}}
+{"type":"tool","name":"get_target_state","args":{"targetId":"t1-2"}}
 {"type":"tool","name":"read_page","args":{"maxChars":4000}}
 {"type":"tool","name":"get_visible_text","args":{"maxChars":2000}}
-{"type":"tool","name":"click","args":{"targetId":"p1-1"}}
-{"type":"tool","name":"type","args":{"targetId":"p1-2","text":"\u793A\u4F8B","clear":true}}
-{"type":"tool","name":"select_option","args":{"targetId":"p1-3","value":"value"}}
+{"type":"tool","name":"click","args":{"targetId":"t1-1"}}
+{"type":"tool","name":"check","args":{"targetId":"t1-2"}}
+{"type":"tool","name":"type","args":{"targetId":"t1-2","text":"\u793A\u4F8B","clear":true}}
+{"type":"tool","name":"select_option","args":{"targetId":"t1-3","value":"value"}}
+{"type":"tool","name":"press_key","args":{"targetId":"t1-2","key":"Enter"}}
 {"type":"tool","name":"scroll","args":{"direction":"down","amount":600}}
 {"type":"tool","name":"wait","args":{"ms":800}}
 
 \u89C4\u5219\uFF1A
-- \u7528\u6237\u8981\u6C42\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u5148\u7528 get_page_state \u627E\u5230\u76EE\u6807\uFF0C\u5E76\u53EA\u4F7F\u7528\u8FD4\u56DE\u7684 targetId\uFF1B\u9875\u9762\u53D8\u5316\u540E\u8981\u91CD\u65B0\u8BFB\u53D6\u72B6\u6001\u3002
-- \u6BCF\u6B21\u53EA\u64CD\u4F5C\u4E00\u4E2A\u76EE\u6807\uFF0C\u4E0D\u731C selector\uFF0C\u4E0D\u6279\u91CF\u64CD\u4F5C\u3002
+- \u7528\u6237\u8981\u6C42\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u5148\u7528 get_page_state \u627E\u5230\u76EE\u6807\uFF0C\u5E76\u53EA\u4F7F\u7528\u8FD4\u56DE\u7684 targetId\uFF1B\u5B83\u65E2\u53EF\u80FD\u5BF9\u5E94\u539F\u751F\u63A7\u4EF6\uFF0C\u4E5F\u53EF\u80FD\u5BF9\u5E94\u81EA\u5B9A\u4E49 radio\u3001checkbox\u3001switch \u6216\u6309\u94AE\u3002\u627E\u4E0D\u5230\u76EE\u6807\u4E0D\u4EE3\u8868\u9875\u9762\u662F canvas\u3002
+- \u521D\u59CB\u5217\u8868\u6CA1\u6709\u76EE\u6807\u65F6\uFF0C\u7528 list_targets \u7684 region=below\u3001above \u6216 all \u7FFB\u9875\u67E5\u627E\uFF1B\u6BCF\u6B21\u53EA\u64CD\u4F5C\u4E00\u4E2A\u76EE\u6807\uFF0C\u4E0D\u731C selector\uFF0C\u4E0D\u6279\u91CF\u64CD\u4F5C\u3002
+- radio\u3001checkbox\u3001switch \u4F18\u5148\u4F7F\u7528 check\u3002\u5DE5\u5177\u8FD4\u56DE verified:false \u6216 status:unverified \u65F6\uFF0C\u5148 get_target_state \u6216\u91CD\u65B0 get_page_state \u786E\u8BA4\uFF0C\u4E0D\u80FD\u628A\u672A\u9A8C\u8BC1\u7ED3\u679C\u8BF4\u6210\u6210\u529F\u3002
 - \u82E5\u5DE5\u5177\u7ED3\u679C\u8868\u793A\u5168\u5C40\u9875\u9762\u64CD\u4F5C\u5DF2\u5173\u95ED\uFF0C\u544A\u8BC9\u7528\u6237\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\uFF0C\u4E0D\u8981\u91CD\u590D\u8BF7\u6C42\u540C\u4E00\u64CD\u4F5C\u3002
 - \u7528\u6237\u672A\u660E\u786E\u8981\u6C42\u65F6\uFF0C\u4E0D\u586B\u5199\u6216\u53D1\u9001\u5BC6\u7801\u3001\u9A8C\u8BC1\u7801\u3001\u652F\u4ED8\u4FE1\u606F\u3001API Key \u7B49\u79D8\u5BC6\uFF0C\u4E0D\u6267\u884C\u5220\u9664\u3001\u8D2D\u4E70\u3001\u53D1\u5E03\u7B49\u9AD8\u98CE\u9669\u64CD\u4F5C\u3002
 - \u6700\u591A\u8FDE\u7EED\u8C03\u7528 12 \u6B21\u5DE5\u5177\u3002\u6700\u7EC8\u56DE\u7B54\u65F6\u76F4\u63A5\u7528\u81EA\u7136\u8BED\u8A00\uFF0C\u4E0D\u8981\u8F93\u51FA JSON\u3002`;

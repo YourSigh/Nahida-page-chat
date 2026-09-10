@@ -5411,95 +5411,1160 @@
   };
   var lib_default = MarkdownIt;
 
-  // src/page/pageController.js
-  var INTERACTIVE_SELECTOR = [
-    "a[href]",
-    "button",
-    "input:not([type='hidden'])",
-    "textarea",
-    "select",
-    "[contenteditable='true']",
-    "[role='button']",
-    "[role='link']",
-    "[role='checkbox']",
-    "[role='switch']",
-    "[onclick]"
-  ].join(",");
-  var MAX_TARGETS = 60;
-  var MAX_TEXT = 6e3;
-  var clip = (value, max) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+  // src/page/perception/semantic.js
+  var clipText = (value, max = 180) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+  var clip = clipText;
+  var normalizeText = (value) => clipText(value, 500).toLocaleLowerCase();
+  var tagName = (element) => String(element?.tagName || "").toLowerCase();
+  var rootFor = (element) => {
+    try {
+      return element?.getRootNode?.() || document;
+    } catch {
+      return document;
+    }
+  };
+  var byId = (element, id) => {
+    if (!id) return null;
+    const root = rootFor(element);
+    try {
+      if (typeof root.getElementById === "function") return root.getElementById(id);
+      return root.querySelector?.(`[id=${JSON.stringify(id)}]`) || null;
+    } catch {
+      return document.getElementById(id);
+    }
+  };
+  var roleFor = (element) => String(element?.getAttribute?.("role") || "").trim().toLowerCase();
+  var composedParent = (element) => {
+    if (!element) return null;
+    if (element.parentElement) return element.parentElement;
+    const root = rootFor(element);
+    return root?.host instanceof Element ? root.host : null;
+  };
+  var closestComposed = (element, selector) => {
+    let current = element;
+    let guard = 0;
+    while (current && guard < 40) {
+      guard += 1;
+      try {
+        if (current.matches?.(selector)) return current;
+      } catch {
+        return null;
+      }
+      current = composedParent(current);
+    }
+    return null;
+  };
+  var labelledByText = (element) => {
+    const ids = String(element?.getAttribute?.("aria-labelledby") || "").trim().split(/\s+/).filter(Boolean);
+    if (!ids.length) return "";
+    return clipText(ids.map((id) => byId(element, id)?.innerText || byId(element, id)?.textContent || "").join(" "));
+  };
+  var labelsFor = (element) => {
+    try {
+      if (element?.labels?.length) return Array.from(element.labels);
+    } catch {
+    }
+    const id = String(element?.id || "");
+    if (!id) return [];
+    const root = rootFor(element);
+    try {
+      return Array.from(root.querySelectorAll?.("label") || []).filter((label) => label.htmlFor === id);
+    } catch {
+      return [];
+    }
+  };
+  var controlForLabel = (label) => {
+    if (!label) return null;
+    try {
+      if (label.control) return label.control;
+    } catch {
+    }
+    const htmlFor = String(label.htmlFor || label.getAttribute?.("for") || "").trim();
+    if (htmlFor) return byId(label, htmlFor);
+    try {
+      return label.querySelector("input, textarea, select, [contenteditable='true']");
+    } catch {
+      return null;
+    }
+  };
+  var classTokens = (element) => String(element?.className || "").split(/\s+/).map((token) => token.trim().toLowerCase()).filter(Boolean);
+  var classControlKind = (element) => {
+    const text2 = classTokens(element).join(" ");
+    if (/(^|[\s_-])radio(?:[\s_-]|$)/.test(text2)) return "radio";
+    if (/(^|[\s_-])checkbox(?:[\s_-]|$)/.test(text2)) return "checkbox";
+    if (/(^|[\s_-])(switch|toggle)(?:[\s_-]|$)/.test(text2)) return "switch";
+    return "";
+  };
+  var inputTypeFor = (element) => {
+    if (tagName(element) !== "input") return "";
+    return String(element.type || element.getAttribute?.("type") || "text").toLowerCase();
+  };
+  var stateElementFor = (element) => {
+    const tag = tagName(element);
+    if (["input", "textarea", "select"].includes(tag) || element?.isContentEditable) return element;
+    if (tag === "label") {
+      const control = controlForLabel(element);
+      if (control) return control;
+    }
+    const role = roleFor(element);
+    const classKind = classControlKind(element);
+    const canContainState = ["radio", "checkbox", "switch", "option", "tab"].includes(role) || Boolean(classKind) || element?.hasAttribute?.("aria-checked") || element?.hasAttribute?.("aria-selected");
+    if (!canContainState) return null;
+    try {
+      const controls = Array.from(element.querySelectorAll("input[type='radio'], input[type='checkbox']"));
+      if (controls.length === 1) return controls[0];
+    } catch {
+    }
+    return element;
+  };
+  var kindFor = (element, stateElement = stateElementFor(element)) => {
+    const stateTag = tagName(stateElement);
+    const stateType = inputTypeFor(stateElement);
+    if (stateTag === "input") {
+      if (stateType === "radio") return "radio";
+      if (stateType === "checkbox") return "checkbox";
+      if (["button", "submit", "reset", "image"].includes(stateType)) return "button";
+      if (stateType === "file") return "file";
+      return "textbox";
+    }
+    if (stateTag === "textarea" || stateElement?.isContentEditable || stateElement?.getAttribute?.("contenteditable") === "true") return "textbox";
+    if (stateTag === "select") return "select";
+    const tag = tagName(element);
+    const role = roleFor(element);
+    if (role === "radio") return "radio";
+    if (role === "checkbox") return "checkbox";
+    if (role === "switch") return "switch";
+    if (["textbox", "searchbox", "combobox", "spinbutton"].includes(role)) return "textbox";
+    if (role === "button") return "button";
+    if (role === "link") return "link";
+    if (role === "option") return "option";
+    if (role === "tab") return "tab";
+    if (["menuitem", "menuitemcheckbox", "menuitemradio"].includes(role)) return "menuitem";
+    if (tag === "a" && element?.hasAttribute?.("href")) return "link";
+    if (tag === "button") return "button";
+    if (tag === "select") return "select";
+    if (tag === "textarea" || element?.isContentEditable || element?.getAttribute?.("contenteditable") === "true") return "textbox";
+    const classKind = classControlKind(element);
+    if (classKind) return classKind;
+    if (element?.hasAttribute?.("aria-checked")) return "checkbox";
+    if (element?.hasAttribute?.("aria-selected")) return "option";
+    return "custom";
+  };
+  var stateNodesFor = (element, stateElement) => {
+    const nodes = [];
+    for (const node of [stateElement, element]) {
+      if (node && !nodes.includes(node)) nodes.push(node);
+    }
+    try {
+      for (const node of element?.querySelectorAll?.("input[type='radio'], input[type='checkbox']") || []) {
+        if (!nodes.includes(node)) nodes.push(node);
+      }
+    } catch {
+    }
+    return nodes;
+  };
+  var checkedStateFor = (element, stateElement, kind = kindFor(element, stateElement)) => {
+    for (const node of stateNodesFor(element, stateElement)) {
+      const inputType = inputTypeFor(node);
+      if (inputType === "radio" || inputType === "checkbox") return Boolean(node.checked);
+      const ariaChecked = node.getAttribute?.("aria-checked");
+      if (ariaChecked === "true") return true;
+      if (ariaChecked === "false") return false;
+      const ariaSelected = node.getAttribute?.("aria-selected");
+      if (ariaSelected === "true") return true;
+      if (ariaSelected === "false") return false;
+      if (["radio", "checkbox", "switch", "option", "tab"].includes(kind)) {
+        const dataState = String(node.getAttribute?.("data-state") || "").toLowerCase();
+        if (["checked", "selected", "on", "active"].includes(dataState)) return true;
+        if (["unchecked", "unselected", "off", "inactive"].includes(dataState)) return false;
+        const tokens = classTokens(node);
+        if (tokens.some((token) => /(^|[-_])(un)?checked$|(^|[-_])(un)?selected$|(^|[-_])off$/.test(token))) return false;
+        if (tokens.some((token) => /(^|[-_])(is-)?(checked|selected|active|on)$/.test(token))) return true;
+      }
+    }
+    return null;
+  };
+  var isSensitive = (element) => inputTypeFor(element) === "password" || /password|passwd|token|secret|api[-_]?key/i.test(
+    `${element?.name || ""} ${element?.id || ""} ${element?.getAttribute?.("aria-label") || ""}`
+  );
+  var textFromLabels = (element) => clipText(labelsFor(element).map((label) => label.innerText || label.textContent || "").join(" "));
+  var rawNameFor = (element) => {
+    if (!element) return "";
+    const direct = element.getAttribute?.("aria-label") || labelledByText(element);
+    if (direct) return clipText(direct);
+    const tag = tagName(element);
+    if (["input", "textarea", "select"].includes(tag)) {
+      const labels = textFromLabels(element);
+      if (labels) return labels;
+      const closestLabel = closestComposed(element, "label");
+      if (closestLabel) {
+        const labelText = clipText(closestLabel.innerText || closestLabel.textContent || "");
+        if (labelText) return labelText;
+      }
+      const own = element.name || element.placeholder || element.title || "";
+      if (own) return clipText(own);
+    }
+    if (tag === "img") return clipText(element.alt || element.title || "\u56FE\u7247");
+    return clipText(element.innerText || element.textContent || element.title || "");
+  };
+  var accessibleNameFor = (element, fallbackElement) => rawNameFor(element) || rawNameFor(fallbackElement);
+  var groupFor = (element, stateElement) => {
+    const inputName = String(stateElement?.name || "").trim();
+    if (inputName) return clipText(inputName, 160);
+    const group = closestComposed(element, "[role='radiogroup'], [role='group'], fieldset");
+    if (!group) return "";
+    const groupName = group.getAttribute?.("aria-label") || labelledByText(group);
+    if (groupName) return clipText(groupName, 160);
+    if (tagName(group) === "fieldset") {
+      const legend = group.querySelector?.("legend");
+      if (legend) return clipText(legend.innerText || legend.textContent || "", 160);
+    }
+    return clipText(group.innerText || group.textContent || "", 160);
+  };
+  var hasClickHint = (element) => {
+    if (!element) return false;
+    if (element.hasAttribute?.("onclick") || element.hasAttribute?.("onpointerdown") || element.hasAttribute?.("data-action")) return true;
+    if (Number(element.tabIndex) >= 0) return true;
+    const role = roleFor(element);
+    if (["button", "link", "checkbox", "radio", "switch", "option", "tab", "menuitem", "menuitemcheckbox", "menuitemradio"].includes(role)) return true;
+    try {
+      return window.getComputedStyle(element).cursor === "pointer";
+    } catch {
+      return false;
+    }
+  };
+
+  // src/page/perception/visibility.js
+  var rectFor = (element) => {
+    const rect = element?.getBoundingClientRect?.();
+    return rect || { x: 0, y: 0, width: 0, height: 0, top: 0, right: 0, bottom: 0, left: 0 };
+  };
+  var hasVisibleBox = (element) => {
+    const rect = rectFor(element);
+    return rect.width > 1 && rect.height > 1;
+  };
+  var effectiveStyleAllowsVisibility = (element) => {
+    try {
+      const style = window.getComputedStyle(element);
+      const opacity = Number(style.opacity || "1");
+      return style.display !== "none" && style.visibility !== "hidden" && style.visibility !== "collapse" && style.contentVisibility !== "hidden" && opacity > 0.01;
+    } catch {
+      return true;
+    }
+  };
   var isVisible = (element) => {
-    if (!element?.isConnected) return false;
-    const rect = element.getBoundingClientRect();
-    if (rect.width <= 1 || rect.height <= 1) return false;
-    const style = window.getComputedStyle(element);
-    return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0" && style.pointerEvents !== "none";
+    if (!element?.isConnected || !hasVisibleBox(element)) return false;
+    let current = element;
+    let guard = 0;
+    while (current && guard < 40) {
+      guard += 1;
+      if (!effectiveStyleAllowsVisibility(current)) return false;
+      current = composedParent(current);
+    }
+    return true;
+  };
+  var canReceivePointer = (element) => {
+    if (!isVisible(element)) return false;
+    let current = element;
+    let guard = 0;
+    while (current && guard < 40) {
+      guard += 1;
+      try {
+        if (window.getComputedStyle(current).pointerEvents === "none") return false;
+      } catch {
+      }
+      current = composedParent(current);
+    }
+    return true;
   };
   var isInViewport = (element) => {
-    const rect = element.getBoundingClientRect();
+    const rect = rectFor(element);
     return rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth;
   };
   var isDisabled = (element) => Boolean(element?.disabled) || element?.getAttribute?.("aria-disabled") === "true";
-  var labelledByText = (element) => {
-    const ids = String(element.getAttribute?.("aria-labelledby") || "").trim().split(/\s+/).filter(Boolean);
-    if (!ids.length) return "";
-    return clip(ids.map((id) => document.getElementById(id)?.innerText || document.getElementById(id)?.textContent || "").join(" "), 180);
-  };
-  var nameFor = (element) => {
-    const tag = element.tagName?.toLowerCase() || "";
-    const label = element.getAttribute?.("aria-label") || labelledByText(element);
-    if (label) return clip(label, 180);
-    if (tag === "input" || tag === "textarea" || tag === "select") {
-      const id = element.id;
-      const htmlLabel = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
-      const formLabel = element.closest?.("label");
-      const labelText = htmlLabel?.innerText || formLabel?.innerText || "";
-      if (labelText) return clip(labelText, 180);
-      const own = element.name || element.placeholder || element.title || "";
-      if (own) return clip(own, 180);
+  var isExtensionElement = (element, extensionHost) => element === extensionHost || Boolean(extensionHost?.contains?.(element));
+  var composedContains = (ancestor, element) => {
+    if (!ancestor || !element) return false;
+    if (ancestor === element || ancestor.contains?.(element)) return true;
+    let current = element;
+    let guard = 0;
+    while (current && guard < 40) {
+      guard += 1;
+      if (current === ancestor) return true;
+      current = composedParent(current);
     }
-    if (tag === "img") return clip(element.alt || element.title || "\u56FE\u7247", 180);
-    return clip(element.innerText || element.textContent || element.title || "", 180);
+    return false;
   };
-  var kindFor = (element) => {
-    const tag = element.tagName?.toLowerCase() || "element";
-    const role = element.getAttribute?.("role") || "";
-    if (tag === "input") return `input:${element.type || "text"}`;
-    if (tag === "textarea") return "textarea";
-    if (tag === "select") return "select";
-    if (tag === "a" || role === "link") return "link";
-    if (tag === "button" || role === "button") return "button";
-    if (element.isContentEditable) return "contenteditable";
-    return role || tag;
+  var isHitTestable = (element) => {
+    if (!canReceivePointer(element) || typeof document.elementsFromPoint !== "function") return false;
+    const rect = rectFor(element);
+    const x = Math.max(1, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
+    const y = Math.max(1, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
+    try {
+      return document.elementsFromPoint(x, y).some((hit) => composedContains(element, hit));
+    } catch {
+      return false;
+    }
   };
-  var isSensitive = (element) => element instanceof HTMLInputElement && element.type === "password" || /password|passwd|token|secret|api[-_]?key/i.test(
-    `${element.name || ""} ${element.id || ""} ${element.getAttribute?.("aria-label") || ""}`
-  );
-  var targetSnapshot = (id, element) => {
-    const rect = element.getBoundingClientRect();
-    const tag = element.tagName?.toLowerCase() || "";
+
+  // src/page/verification/stateSnapshot.js
+  var nodeFor = (target) => target?.stateElement || target?.clickElement || target?.element || null;
+  var rawValueFor = (node) => {
+    const tag = String(node?.tagName || "").toLowerCase();
+    if (["input", "textarea", "select"].includes(tag)) return String(node.value ?? "");
+    if (node?.isContentEditable || node?.getAttribute?.("contenteditable") === "true") return String(node.textContent || "");
+    return "";
+  };
+  var dialogCount = () => {
+    try {
+      return Array.from(document.querySelectorAll("dialog[open], [role='dialog'], [role='alertdialog']")).filter((element) => isVisible(element) && element.getAttribute("aria-hidden") !== "true").length;
+    } catch {
+      return 0;
+    }
+  };
+  var snapshotTargetState = (target) => {
+    const node = nodeFor(target);
+    const connected = Boolean(node?.isConnected);
+    const value = connected ? rawValueFor(node) : "";
+    const checked = connected ? checkedStateFor(target.clickElement || node, node, target.kind) : null;
+    const active = document.activeElement;
+    return {
+      connected,
+      checked,
+      value,
+      ariaChecked: connected ? node.getAttribute?.("aria-checked") || "" : "",
+      ariaSelected: connected ? node.getAttribute?.("aria-selected") || "" : "",
+      ariaPressed: connected ? node.getAttribute?.("aria-pressed") || "" : "",
+      ariaExpanded: connected ? node.getAttribute?.("aria-expanded") || "" : "",
+      dataState: connected ? node.getAttribute?.("data-state") || "" : "",
+      selectedValue: connected && String(node.tagName || "").toLowerCase() === "select" ? String(node.value || "") : "",
+      url: String(location.href || ""),
+      dialogs: dialogCount(),
+      focused: Boolean(active && (active === node || active === target.clickElement || target.clickElement?.contains?.(active))),
+      sensitive: isSensitive(node),
+      inputType: inputTypeFor(node)
+    };
+  };
+  var meaningfulChanges = (before, after) => {
+    const changes = [];
+    for (const key of ["checked", "value", "ariaChecked", "ariaSelected", "ariaPressed", "ariaExpanded", "dataState", "selectedValue", "url", "dialogs"]) {
+      if (before?.[key] !== after?.[key]) changes.push(key);
+    }
+    return changes;
+  };
+  var publicState = (state) => ({
+    connected: state.connected,
+    checked: state.checked,
+    value: state.sensitive ? "[\u5DF2\u9690\u85CF]" : clip(state.value, 160),
+    ariaChecked: state.ariaChecked || void 0,
+    ariaSelected: state.ariaSelected || void 0,
+    ariaPressed: state.ariaPressed || void 0,
+    ariaExpanded: state.ariaExpanded || void 0,
+    dataState: state.dataState || void 0,
+    selectedValue: state.selectedValue || void 0,
+    dialogs: state.dialogs,
+    url: state.url
+  });
+  var evidenceFor = ({ before, after, changes, mutated }) => ({
+    before: publicState(before),
+    after: publicState(after),
+    changed: changes,
+    mutated: Boolean(mutated)
+  });
+  var observeAfterAction = async (target, before, { timeout = 650 } = {}) => {
+    const duration = Math.max(80, Math.min(2e3, Number(timeout) || 650));
+    return await new Promise((resolve) => {
+      let settled = false;
+      let mutated = false;
+      let observer = null;
+      let rafId = 0;
+      let timer = 0;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (observer) observer.disconnect();
+        if (rafId) cancelAnimationFrame(rafId);
+        if (timer) clearTimeout(timer);
+        const after = snapshotTargetState(target);
+        resolve({ after, changes: meaningfulChanges(before, after), mutated });
+      };
+      const check = () => {
+        const after = snapshotTargetState(target);
+        if (meaningfulChanges(before, after).length) finish();
+      };
+      try {
+        observer = new MutationObserver(() => {
+          mutated = true;
+          check();
+        });
+        observer.observe(document.documentElement, {
+          subtree: true,
+          childList: true,
+          characterData: true,
+          attributes: true,
+          attributeFilter: ["aria-checked", "aria-selected", "aria-pressed", "aria-expanded", "data-state", "class", "value", "checked", "disabled", "open"]
+        });
+      } catch {
+      }
+      let frames = 0;
+      const frameCheck = () => {
+        if (settled) return;
+        check();
+        frames += 1;
+        if (frames < 8) rafId = requestAnimationFrame(frameCheck);
+      };
+      rafId = requestAnimationFrame(frameCheck);
+      timer = setTimeout(finish, duration);
+    });
+  };
+
+  // src/page/verification/verifyAction.js
+  var isCheckable = (kind) => ["radio", "checkbox", "switch"].includes(kind);
+  var success = (status, observation, extra = {}) => ({
+    ok: true,
+    verified: true,
+    status,
+    evidence: evidenceFor(observation),
+    ...extra
+  });
+  var unverified = (observation, error2, extra = {}) => ({
+    ok: false,
+    verified: false,
+    status: "unverified",
+    actionExecuted: true,
+    evidence: evidenceFor(observation),
+    error: error2,
+    ...extra
+  });
+  var verifyActivation = ({ action, target, before, observation, expectedChecked }) => {
+    const { after, changes } = observation;
+    if (action === "check") {
+      if (before.checked === true) return success("already_checked", observation);
+      if (after.checked === true) return success("verified", observation);
+      return unverified(observation, "\u64CD\u4F5C\u4E8B\u4EF6\u5DF2\u53D1\u51FA\uFF0C\u4F46\u76EE\u6807\u6CA1\u6709\u53D8\u4E3A\u5DF2\u9009\u4E2D\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u540E\u518D\u51B3\u5B9A\u4E0B\u4E00\u6B65\u3002");
+    }
+    if (isCheckable(target.kind)) {
+      if (expectedChecked === true && after.checked === true) return success("verified", observation);
+      if (before.checked !== null && after.checked !== null && before.checked !== after.checked) return success("verified", observation);
+      if (target.kind === "radio" && after.checked === true) return success("already_selected", observation);
+      return unverified(observation, "\u70B9\u51FB\u4E8B\u4EF6\u5DF2\u53D1\u51FA\uFF0C\u4F46\u6CA1\u6709\u68C0\u6D4B\u5230\u8BE5\u9009\u9879\u7684\u9009\u4E2D\u72B6\u6001\u53D8\u5316\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u786E\u8BA4\u3002");
+    }
+    if (changes.some((key) => ["url", "dialogs", "ariaChecked", "ariaSelected", "ariaPressed", "ariaExpanded", "dataState", "selectedValue", "value"].includes(key))) {
+      return success("verified", observation);
+    }
+    return unverified(
+      observation,
+      observation.mutated ? "\u9875\u9762\u5DF2\u53D1\u751F\u53D8\u5316\uFF0C\u4F46\u65E0\u6CD5\u628A\u53D8\u5316\u5B89\u5168\u5730\u5173\u8054\u5230\u6B64\u76EE\u6807\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u786E\u8BA4\u7ED3\u679C\u3002" : "\u64CD\u4F5C\u4E8B\u4EF6\u5DF2\u53D1\u51FA\uFF0C\u4F46\u672A\u68C0\u6D4B\u5230\u53EF\u9A8C\u8BC1\u7684\u9875\u9762\u53D8\u5316\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u786E\u8BA4\u3002"
+    );
+  };
+  var verifyValue = ({ action, before, observation, expectedValue, sensitive = false }) => {
+    const { after } = observation;
+    if (after.value === expectedValue) {
+      return success("verified", observation, { value: sensitive ? "[\u5DF2\u9690\u85CF]" : expectedValue.slice(0, 300) });
+    }
+    return unverified(observation, "\u8F93\u5165\u4E8B\u4EF6\u5DF2\u53D1\u51FA\uFF0C\u4F46\u5143\u7D20\u503C\u6CA1\u6709\u53D8\u4E3A\u9884\u671F\u5185\u5BB9\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u786E\u8BA4\u3002", {
+      expected: sensitive ? "[\u5DF2\u9690\u85CF]" : expectedValue.slice(0, 300)
+    });
+  };
+  var verifySelect = ({ observation, expectedValue, expectedLabel }) => {
+    const { after } = observation;
+    if (after.selectedValue === expectedValue || after.value === expectedValue) {
+      return success("verified", observation, { selected: { value: expectedValue, label: expectedLabel } });
+    }
+    return unverified(observation, "\u9009\u62E9\u4E8B\u4EF6\u5DF2\u53D1\u51FA\uFF0C\u4F46\u4E0B\u62C9\u6846\u6CA1\u6709\u53D8\u4E3A\u76EE\u6807\u9009\u9879\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u786E\u8BA4\u3002", {
+      expected: { value: expectedValue, label: expectedLabel }
+    });
+  };
+
+  // src/page/actions/interaction.js
+  var delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  var actionTarget = (target) => target?.clickElement || target?.element || target?.stateElement;
+  var stateTarget = (target) => target?.stateElement || actionTarget(target);
+  var invalidTarget = (target, action) => {
+    const clickElement = actionTarget(target);
+    if (!clickElement?.isConnected) return { error: "\u76EE\u6807\u5DF2\u7ECF\u4ECE\u9875\u9762\u4E2D\u79FB\u9664\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002", action };
+    if (!isVisible(clickElement)) return { error: "\u76EE\u6807\u5F53\u524D\u4E0D\u53EF\u89C1\uFF0C\u8BF7\u5148\u6EDA\u52A8\u6216\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002", action };
+    if (isDisabled(clickElement) || isDisabled(stateTarget(target))) return { error: "\u76EE\u6807\u5DF2\u7981\u7528\uFF0C\u65E0\u6CD5\u64CD\u4F5C\u3002", action };
+    return null;
+  };
+  var revealAndFocus = (element) => {
+    try {
+      element.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
+      element.focus?.({ preventScroll: true });
+    } catch {
+    }
+  };
+  var pointerInitFor = (element) => {
+    const rect = element.getBoundingClientRect?.();
+    return {
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+      view: window,
+      clientX: rect ? rect.left + rect.width / 2 : 0,
+      clientY: rect ? rect.top + rect.height / 2 : 0,
+      button: 0,
+      buttons: 1
+    };
+  };
+  var dispatchPointerPrelude = (element) => {
+    const init = pointerInitFor(element);
+    try {
+      if (typeof PointerEvent === "function") {
+        element.dispatchEvent(new PointerEvent("pointerdown", { ...init, pointerId: 1, pointerType: "mouse", isPrimary: true }));
+        element.dispatchEvent(new PointerEvent("pointerup", { ...init, pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 0 }));
+      }
+      element.dispatchEvent(new MouseEvent("mousedown", init));
+      element.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0 }));
+    } catch {
+    }
+  };
+  var activate = (element) => {
+    if (!element?.isConnected) return false;
+    try {
+      revealAndFocus(element);
+      dispatchPointerPrelude(element);
+      element.click();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  var canNavigate = (target) => {
+    const clickElement = actionTarget(target);
+    const stateElement = stateTarget(target);
+    const tag = String(clickElement?.tagName || "").toLowerCase();
+    if (target?.href || tag === "a" && clickElement?.hasAttribute?.("href")) return true;
+    const inputType = inputTypeFor(stateElement);
+    if (["submit", "image"].includes(inputType)) return true;
+    if (tag === "button") {
+      const type = String(clickElement.getAttribute?.("type") || "submit").toLowerCase();
+      return type === "submit" && Boolean(clickElement.closest?.("form"));
+    }
+    return false;
+  };
+  var queuedNavigationResult = (target, action) => {
+    const clickElement = actionTarget(target);
+    setTimeout(() => activate(clickElement), 80);
+    return {
+      ok: true,
+      action,
+      status: "queued_navigation",
+      queued: true,
+      verified: false,
+      note: "\u8BE5\u76EE\u6807\u53EF\u80FD\u4F1A\u8DF3\u8F6C\u6216\u63D0\u4EA4\u8868\u5355\uFF0C\u5DF2\u5148\u786E\u8BA4\u8C03\u5EA6\u70B9\u51FB\uFF1B\u65B0\u9875\u9762\u52A0\u8F7D\u540E\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002"
+    };
+  };
+  var combineObservation = (first, second) => ({
+    after: second.after,
+    changes: Array.from(/* @__PURE__ */ new Set([...first.changes || [], ...second.changes || []])),
+    mutated: Boolean(first.mutated || second.mutated)
+  });
+  var clickTarget = async (target, { check = false } = {}) => {
+    const action = check ? "check" : "click";
+    const invalid = invalidTarget(target, action);
+    if (invalid) return invalid;
+    const before = snapshotTargetState(target);
+    if (check && before.checked === true) {
+      return {
+        action,
+        ...verifyActivation({
+          action,
+          target,
+          before,
+          observation: { after: before, changes: [], mutated: false },
+          expectedChecked: true
+        })
+      };
+    }
+    if (!check && canNavigate(target)) return queuedNavigationResult(target, action);
+    const primary = actionTarget(target);
+    if (!activate(primary)) return { action, error: "\u65E0\u6CD5\u5411\u76EE\u6807\u6D3E\u53D1\u70B9\u51FB\u4E8B\u4EF6\u3002" };
+    let observation = await observeAfterAction(target, before, { timeout: 520 });
+    const afterPrimary = observation.after;
+    const checkable = ["radio", "checkbox", "switch"].includes(target.kind);
+    const needsFallback = (check || checkable) && target.stateElement && target.stateElement !== primary && afterPrimary.checked !== true && (check || before.checked === afterPrimary.checked);
+    if (needsFallback && activate(target.stateElement)) {
+      const followUp = await observeAfterAction(target, before, { timeout: 360 });
+      observation = combineObservation(observation, followUp);
+    }
+    return {
+      action,
+      ...verifyActivation({ action, target, before, observation, expectedChecked: check ? true : void 0 })
+    };
+  };
+  var setNativeValue = (element, value) => {
+    const tag = String(element?.tagName || "").toLowerCase();
+    if (tag === "input") {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      if (setter) setter.call(element, value);
+      else element.value = value;
+      return;
+    }
+    if (tag === "textarea") {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      if (setter) setter.call(element, value);
+      else element.value = value;
+      return;
+    }
+    element.textContent = value;
+  };
+  var dispatchInputEvents = (element, inputType, data) => {
+    try {
+      element.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        composed: true,
+        inputType,
+        data
+      }));
+    } catch {
+      element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    }
+    element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+  };
+  var typeIntoTarget = async (target, { text: text2 = "", clear = true } = {}) => {
+    const action = "type";
+    const invalid = invalidTarget(target, action);
+    if (invalid) return invalid;
+    const element = stateTarget(target);
+    const tag = String(element?.tagName || "").toLowerCase();
+    const editable = ["input", "textarea"].includes(tag) || element?.isContentEditable || element?.getAttribute?.("contenteditable") === "true";
+    if (!editable) return { action, error: "\u76EE\u6807\u4E0D\u662F\u53EF\u8F93\u5165\u7684\u6587\u672C\u6846\u3002" };
+    const inputType = inputTypeFor(element);
+    if (["file", "checkbox", "radio", "button", "submit", "reset", "image"].includes(inputType)) {
+      return { action, error: `\u4E0D\u652F\u6301\u5411 ${inputType} \u8F93\u5165\u6587\u5B57\u3002` };
+    }
+    const inputText = String(text2 ?? "");
+    if (inputText.length > 2e4) return { action, error: "\u8F93\u5165\u5185\u5BB9\u8FC7\u957F\uFF08\u6700\u591A 20000 \u4E2A\u5B57\u7B26\uFF09\u3002" };
+    const before = snapshotTargetState(target);
+    const nextValue = clear === false ? `${before.value}${inputText}` : inputText;
+    try {
+      revealAndFocus(element);
+      setNativeValue(element, nextValue);
+      dispatchInputEvents(element, clear === false ? "insertText" : "insertReplacementText", inputText);
+    } catch (error2) {
+      return { action, error: `\u8F93\u5165\u5931\u8D25: ${String(error2?.message || error2)}` };
+    }
+    const observation = await observeAfterAction(target, before, { timeout: 420 });
+    return {
+      action,
+      ...verifyValue({ action, before, observation, expectedValue: nextValue, sensitive: isSensitive(element) })
+    };
+  };
+  var selectOptionInTarget = async (target, { value, label } = {}) => {
+    const action = "select_option";
+    const invalid = invalidTarget(target, action);
+    if (invalid) return invalid;
+    const element = stateTarget(target);
+    if (!(element instanceof HTMLSelectElement)) return { action, error: "\u76EE\u6807\u4E0D\u662F\u539F\u751F select\u3002" };
+    const wantedValue = value == null ? null : String(value);
+    const wantedLabel = label == null ? null : String(label);
+    const option = Array.from(element.options).find(
+      (item) => wantedValue != null && item.value === wantedValue || wantedLabel != null && (item.label === wantedLabel || item.textContent?.trim() === wantedLabel)
+    );
+    if (!option) {
+      return {
+        action,
+        error: "\u6CA1\u6709\u627E\u5230\u5339\u914D\u9009\u9879\u3002",
+        options: Array.from(element.options).slice(0, 50).map((item) => ({ value: item.value, label: String(item.label || item.textContent || "").trim().slice(0, 120) }))
+      };
+    }
+    const before = snapshotTargetState(target);
+    try {
+      revealAndFocus(element);
+      element.value = option.value;
+      element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+    } catch (error2) {
+      return { action, error: `\u9009\u62E9\u5931\u8D25: ${String(error2?.message || error2)}` };
+    }
+    const observation = await observeAfterAction(target, before, { timeout: 420 });
+    return {
+      action,
+      ...verifySelect({ observation, expectedValue: option.value, expectedLabel: option.label || option.textContent?.trim() || "" })
+    };
+  };
+  var pressKeyOnTarget = async (target, { key } = {}) => {
+    const action = "press_key";
+    const element = stateTarget(target) || document.activeElement || document.body;
+    const keyName = String(key || "").trim();
+    if (!keyName || keyName.length > 40) return { action, error: "key \u5FC5\u586B\u4E14\u957F\u5EA6\u4E0D\u80FD\u8D85\u8FC7 40\u3002" };
+    const before = snapshotTargetState({ ...target, stateElement: element, clickElement: element });
+    try {
+      revealAndFocus(element);
+      const init = { key: keyName, bubbles: true, composed: true, cancelable: true };
+      const down = element.dispatchEvent(new KeyboardEvent("keydown", init));
+      element.dispatchEvent(new KeyboardEvent("keypress", init));
+      const up = element.dispatchEvent(new KeyboardEvent("keyup", init));
+      const observation = await observeAfterAction({ ...target, stateElement: element, clickElement: element }, before, { timeout: 420 });
+      const verified = observation.changes.length > 0;
+      return {
+        ok: verified,
+        action,
+        status: verified ? "verified" : "dispatched_unverified",
+        verified,
+        actionExecuted: true,
+        key: keyName,
+        defaultNotPrevented: down && up,
+        evidence: {
+          before: { checked: before.checked, value: before.sensitive ? "[\u5DF2\u9690\u85CF]" : before.value.slice(0, 120) },
+          after: { checked: observation.after.checked, value: observation.after.sensitive ? "[\u5DF2\u9690\u85CF]" : observation.after.value.slice(0, 120) },
+          changed: observation.changes,
+          mutated: observation.mutated
+        },
+        ...verified ? {} : { error: "\u6309\u952E\u4E8B\u4EF6\u5DF2\u6D3E\u53D1\uFF0C\u4F46\u672A\u68C0\u6D4B\u5230\u53EF\u9A8C\u8BC1\u53D8\u5316\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u786E\u8BA4\u3002" }
+      };
+    } catch (error2) {
+      return { action, error: `\u6309\u952E\u5931\u8D25: ${String(error2?.message || error2)}` };
+    }
+  };
+  var scrollTarget = async ({ target, direction = "down", amount = 600 } = {}) => {
+    const action = "scroll";
+    const dir = String(direction || "down").toLowerCase();
+    if (!["up", "down", "left", "right", "top", "bottom"].includes(dir)) {
+      return { action, error: "direction \u53EA\u80FD\u662F up\u3001down\u3001left\u3001right\u3001top \u6216 bottom\u3002" };
+    }
+    const distance = Math.min(1e4, Math.max(1, Math.abs(Number(amount) || 600)));
+    const element = target ? actionTarget(target) : null;
+    const scrollNode = element || window;
+    const before = scrollNode === window ? { x: Math.round(window.scrollX), y: Math.round(window.scrollY) } : { x: Math.round(scrollNode.scrollLeft), y: Math.round(scrollNode.scrollTop) };
+    try {
+      if (dir === "top") scrollNode.scrollTo({ top: 0, behavior: "auto" });
+      else if (dir === "bottom") scrollNode.scrollTo({ top: scrollNode === window ? document.documentElement.scrollHeight : scrollNode.scrollHeight, behavior: "auto" });
+      else {
+        const sign = dir === "up" || dir === "left" ? -1 : 1;
+        scrollNode.scrollBy({
+          left: dir === "left" || dir === "right" ? sign * distance : 0,
+          top: dir === "up" || dir === "down" ? sign * distance : 0,
+          behavior: "auto"
+        });
+      }
+      await delay(80);
+      const after = scrollNode === window ? { x: Math.round(window.scrollX), y: Math.round(window.scrollY) } : { x: Math.round(scrollNode.scrollLeft), y: Math.round(scrollNode.scrollTop) };
+      const moved = before.x !== after.x || before.y !== after.y;
+      return moved ? { ok: true, action, status: "verified", verified: true, direction: dir, amount: distance, before, after } : { ok: false, action, status: "unverified", verified: false, direction: dir, amount: distance, before, after, error: "\u6EDA\u52A8\u4F4D\u7F6E\u6CA1\u6709\u53D8\u5316\uFF0C\u53EF\u80FD\u5DF2\u7ECF\u5230\u8FBE\u8FB9\u754C\u6216\u76EE\u6807\u4E0D\u662F\u53EF\u6EDA\u52A8\u5BB9\u5668\u3002" };
+    } catch (error2) {
+      return { action, error: `\u6EDA\u52A8\u5931\u8D25: ${String(error2?.message || error2)}` };
+    }
+  };
+
+  // src/page/perception/collectTargets.js
+  var MAX_SCAN_NODES = 12e3;
+  var MAX_DISCOVERED_TARGETS = 1200;
+  var ACTIONABLE_ROLES = /* @__PURE__ */ new Set([
+    "button",
+    "link",
+    "checkbox",
+    "radio",
+    "switch",
+    "textbox",
+    "searchbox",
+    "combobox",
+    "spinbutton",
+    "option",
+    "tab",
+    "menuitem",
+    "menuitemcheckbox",
+    "menuitemradio"
+  ]);
+  var isNativeInteractive = (element) => {
+    const tag = String(element?.tagName || "").toLowerCase();
+    if (["button", "textarea", "select"].includes(tag)) return true;
+    if (tag === "a") return element.hasAttribute?.("href");
+    if (tag === "input") return inputTypeFor(element) !== "hidden";
+    return element?.isContentEditable || element?.getAttribute?.("contenteditable") === "true";
+  };
+  var walkOpenShadowDom = (root, output, seen) => {
+    if (!root || output.length >= MAX_SCAN_NODES) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let element;
+    while (element = walker.nextNode()) {
+      if (seen.has(element)) continue;
+      seen.add(element);
+      output.push(element);
+      if (output.length >= MAX_SCAN_NODES) break;
+      if (element.shadowRoot?.mode === "open") walkOpenShadowDom(element.shadowRoot, output, seen);
+      if (output.length >= MAX_SCAN_NODES) break;
+    }
+  };
+  var allElements = () => {
+    const output = [];
+    walkOpenShadowDom(document, output, /* @__PURE__ */ new Set());
+    return output;
+  };
+  var visibleLabelFor = (control) => {
+    try {
+      const labels = Array.from(control?.labels || []);
+      return labels.find((label) => canReceivePointer(label)) || null;
+    } catch {
+      return null;
+    }
+  };
+  var visibleProxyFor = (stateElement, sourceElement) => {
+    if (sourceElement && canReceivePointer(sourceElement)) return sourceElement;
+    const label = visibleLabelFor(stateElement);
+    if (label) return label;
+    let current = stateElement;
+    let guard = 0;
+    while (current && guard < 7) {
+      guard += 1;
+      if (canReceivePointer(current)) {
+        const tag = String(current.tagName || "").toLowerCase();
+        if (tag === "label" || classControlKind(current) || ACTIONABLE_ROLES.has(roleFor(current)) || hasClickHint(current)) {
+          return current;
+        }
+      }
+      current = composedParent(current);
+    }
+    try {
+      const siblings = Array.from(stateElement?.parentElement?.children || []);
+      const sibling = siblings.find((node) => node !== stateElement && canReceivePointer(node) && hasClickHint(node));
+      if (sibling) return sibling;
+    } catch {
+    }
+    return null;
+  };
+  var candidateConfidence = ({ element, stateElement, kind, clickElement }) => {
+    const role = roleFor(element);
+    const tag = String(element.tagName || "").toLowerCase();
+    if (["input", "textarea", "select", "button"].includes(tag) || tag === "a" && element.hasAttribute?.("href")) return 0.99;
+    if (tag === "label" && stateElement && ["radio", "checkbox", "textbox", "select"].includes(kind)) return 0.96;
+    if (ACTIONABLE_ROLES.has(role)) return 0.94;
+    if (element.hasAttribute?.("aria-checked") || element.hasAttribute?.("aria-selected")) return 0.91;
+    if (classControlKind(element)) return stateElement && stateElement !== element ? 0.89 : 0.82;
+    if (clickElement !== element && stateElement) return 0.86;
+    if (hasClickHint(element)) return 0.63;
+    return 0.5;
+  };
+  var isCandidateLike = ({ element, stateElement, kind }) => {
+    const tag = String(element.tagName || "").toLowerCase();
+    const role = roleFor(element);
+    if (isNativeInteractive(element)) return true;
+    if (tag === "label" && stateElement) return true;
+    if (ACTIONABLE_ROLES.has(role)) return true;
+    if (element.hasAttribute?.("aria-checked") || element.hasAttribute?.("aria-selected")) return true;
+    if (classControlKind(element)) return true;
+    if (["radio", "checkbox", "switch"].includes(kind) && stateElement) return true;
+    return kind === "custom" && hasClickHint(element) && Boolean(clip(element.innerText || element.textContent || "", 180));
+  };
+  var isCompositeControlContainer = (element) => {
+    if (!classControlKind(element) || ACTIONABLE_ROLES.has(roleFor(element))) return false;
+    try {
+      const controls = element.querySelectorAll("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], [role='switch']");
+      return controls.length > 1;
+    } catch {
+      return false;
+    }
+  };
+  var candidateFor = (element, extensionHost) => {
+    if (!element?.isConnected || isExtensionElement(element, extensionHost)) return null;
+    if (isCompositeControlContainer(element)) return null;
+    const stateElement = stateElementFor(element);
+    const kind = kindFor(element, stateElement);
+    if (!isCandidateLike({ element, stateElement, kind })) return null;
+    let clickElement = element;
+    const tag = String(element.tagName || "").toLowerCase();
+    if (tag === "label") {
+      const labelledControl = controlForLabel(element);
+      if (labelledControl) clickElement = element;
+    } else if (stateElement && !canReceivePointer(stateElement)) {
+      clickElement = visibleProxyFor(stateElement, element) || element;
+    }
+    if (!canReceivePointer(clickElement) || isExtensionElement(clickElement, extensionHost)) return null;
+    const rect = rectFor(clickElement);
+    const name = accessibleNameFor(clickElement, stateElement);
+    const text2 = clip(clickElement.innerText || clickElement.textContent || stateElement?.innerText || stateElement?.textContent || "", 220);
+    if (!name && !text2 && kind === "custom") return null;
+    const stateKind = kindFor(clickElement, stateElement);
+    const effectiveKind = kind === "custom" ? stateKind : kind;
+    const checked = checkedStateFor(clickElement, stateElement, effectiveKind);
+    return {
+      element: clickElement,
+      clickElement,
+      stateElement: stateElement || clickElement,
+      sourceElement: element,
+      kind: effectiveKind,
+      role: roleFor(clickElement) || roleFor(element),
+      name,
+      text: text2,
+      group: groupFor(clickElement, stateElement),
+      checked,
+      disabled: isDisabled(clickElement) || isDisabled(stateElement),
+      inputType: inputTypeFor(stateElement),
+      placeholder: clip(stateElement?.placeholder || "", 120),
+      href: String(clickElement.href || clickElement.getAttribute?.("href") || "").slice(0, 500),
+      rect,
+      inViewport: isInViewport(clickElement),
+      hitTestable: isHitTestable(clickElement),
+      confidence: candidateConfidence({ element, stateElement, kind: effectiveKind, clickElement })
+    };
+  };
+  var candidateQuality = (candidate) => candidate.confidence * 100 + (candidate.hitTestable ? 8 : 0) + (candidate.inViewport ? 4 : 0) + (candidate.kind !== "custom" ? 2 : 0);
+  var collectSemanticTargets = ({ extensionHost, maxCandidates = MAX_DISCOVERED_TARGETS } = {}) => {
+    const byLogicalControl = /* @__PURE__ */ new Map();
+    for (const element of allElements()) {
+      const candidate = candidateFor(element, extensionHost);
+      if (!candidate) continue;
+      const logicalKey = candidate.stateElement || candidate.clickElement;
+      const previous = byLogicalControl.get(logicalKey);
+      if (!previous || candidateQuality(candidate) > candidateQuality(previous)) {
+        byLogicalControl.set(logicalKey, candidate);
+      }
+    }
+    return Array.from(byLogicalControl.values()).slice(0, Math.max(1, Number(maxCandidates) || MAX_DISCOVERED_TARGETS));
+  };
+
+  // src/page/ranking/rankTargets.js
+  var kindWeight = {
+    radio: 38,
+    checkbox: 38,
+    switch: 36,
+    textbox: 34,
+    select: 34,
+    button: 30,
+    link: 25,
+    option: 25,
+    tab: 24,
+    menuitem: 22,
+    custom: 12
+  };
+  var inDialog = (candidate) => {
+    try {
+      return Boolean(candidate.clickElement?.closest?.("dialog[open], [role='dialog'], [role='alertdialog']"));
+    } catch {
+      return false;
+    }
+  };
+  var inForm = (candidate) => {
+    try {
+      return Boolean(candidate.clickElement?.closest?.("form, [role='form'], fieldset, [role='radiogroup']"));
+    } catch {
+      return false;
+    }
+  };
+  var matchesRegion = (candidate, region) => {
+    const rect = candidate.rect;
+    if (region === "all") return true;
+    if (region === "viewport") return candidate.inViewport;
+    if (region === "above") return rect.bottom < 0;
+    if (region === "below") return rect.top > window.innerHeight;
+    return rect.bottom >= -window.innerHeight * 0.45 && rect.top <= window.innerHeight * 1.45;
+  };
+  var distanceBonus = (candidate, region) => {
+    const rect = candidate.rect;
+    const centerY = rect.top + rect.height / 2;
+    if (region === "above") return Math.max(0, 32 - Math.abs(rect.bottom) / 36);
+    if (region === "below") return Math.max(0, 32 - Math.abs(rect.top - window.innerHeight) / 36);
+    const centerX = rect.left + rect.width / 2;
+    const distance = Math.hypot(centerX - window.innerWidth / 2, centerY - window.innerHeight / 2);
+    return Math.max(0, 26 - distance / 30);
+  };
+  var rankTargets = (candidates, { region = "nearby" } = {}) => {
+    const normalizedRegion2 = ["viewport", "nearby", "above", "below", "all"].includes(region) ? region : "nearby";
+    let scoped = candidates.filter((candidate) => matchesRegion(candidate, normalizedRegion2));
+    let didFallback = false;
+    if (!scoped.length && normalizedRegion2 !== "all") {
+      scoped = candidates;
+      didFallback = true;
+    }
+    const ranked = scoped.map((candidate) => {
+      const score = (kindWeight[candidate.kind] || 8) + (candidate.inViewport ? 92 : 0) + (candidate.hitTestable ? 18 : 0) + (candidate.disabled ? -35 : 0) + (candidate.group ? 7 : 0) + (inDialog(candidate) ? 26 : 0) + (inForm(candidate) ? 14 : 0) + Number(candidate.confidence || 0) * 26 + distanceBonus(candidate, normalizedRegion2);
+      return { ...candidate, priority: Math.round(score) };
+    });
+    ranked.sort((left, right) => right.priority - left.priority || right.confidence - left.confidence);
+    return { targets: ranked, region: normalizedRegion2, didFallback };
+  };
+
+  // src/page/registry/fingerprint.js
+  var semanticClassSignature = (element) => String(element?.className || "").split(/\s+/).map((token) => token.trim().toLowerCase()).filter((token) => /radio|checkbox|switch|toggle|button|select|option|tab|input|field|form/.test(token)).slice(0, 4).join(".");
+  var pathSignatureFor = (element) => {
+    const parts = [];
+    let current = element;
+    let guard = 0;
+    while (current && guard < 5) {
+      guard += 1;
+      const tag = String(current.tagName || "").toLowerCase();
+      if (!tag) break;
+      const role = String(current.getAttribute?.("role") || "").toLowerCase();
+      const id = String(current.id || "").trim();
+      const name = String(current.getAttribute?.("name") || "").trim();
+      const classSignature = semanticClassSignature(current);
+      parts.unshift(`${tag}${role ? `[${role}]` : ""}${id ? `#${id}` : ""}${name ? `@${name}` : ""}${classSignature ? `.${classSignature}` : ""}`);
+      current = current.parentElement || current.getRootNode?.()?.host || null;
+    }
+    return parts.join(">");
+  };
+  var stableIdFor = (candidate) => {
+    const node = candidate.stateElement || candidate.clickElement || candidate.element;
+    const id = String(node?.id || "").trim();
+    if (id) return `id:${id}`;
+    const testId = String(node?.getAttribute?.("data-testid") || node?.getAttribute?.("data-test") || "").trim();
+    if (testId) return `test:${testId}`;
+    return "";
+  };
+  var fingerprintFor = (candidate) => ({
+    kind: String(candidate?.kind || "custom"),
+    role: String(candidate?.role || ""),
+    name: normalizeText(candidate?.name),
+    text: normalizeText(candidate?.text),
+    group: normalizeText(candidate?.group),
+    inputType: String(candidate?.inputType || ""),
+    inputName: String(candidate?.stateElement?.name || ""),
+    stableId: stableIdFor(candidate),
+    path: pathSignatureFor(candidate?.clickElement || candidate?.element),
+    rect: {
+      x: Math.round(Number(candidate?.rect?.x || candidate?.rect?.left || 0)),
+      y: Math.round(Number(candidate?.rect?.y || candidate?.rect?.top || 0))
+    }
+  });
+  var sameText = (left, right) => Boolean(left && right && left === right);
+  var partialText = (left, right) => Boolean(left && right && (left.includes(right) || right.includes(left)));
+  var kindFamily = (kind) => {
+    if (["radio", "checkbox", "switch"].includes(kind)) return "checkable";
+    if (["textbox", "select"].includes(kind)) return "input";
+    if (["button", "link", "menuitem", "option", "tab"].includes(kind)) return "activate";
+    return kind || "custom";
+  };
+  var fingerprintScore = (before, after) => {
+    if (!before || !after) return 0;
+    let score = 0;
+    if (before.stableId && before.stableId === after.stableId) score += 150;
+    if (before.kind === after.kind) score += 34;
+    else if (kindFamily(before.kind) === kindFamily(after.kind)) score += 12;
+    if (sameText(before.name, after.name)) score += 72;
+    else if (partialText(before.name, after.name)) score += 22;
+    if (sameText(before.text, after.text)) score += 34;
+    else if (partialText(before.text, after.text)) score += 10;
+    if (sameText(before.group, after.group)) score += 28;
+    if (before.inputType && before.inputType === after.inputType) score += 12;
+    if (before.inputName && before.inputName === after.inputName) score += 30;
+    if (before.role && before.role === after.role) score += 10;
+    if (before.path && before.path === after.path) score += 24;
+    else if (before.path && after.path && before.path.split(">").slice(-2).join(">").includes(after.path.split(">").slice(-1)[0])) score += 6;
+    const distance = Math.hypot(before.rect.x - after.rect.x, before.rect.y - after.rect.y);
+    if (distance < 28) score += 14;
+    else if (distance < 180) score += 5;
+    return score;
+  };
+  var canRebindFingerprint = (before, after, score = fingerprintScore(before, after)) => {
+    if (!before || !after) return false;
+    if (before.stableId && before.stableId === after.stableId) return score >= 165;
+    if (before.kind !== after.kind && kindFamily(before.kind) !== kindFamily(after.kind)) return false;
+    const sameName = sameText(before.name, after.name);
+    const sameGroup = sameText(before.group, after.group);
+    const sameInputName = Boolean(before.inputName && before.inputName === after.inputName);
+    const samePath = Boolean(before.path && before.path === after.path);
+    const nearby = Math.hypot(before.rect.x - after.rect.x, before.rect.y - after.rect.y) < 180;
+    const isCheckable2 = kindFamily(before.kind) === "checkable";
+    if (isCheckable2) return score >= 130 && sameName && (sameGroup || sameInputName || samePath);
+    return score >= 145 && sameName && (samePath || sameGroup || nearby);
+  };
+
+  // src/page/registry/targetRegistry.js
+  var isCurrentCandidate = (candidate) => Boolean(candidate?.clickElement?.isConnected) && Boolean(candidate?.stateElement?.isConnected);
+  var TargetRegistry = class {
+    constructor({ discover }) {
+      this.discover = discover;
+      this.snapshotVersion = 0;
+      this.entries = /* @__PURE__ */ new Map();
+      this.current = [];
+    }
+    registerSnapshot(candidates) {
+      this.snapshotVersion += 1;
+      const version = this.snapshotVersion;
+      this.current = candidates.map((candidate, index) => {
+        const id = `t${version}-${index + 1}`;
+        const entry = {
+          id,
+          snapshotVersion: version,
+          candidate,
+          fingerprint: fingerprintFor(candidate)
+        };
+        this.entries.set(id, entry);
+        return entry;
+      });
+      const oldestVersion = Math.max(1, version - 3);
+      for (const [id, entry] of this.entries) {
+        if (entry.snapshotVersion < oldestVersion) this.entries.delete(id);
+      }
+      return this.current;
+    }
+    currentEntries() {
+      return this.current.slice();
+    }
+    resolve(targetId) {
+      const id = String(targetId || "");
+      const entry = this.entries.get(id);
+      if (!entry) return { error: "\u76EE\u6807\u5DF2\u5931\u6548\u6216\u4ECE\u672A\u88AB\u8BC6\u522B\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
+      if (isCurrentCandidate(entry.candidate)) return { id, candidate: entry.candidate, rebound: false };
+      const discovered = this.discover?.();
+      const candidates = Array.isArray(discovered) ? discovered : [];
+      let best = null;
+      for (const candidate of candidates) {
+        const fingerprint = fingerprintFor(candidate);
+        const score = fingerprintScore(entry.fingerprint, fingerprint);
+        if (!canRebindFingerprint(entry.fingerprint, fingerprint, score)) continue;
+        if (!best || score > best.score) best = { candidate, fingerprint, score };
+      }
+      if (!best) {
+        return { error: "\u76EE\u6807\u5DF2\u7ECF\u88AB\u9875\u9762\u91CD\u7ED8\u4E14\u65E0\u6CD5\u5B89\u5168\u91CD\u65B0\u5339\u914D\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
+      }
+      entry.candidate = best.candidate;
+      entry.fingerprint = best.fingerprint;
+      return { id, candidate: best.candidate, rebound: true, rebindScore: best.score };
+    }
+  };
+
+  // src/page/pageController.js
+  var MAX_TARGETS_PER_PAGE = 60;
+  var MAX_TEXT = 6e3;
+  var pageText = (maxChars) => {
+    const root = document.querySelector("main, article, [role='main']") || document.body;
+    return clip(root?.innerText || root?.textContent || "", maxChars);
+  };
+  var clampNumber = (value, fallback, min, max) => {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(number)));
+  };
+  var normalizedRegion = (region) => ["viewport", "nearby", "above", "below", "all"].includes(String(region || "")) ? String(region) : "nearby";
+  var rectSnapshot = (element) => {
+    const rect = rectFor(element);
+    return {
+      x: Math.round(rect.x ?? rect.left ?? 0),
+      y: Math.round(rect.y ?? rect.top ?? 0),
+      width: Math.round(rect.width || 0),
+      height: Math.round(rect.height || 0)
+    };
+  };
+  var targetSnapshot = (id, candidate) => {
+    const clickElement = candidate.clickElement || candidate.element;
+    const stateElement = candidate.stateElement || clickElement;
+    const kind = kindFor(clickElement, stateElement) || candidate.kind || "custom";
+    const checked = checkedStateFor(clickElement, stateElement, kind);
     const record = {
       id,
-      kind: kindFor(element),
-      name: nameFor(element),
-      text: clip(element.innerText || element.textContent || "", 180),
-      disabled: isDisabled(element),
-      rect: {
-        x: Math.round(rect.x),
-        y: Math.round(rect.y),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      },
-      inViewport: isInViewport(element)
+      kind,
+      role: roleFor(clickElement) || candidate.role || void 0,
+      name: accessibleNameFor(clickElement, stateElement) || candidate.name || "",
+      text: clip(clickElement?.innerText || clickElement?.textContent || stateElement?.innerText || stateElement?.textContent || candidate.text || "", 220),
+      group: groupFor(clickElement, stateElement) || candidate.group || void 0,
+      disabled: isDisabled(clickElement) || isDisabled(stateElement),
+      confidence: Math.round(Math.max(0, Math.min(1, Number(candidate.confidence || 0))) * 100),
+      rect: rectSnapshot(clickElement),
+      inViewport: isInViewport(clickElement),
+      visible: isVisible(clickElement)
     };
-    if (tag === "a") record.href = String(element.href || "").slice(0, 500);
-    if (tag === "input" || tag === "textarea") {
-      record.inputType = element.type || tag;
-      record.placeholder = clip(element.placeholder || "", 120);
-      if (!isSensitive(element) && ["checkbox", "radio"].includes(element.type)) record.checked = Boolean(element.checked);
+    if (checked !== null) record.checked = checked;
+    const href = String(clickElement?.href || clickElement?.getAttribute?.("href") || candidate.href || "");
+    if (href) record.href = href.slice(0, 500);
+    const inputType = inputTypeFor(stateElement);
+    if (inputType) {
+      record.inputType = inputType;
+      record.placeholder = clip(stateElement?.placeholder || candidate.placeholder || "", 120);
     }
-    if (tag === "select") {
-      record.options = Array.from(element.options || []).slice(0, 50).map((option) => ({
+    if (String(stateElement?.tagName || "").toLowerCase() === "select") {
+      record.options = Array.from(stateElement.options || []).slice(0, 50).map((option) => ({
         value: option.value,
         label: clip(option.label || option.textContent || "", 120),
         selected: option.selected
@@ -5507,47 +6572,62 @@
     }
     return record;
   };
-  var pageText = (maxChars) => {
-    const root = document.querySelector("main, article, [role='main']") || document.body;
-    return clip(root?.innerText || "", maxChars);
+  var fallbackActiveTarget = () => {
+    const element = document.activeElement instanceof Element ? document.activeElement : document.body;
+    return {
+      element,
+      clickElement: element,
+      stateElement: element,
+      kind: kindFor(element, element),
+      name: accessibleNameFor(element),
+      text: clip(element?.innerText || element?.textContent || "", 180),
+      group: "",
+      disabled: isDisabled(element),
+      confidence: 1,
+      rect: rectFor(element),
+      inViewport: isInViewport(element)
+    };
   };
   function createPageController({ extensionHost } = {}) {
-    const targets = /* @__PURE__ */ new Map();
-    let snapshotVersion = 0;
-    const isExtensionElement = (element) => element === extensionHost || extensionHost?.contains?.(element);
-    const resolveTarget = (targetId) => {
-      const id = String(targetId || "");
-      const entry = targets.get(id);
-      if (!entry) {
-        return { error: "\u76EE\u6807\u5DF2\u5931\u6548\u6216\u4ECE\u672A\u88AB\u8BC6\u522B\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
-      }
-      if (!entry.element.isConnected || isExtensionElement(entry.element)) {
-        targets.delete(id);
-        return { error: "\u76EE\u6807\u5DF2\u7ECF\u53D8\u5316\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
-      }
-      return { element: entry.element, id };
+    const discover = () => collectSemanticTargets({ extensionHost });
+    const registry = new TargetRegistry({ discover });
+    const buildSnapshot = ({ region = "nearby" } = {}) => {
+      const discovered = discover();
+      const ranked = rankTargets(discovered, { region: normalizedRegion(region) });
+      const entries = registry.registerSnapshot(ranked.targets);
+      return {
+        entries,
+        region: ranked.region,
+        didFallback: ranked.didFallback,
+        discoveredCount: discovered.length
+      };
     };
-    const getPageState = ({ maxElements = 35, maxText = 3e3 } = {}) => {
-      snapshotVersion += 1;
-      targets.clear();
-      const limit = Math.min(MAX_TARGETS, Math.max(10, Number(maxElements) || 35));
-      const candidates = [];
-      const seen = /* @__PURE__ */ new Set();
-      for (const element of document.querySelectorAll(INTERACTIVE_SELECTOR)) {
-        if (seen.has(element) || isExtensionElement(element) || !isVisible(element)) continue;
-        seen.add(element);
-        candidates.push(element);
-        if (candidates.length >= 600) break;
-      }
-      const elements = candidates.sort((left, right) => Number(isInViewport(right)) - Number(isInViewport(left))).slice(0, limit);
-      const targetList = elements.map((element, index) => {
-        const id = `p${snapshotVersion}-${index + 1}`;
-        targets.set(id, { element, snapshotVersion });
-        return targetSnapshot(id, element);
-      });
+    const paginatedTargets = ({ region, page = 1, pageSize = 35 } = {}) => {
+      const snapshot = buildSnapshot({ region });
+      const size = clampNumber(pageSize, 35, 10, MAX_TARGETS_PER_PAGE);
+      const totalTargets = snapshot.entries.length;
+      const pageCount = Math.max(1, Math.ceil(totalTargets / size));
+      const requestedPage = clampNumber(page, 1, 1, pageCount);
+      const start = (requestedPage - 1) * size;
+      const targets = snapshot.entries.slice(start, start + size).map((entry) => targetSnapshot(entry.id, entry.candidate));
+      return {
+        snapshotVersion: registry.snapshotVersion,
+        region: snapshot.region,
+        regionFallback: snapshot.didFallback || void 0,
+        totalTargets,
+        discoveredCount: snapshot.discoveredCount,
+        page: requestedPage,
+        pageSize: size,
+        pageCount,
+        hasMore: requestedPage < pageCount,
+        targets,
+        note: snapshot.discoveredCount >= 1200 ? "\u5DF2\u4FDD\u7559\u6392\u5E8F\u6700\u9AD8\u7684 1200 \u4E2A\u8BED\u4E49\u76EE\u6807\uFF1B\u53EF\u7528 region \u5207\u6362\u5230 above\u3001below \u6216 all \u7F29\u5C0F\u8303\u56F4\u3002" : "\u76EE\u6807\u6309\u53EF\u89C1\u6027\u3001\u8BED\u4E49\u7F6E\u4FE1\u5EA6\u3001\u8868\u5355/\u5BF9\u8BDD\u6846\u4E0A\u4E0B\u6587\u548C\u8DDD\u79BB\u6392\u5E8F\u3002"
+      };
+    };
+    const getPageState = ({ maxElements = 35, maxText = 3e3, page = 1, region = "nearby" } = {}) => {
+      const targetPage = paginatedTargets({ region, page, pageSize: maxElements });
       return {
         ok: true,
-        snapshotVersion,
         title: String(document.title || ""),
         url: String(location.href || ""),
         viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -5556,185 +6636,109 @@
           y: Math.round(window.scrollY),
           maxY: Math.max(0, Math.round(document.documentElement.scrollHeight - window.innerHeight))
         },
-        text: pageText(Math.min(MAX_TEXT, Math.max(500, Number(maxText) || 3e3))),
-        targets: targetList,
-        note: "target ID \u53EA\u5728\u5F53\u524D\u9875\u9762\u72B6\u6001\u6709\u6548\u3002\u9875\u9762\u66F4\u65B0\u3001\u8DF3\u8F6C\u6216\u91CD\u65B0\u8BFB\u53D6\u72B6\u6001\u540E\uFF0C\u8BF7\u4F7F\u7528\u65B0\u7684 ID\u3002"
+        text: pageText(clampNumber(maxText, 3e3, 500, MAX_TEXT)),
+        ...targetPage,
+        note: `${targetPage.note} targetId \u4F18\u5148\u5728\u5F53\u524D\u5FEB\u7167\u4E2D\u4F7F\u7528\uFF1B\u82E5 Vue/React \u91CD\u7ED8\u4E86\u540C\u4E00\u63A7\u4EF6\uFF0C\u8FD0\u884C\u65F6\u4F1A\u6309\u6307\u7EB9\u5C1D\u8BD5\u5B89\u5168\u91CD\u7ED1\u3002\u627E\u4E0D\u5230\u76EE\u6807\u4E0D\u4EE3\u8868\u9875\u9762\u662F canvas\uFF0C\u53EF\u8C03\u7528 list_targets \u5207\u6362\u533A\u57DF\u6216\u7FFB\u9875\u3002`
       };
     };
+    const listTargets = ({ region = "all", page = 1, pageSize = 35 } = {}) => ({
+      ok: true,
+      ...paginatedTargets({ region, page, pageSize })
+    });
+    const resolveTarget = (targetId) => registry.resolve(targetId);
     const describeTarget = (targetId) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return { targetId: String(targetId || ""), label: "\u76EE\u6807\u5DF2\u5931\u6548", error: resolved.error };
-      const snapshot = targetSnapshot(resolved.id, resolved.element);
+      const snapshot = targetSnapshot(resolved.id, resolved.candidate);
       return {
-        targetId: resolved.id,
+        ...snapshot,
         label: snapshot.name || snapshot.text || snapshot.kind,
-        kind: snapshot.kind,
-        disabled: snapshot.disabled,
-        href: snapshot.href || ""
+        rebound: resolved.rebound || void 0
       };
     };
-    const click = ({ targetId } = {}) => {
+    const getTargetState = ({ targetId } = {}) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
-      const { element, id } = resolved;
-      if (!isVisible(element)) return { error: "\u76EE\u6807\u5F53\u524D\u4E0D\u53EF\u89C1\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
-      if (isDisabled(element)) return { error: "\u76EE\u6807\u5DF2\u7981\u7528\uFF0C\u65E0\u6CD5\u70B9\u51FB\u3002", target: describeTarget(id) };
-      const target = describeTarget(id);
-      setTimeout(() => {
-        if (!element.isConnected) return;
-        try {
-          element.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
-          element.focus?.({ preventScroll: true });
-          element.click();
-        } catch {
-        }
-      }, 80);
+      const target = targetSnapshot(resolved.id, resolved.candidate);
+      const state = snapshotTargetState(resolved.candidate);
       return {
         ok: true,
-        action: "click",
-        queued: true,
         target,
-        note: "\u70B9\u51FB\u5DF2\u5B89\u6392\u6267\u884C\u3002\u82E5\u5B83\u4F1A\u5BFC\u822A\u5230\u65B0\u9875\u9762\uFF0C\u5BF9\u8BDD\u5C06\u5728\u65B0\u9875\u9762\u91CD\u65B0\u5EFA\u7ACB\u3002"
+        state: {
+          checked: state.checked,
+          value: state.sensitive ? "[\u5DF2\u9690\u85CF]" : clip(state.value, 300),
+          ariaChecked: state.ariaChecked || void 0,
+          ariaSelected: state.ariaSelected || void 0,
+          ariaPressed: state.ariaPressed || void 0,
+          ariaExpanded: state.ariaExpanded || void 0,
+          selectedValue: state.selectedValue || void 0,
+          connected: state.connected,
+          url: state.url
+        },
+        rebound: resolved.rebound || void 0
       };
     };
-    const type = ({ targetId, text: text2 = "", clear = true } = {}) => {
+    const attachActionTarget = (result, resolved, beforeTarget) => {
+      const candidate = resolved.candidate;
+      const canDescribe = candidate?.clickElement?.isConnected && candidate?.stateElement?.isConnected;
+      return {
+        ...result,
+        target: canDescribe ? targetSnapshot(resolved.id, candidate) : beforeTarget,
+        rebound: resolved.rebound || void 0
+      };
+    };
+    const click = async ({ targetId } = {}) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
-      const { element, id } = resolved;
-      if (!isVisible(element) || isDisabled(element)) return { error: "\u76EE\u6807\u4E0D\u53EF\u8F93\u5165\u3002", target: describeTarget(id) };
-      const inputText = String(text2 ?? "");
-      if (inputText.length > 2e4) return { error: "\u8F93\u5165\u5185\u5BB9\u8FC7\u957F\uFF08\u6700\u591A 20000 \u4E2A\u5B57\u7B26\uFF09\u3002" };
-      const input = element instanceof HTMLInputElement;
-      const textarea = element instanceof HTMLTextAreaElement;
-      const editable = input || textarea || element.isContentEditable || element.getAttribute("contenteditable") === "true";
-      if (!editable) return { error: "\u76EE\u6807\u4E0D\u662F\u53EF\u8F93\u5165\u7684 input\u3001textarea \u6216 contenteditable\u3002", target: describeTarget(id) };
-      if (input && ["file", "checkbox", "radio", "button", "submit", "reset", "image"].includes(element.type)) {
-        return { error: `\u4E0D\u652F\u6301\u5411 ${element.type} \u8F93\u5165\u6587\u5B57\u3002`, target: describeTarget(id) };
-      }
-      const oldValue = input || textarea ? element.value : String(element.textContent || "");
-      const nextValue = clear === false ? `${oldValue}${inputText}` : inputText;
-      try {
-        element.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
-        element.focus?.({ preventScroll: true });
-        if (input) {
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-          if (setter) setter.call(element, nextValue);
-          else element.value = nextValue;
-        } else if (textarea) {
-          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-          if (setter) setter.call(element, nextValue);
-          else element.value = nextValue;
-        } else {
-          element.textContent = nextValue;
-        }
-        element.dispatchEvent(new InputEvent("input", {
-          bubbles: true,
-          composed: true,
-          inputType: clear === false ? "insertText" : "insertReplacementText",
-          data: inputText
-        }));
-        element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-        return {
-          ok: true,
-          action: "type",
-          target: describeTarget(id),
-          value: isSensitive(element) ? "[\u5DF2\u9690\u85CF]" : clip(nextValue, 300),
-          note: "\u5DF2\u66F4\u65B0\u5143\u7D20\u503C\u5E76\u6D3E\u53D1 input/change \u4E8B\u4EF6\u3002"
-        };
-      } catch (error2) {
-        return { error: `\u8F93\u5165\u5931\u8D25: ${String(error2?.message || error2)}`, target: describeTarget(id) };
-      }
+      const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
+      return attachActionTarget(await clickTarget(resolved.candidate), resolved, beforeTarget);
     };
-    const selectOption = ({ targetId, value, label } = {}) => {
+    const check = async ({ targetId } = {}) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
-      const { element, id } = resolved;
-      if (!(element instanceof HTMLSelectElement)) return { error: "\u76EE\u6807\u4E0D\u662F\u539F\u751F select\u3002", target: describeTarget(id) };
-      if (isDisabled(element)) return { error: "\u76EE\u6807\u5DF2\u7981\u7528\u3002", target: describeTarget(id) };
-      const wantedValue = value == null ? null : String(value);
-      const wantedLabel = label == null ? null : String(label);
-      const option = Array.from(element.options).find(
-        (item) => wantedValue != null && item.value === wantedValue || wantedLabel != null && (item.label === wantedLabel || item.textContent?.trim() === wantedLabel)
-      );
-      if (!option) {
-        return {
-          error: "\u6CA1\u6709\u627E\u5230\u5339\u914D\u9009\u9879\u3002",
-          target: describeTarget(id),
-          options: Array.from(element.options).slice(0, 50).map((item) => ({ value: item.value, label: clip(item.label || item.textContent || "", 120) }))
-        };
+      const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
+      if (!["radio", "checkbox", "switch"].includes(beforeTarget.kind)) {
+        return { error: "\u76EE\u6807\u4E0D\u662F\u5355\u9009\u3001\u591A\u9009\u6216\u5F00\u5173\u63A7\u4EF6\u3002", target: beforeTarget };
       }
-      try {
-        element.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
-        element.focus?.({ preventScroll: true });
-        element.value = option.value;
-        element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
-        element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
-        return { ok: true, action: "select_option", target: describeTarget(id), selected: { value: option.value, label: option.label } };
-      } catch (error2) {
-        return { error: `\u9009\u62E9\u5931\u8D25: ${String(error2?.message || error2)}`, target: describeTarget(id) };
-      }
+      return attachActionTarget(await clickTarget(resolved.candidate, { check: true }), resolved, beforeTarget);
     };
-    const pressKey = ({ targetId, key } = {}) => {
-      const resolved = targetId ? resolveTarget(targetId) : { element: document.activeElement || document.body, id: "active" };
+    const type = async ({ targetId, text: text2 = "", clear = true } = {}) => {
+      const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
-      const keyName = String(key || "").trim();
-      if (!keyName || keyName.length > 40) return { error: "key \u5FC5\u586B\u4E14\u957F\u5EA6\u4E0D\u80FD\u8D85\u8FC7 40\u3002" };
-      try {
-        resolved.element.focus?.({ preventScroll: true });
-        const init = { key: keyName, bubbles: true, composed: true, cancelable: true };
-        const down = resolved.element.dispatchEvent(new KeyboardEvent("keydown", init));
-        resolved.element.dispatchEvent(new KeyboardEvent("keypress", init));
-        const up = resolved.element.dispatchEvent(new KeyboardEvent("keyup", init));
-        return {
-          ok: true,
-          action: "press_key",
-          key: keyName,
-          target: targetId ? describeTarget(resolved.id) : { label: "\u5F53\u524D\u7126\u70B9" },
-          defaultNotPrevented: down && up,
-          note: "\u8FD9\u662F DOM \u952E\u76D8\u4E8B\u4EF6\uFF1B\u8981\u6C42\u771F\u5B9E\u952E\u76D8\u624B\u52BF\u7684\u7F51\u7AD9\u53EF\u80FD\u4E0D\u4F1A\u54CD\u5E94\u3002"
-        };
-      } catch (error2) {
-        return { error: `\u6309\u952E\u5931\u8D25: ${String(error2?.message || error2)}` };
-      }
+      const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
+      return attachActionTarget(await typeIntoTarget(resolved.candidate, { text: text2, clear }), resolved, beforeTarget);
     };
-    const scroll = ({ direction = "down", amount = 600, targetId } = {}) => {
-      let target = window;
-      let label = "\u9875\u9762";
-      if (targetId) {
-        const resolved = resolveTarget(targetId);
-        if (resolved.error) return resolved;
-        target = resolved.element;
-        label = describeTarget(resolved.id).label || "\u76EE\u6807\u5BB9\u5668";
-      }
-      const dir = String(direction || "down").toLowerCase();
-      if (!["up", "down", "left", "right", "top", "bottom"].includes(dir)) {
-        return { error: "direction \u53EA\u80FD\u662F up\u3001down\u3001left\u3001right\u3001top \u6216 bottom\u3002" };
-      }
-      const distance = Math.min(1e4, Math.max(1, Math.abs(Number(amount) || 600)));
-      const before = target === window ? { x: Math.round(window.scrollX), y: Math.round(window.scrollY) } : { x: Math.round(target.scrollLeft), y: Math.round(target.scrollTop) };
-      try {
-        if (dir === "top") target.scrollTo({ top: 0, behavior: "smooth" });
-        else if (dir === "bottom") target.scrollTo({ top: target === window ? document.documentElement.scrollHeight : target.scrollHeight, behavior: "smooth" });
-        else {
-          const sign = dir === "up" || dir === "left" ? -1 : 1;
-          const left = dir === "left" || dir === "right" ? sign * distance : 0;
-          const top = dir === "up" || dir === "down" ? sign * distance : 0;
-          target.scrollBy({ left, top, behavior: "smooth" });
-        }
-        return { ok: true, action: "scroll", direction: dir, amount: distance, target: label, before };
-      } catch (error2) {
-        return { error: `\u6EDA\u52A8\u5931\u8D25: ${String(error2?.message || error2)}` };
-      }
+    const selectOption = async ({ targetId, value, label } = {}) => {
+      const resolved = resolveTarget(targetId);
+      if (resolved.error) return resolved;
+      const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
+      return attachActionTarget(await selectOptionInTarget(resolved.candidate, { value, label }), resolved, beforeTarget);
+    };
+    const pressKey = async ({ targetId, key } = {}) => {
+      const resolved = targetId ? resolveTarget(targetId) : { id: "active", candidate: fallbackActiveTarget(), rebound: false };
+      if (resolved.error) return resolved;
+      const beforeTarget = targetId ? targetSnapshot(resolved.id, resolved.candidate) : { label: "\u5F53\u524D\u7126\u70B9", kind: resolved.candidate.kind };
+      return attachActionTarget(await pressKeyOnTarget(resolved.candidate, { key }), resolved, beforeTarget);
+    };
+    const scroll = async ({ direction = "down", amount = 600, targetId } = {}) => {
+      const resolved = targetId ? resolveTarget(targetId) : null;
+      if (resolved?.error) return resolved;
+      const beforeTarget = resolved ? targetSnapshot(resolved.id, resolved.candidate) : null;
+      const result = await scrollTarget({ target: resolved?.candidate, direction, amount });
+      return resolved ? attachActionTarget(result, resolved, beforeTarget) : result;
     };
     const wait = async ({ ms = 700 } = {}) => {
-      const duration = Math.min(5e3, Math.max(50, Number(ms) || 700));
+      const duration = clampNumber(ms, 700, 50, 5e3);
       await new Promise((resolve) => setTimeout(resolve, duration));
-      return { ok: true, action: "wait", ms: duration, url: String(location.href || "") };
+      return { ok: true, action: "wait", status: "completed", ms: duration, url: String(location.href || "") };
     };
     return {
       getPageState,
+      listTargets,
+      getTargetState,
       describeTarget,
       click,
+      check,
       type,
       selectOption,
       pressKey,
@@ -6922,7 +7926,7 @@ ${f.text}
         return tool_query_top_only({ selector, limit: lim, includeAttrs });
       }
     };
-    const PAGE_ACTION_TOOLS = /* @__PURE__ */ new Set(["click", "type", "select_option", "press_key", "scroll"]);
+    const PAGE_ACTION_TOOLS = /* @__PURE__ */ new Set(["click", "check", "type", "select_option", "press_key", "scroll"]);
     const targetLabel = (targetId) => {
       if (!targetId) return "\u5F53\u524D\u9875\u9762";
       const target = pageController.describeTarget(targetId);
@@ -6930,6 +7934,7 @@ ${f.text}
     };
     const actionSummary = (name, args = {}) => {
       if (name === "click") return `\u70B9\u51FB ${targetLabel(args.targetId)}`;
+      if (name === "check") return `\u9009\u4E2D ${targetLabel(args.targetId)}`;
       if (name === "type") {
         const target = pageController.describeTarget(args.targetId);
         const text2 = String(args.text ?? "");
@@ -6951,7 +7956,7 @@ ${f.text}
       return {
         done(result) {
           item.classList.toggle("error", Boolean(result?.error));
-          item.textContent = result?.error ? `\u672A\u5B8C\u6210\uFF1A${result.error}` : result?.queued ? `\u5DF2\u5B89\u6392\uFF1A${actionSummary(name, args)}` : `\u5DF2\u6267\u884C\uFF1A${actionSummary(name, args)}`;
+          item.textContent = result?.error ? `${result?.actionExecuted ? "\u5F85\u786E\u8BA4" : "\u672A\u5B8C\u6210"}\uFF1A${result.error}` : result?.queued ? `\u5DF2\u5B89\u6392\uFF1A${actionSummary(name, args)}` : result?.verified === false ? `\u5DF2\u6D3E\u53D1\uFF0C\u5F85\u786E\u8BA4\uFF1A${actionSummary(name, args)}` : `\u5DF2\u6267\u884C\uFF1A${actionSummary(name, args)}`;
         }
       };
     };
@@ -6970,17 +7975,20 @@ ${f.text}
       }
       const log = appendToolLog(name, args, "\u6B63\u5728\u6267\u884C");
       let result;
-      if (name === "click") result = pageController.click(args);
-      else if (name === "type") result = pageController.type(args);
-      else if (name === "select_option") result = pageController.selectOption(args);
-      else if (name === "press_key") result = pageController.pressKey(args);
-      else if (name === "scroll") result = pageController.scroll(args);
+      if (name === "click") result = await pageController.click(args);
+      else if (name === "check") result = await pageController.check(args);
+      else if (name === "type") result = await pageController.type(args);
+      else if (name === "select_option") result = await pageController.selectOption(args);
+      else if (name === "press_key") result = await pageController.pressKey(args);
+      else if (name === "scroll") result = await pageController.scroll(args);
       else result = { error: `\u672A\u77E5\u9875\u9762\u64CD\u4F5C: ${name}` };
       log.done(result);
       return result;
     };
     const runTool = async (name, args = {}) => {
       if (name === "get_page_state") return pageController.getPageState(args);
+      if (name === "list_targets") return pageController.listTargets(args);
+      if (name === "get_target_state") return pageController.getTargetState(args);
       if (name === "read_page") return tool_read_page(args);
       if (name === "get_visible_text") return tool_get_visible_text(args);
       if (name === "query") return tool_query(args);
