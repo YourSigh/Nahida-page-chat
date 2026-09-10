@@ -7,9 +7,10 @@ const SYSTEM_PROMPT = [
   "你正在帮助用户理解和操作当前浏览器页面。你拥有原生工具调用能力：需要查看或操作页面时直接调用工具，绝不要把工具调用写成普通文本或 JSON。",
   "",
   "工作方式：",
-  "- 用户要你操作页面时，先调用 get_page_state，读取可见文本和可操作目标。每个目标都有临时 targetId；页面更新、跳转或再次读取状态后，旧 ID 会失效。",
-  "- 点击、输入、选择和按键都只能使用刚读取到的 targetId，不能猜测页面元素，也不能凭 CSS selector 操作。",
-  "- 对点击后的动态页面，调用 wait（通常 500-1200ms）后重新 get_page_state，再决定下一步。",
+  "- 用户要你操作页面时，先调用 get_page_state，读取可见文本和可操作语义目标。目标可能是原生控件，也可能是 Vue/React 的自定义 radio、checkbox、switch 或按钮；不能因为列表里暂时没有目标就断言页面是 canvas。",
+  "- 初始列表按视口和表单上下文排序。目标不在列表中时，调用 list_targets，使用 region=below、above 或 all 并翻页；不能猜测页面元素，也不能凭 CSS selector 操作。",
+  "- 点击、输入、选择和按键都只能使用工具返回的 targetId。radio、checkbox、switch 优先使用 check；动作结果会包含 verified/status/evidence。若未验证，先 get_target_state 或重新 get_page_state，再决定下一步，绝不把未验证结果说成成功。",
+  "- 页面重绘时运行时会尝试按语义指纹重绑同一个目标，但发生明显页面变化后仍应重新读取状态。对点击后的动态页面，调用 wait（通常 500-1200ms）后再观察。",
   "- 工具会在前端显示操作状态。若工具结果显示全局页面操作已关闭，告诉用户在插件设置中开启“启用页面操作（全局）”；不要反复请求同一操作。",
   "- 输入、提交、发送、删除、购买、发布、登录、权限修改等有影响的动作必须来自用户当前对话的明确请求。不要主动填写密码、验证码、支付信息、API Key 或其他秘密。",
   "- 不要批量点击或批量填写；一次只处理一个明确目标。页面跳转后当前对话会结束，新页面会重新建立对话。",
@@ -28,8 +29,39 @@ const PAGE_TOOLS = [
         type: "object",
         properties: {
           maxElements: { type: "integer", minimum: 10, maximum: 60, description: "最多返回多少个可操作元素" },
-          maxText: { type: "integer", minimum: 500, maximum: 6000, description: "最多返回多少字符的正文" }
+          maxText: { type: "integer", minimum: 500, maximum: 6000, description: "最多返回多少字符的正文" },
+          page: { type: "integer", minimum: 1, maximum: 36, description: "目标列表页码，默认 1" },
+          region: { type: "string", enum: ["viewport", "nearby", "above", "below", "all"], description: "目标区域，默认 nearby" }
         },
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_targets",
+      description: "按区域和页码列出可交互语义目标。目标未出现在初始页面状态中时使用；不会读取整页正文。",
+      parameters: {
+        type: "object",
+        properties: {
+          region: { type: "string", enum: ["viewport", "nearby", "above", "below", "all"], description: "要列出的区域" },
+          page: { type: "integer", minimum: 1, maximum: 36, description: "页码" },
+          pageSize: { type: "integer", minimum: 10, maximum: 60, description: "每页目标数" }
+        },
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_target_state",
+      description: "读取一个 targetId 当前的选中、展开、输入值等状态；用于确认动作结果或检查重绘后的目标。",
+      parameters: {
+        type: "object",
+        properties: { targetId: { type: "string" } },
+        required: ["targetId"],
         additionalProperties: false
       }
     }
@@ -62,10 +94,23 @@ const PAGE_TOOLS = [
     type: "function",
     function: {
       name: "click",
-      description: "点击一个 get_page_state 返回的 targetId。点击可能导致页面跳转。",
+      description: "点击一个工具返回的 targetId。运行时会验证可观察到的状态变化；可能跳转的链接或提交按钮会先确认调度。",
       parameters: {
         type: "object",
         properties: { targetId: { type: "string", description: "get_page_state 返回的目标 ID" } },
+        required: ["targetId"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "check",
+      description: "将 radio、checkbox 或 switch 目标设置为已选中/开启，并验证最终状态。",
+      parameters: {
+        type: "object",
+        properties: { targetId: { type: "string" } },
         required: ["targetId"],
         additionalProperties: false
       }
@@ -263,20 +308,34 @@ function safeToolResult(result) {
   const compact = {
     ok: value.ok,
     error: value.error,
+    status: value.status,
+    verified: value.verified,
     title: value.title,
     url: value.url,
     scroll: value.scroll,
+    snapshotVersion: value.snapshotVersion,
+    region: value.region,
+    page: value.page,
+    pageSize: value.pageSize,
+    pageCount: value.pageCount,
+    totalTargets: value.totalTargets,
+    hasMore: value.hasMore,
     text: typeof value.text === "string" ? value.text.slice(0, 2_400) : undefined,
     targets: Array.isArray(value.targets)
       ? value.targets.slice(0, 28).map((target) => ({
         id: target.id,
         kind: target.kind,
+        role: target.role,
         name: target.name,
         text: target.text,
+        group: target.group,
+        checked: target.checked,
         inputType: target.inputType,
         placeholder: target.placeholder,
         disabled: target.disabled,
         inViewport: target.inViewport,
+        visible: target.visible,
+        confidence: target.confidence,
         options: Array.isArray(target.options)
           ? target.options.slice(0, 12).map((option) => ({ value: option.value, label: option.label, selected: option.selected }))
           : undefined

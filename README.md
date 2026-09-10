@@ -17,8 +17,11 @@
 - 支持 AI 对话（OpenAI 兼容接口），回复支持 Markdown 渲染
 - 支持 `<think>...</think>` 思考过程展示（可折叠，类似 DeepSeek）
 - 内置网页智能体：优先使用 OpenAI 兼容的原生 Function Calling；不支持时自动回退到兼容模式
-- 模型先读取页面状态，再使用临时 `targetId` 操作精确元素，不再猜 CSS selector
-- 支持点击、输入、下拉选择、按键、滚动、等待等操作，并显示每一步的执行状态
+- 内置 Browser Interaction Runtime：先生成可交互语义目标，再使用 `targetId` 操作精确元素，不让模型猜 CSS selector
+- 识别原生控件、ARIA 控件、可见 `label` 代理、Vue/React 风格自定义 radio/checkbox/switch，以及开放 Shadow DOM 内的目标
+- 支持点击、选中、输入、下拉选择、按键、滚动、等待等操作；每次动作都会返回验证状态与证据，不会把“事件已派发”误报成成功
+- 目标按视口、对话框/表单上下文与语义置信度排序；可用 `list_targets` 按区域翻页，避免固定前 35 个元素挤掉实际选项
+- 页面重绘后会用控件类型、名称、分组、DOM 身份与位置指纹尝试安全重绑目标
 - 设置面板中的“启用页面操作（全局）”开关默认关闭、切换后立即生效并保存在本地：关闭时插件仅读取页面内容，开启后可在所有可注入网页执行页面操作
 - 点击会先返回执行确认、再触发 DOM 点击，避免页面跳转销毁通信通道后误报工具超时
 - 读取工具会尽量合并 **iframe 内**可注入 frame 的正文/可见文本/query 结果（跨域但同扩展权限的页面一般可读；极少数沙箱 iframe 仍可能无法注入）
@@ -27,15 +30,18 @@
 
 页面操作说明：
 
-- `get_page_state`：读取可见文本与可操作元素，为当前页面建立临时目标 ID
-- `click`：按临时目标 ID 点击一个元素
+- `get_page_state`：读取可见文本与排序后的语义目标，支持 `region`（`viewport` / `nearby` / `above` / `below` / `all`）和分页
+- `list_targets`：不读取正文、仅按区域/页码继续列出目标
+- `get_target_state`：读取单个目标当前的选中、展开、输入等状态
+- `click`：按 `targetId` 点击一个元素，并验证可观察的变化
+- `check`：将 radio、checkbox 或 switch 设置为已选中/开启，并验证最终状态
 - `type`：填写 `input`、`textarea` 或 `contenteditable`，可清空或追加内容
 - `select_option`：设置原生 `select` 的 value 或 label
 - `press_key`：向目标元素派发键盘事件；部分网站会拒绝非真实用户事件
-- `scroll`：滚动页面或指定滚动容器
+- `scroll`：滚动页面或指定滚动容器，并验证滚动位置是否变化
 - `wait`：等待页面异步更新
 
-受浏览器安全限制，Chrome/Edge 内置页面、扩展管理页、部分 PDF 页面通常不能注入；跨域沙箱 iframe，以及依赖“真实用户手势”的网站行为也可能失败。页面跳转会结束当前页面的对话，新页面加载后可继续使用悬浮窗。插件会把实际结果交给模型，不会假装操作成功。
+受浏览器安全限制，Chrome/Edge 内置页面、扩展管理页、部分 PDF 页面通常不能注入；跨域沙箱 iframe、封闭 Shadow DOM、canvas/WebGL，以及依赖“真实用户手势”的网站行为也可能无法操作。页面跳转会结束当前页面的对话，新页面加载后可继续使用悬浮窗。插件会把实际结果交给模型，不会假装操作成功。
 
 ## Demo
 
@@ -54,7 +60,12 @@
 - `content.js`: content script（由 `src/` 打包产物）
 - `background.js`: MV3 service worker（由 `src/` 打包产物，负责调用大模型 API / 工具调度）
 - `src/content/index.js`: 悬浮图标 + 对话框 UI + 工具执行
-- `src/page/pageController.js`: 页面状态快照、临时目标 ID 与 DOM 操作
+- `src/page/perception/`: 可见性、可访问名称、Shadow DOM 与自定义控件语义发现
+- `src/page/registry/`: 目标注册表与重渲染指纹重绑
+- `src/page/actions/`: 语义化点击、选中、输入、选择、按键与滚动
+- `src/page/verification/`: 动作前后状态快照与结果验证
+- `src/page/ranking/`: 目标排序与区域筛选
+- `src/page/pageController.js`: 页面操作协议的编排入口
 - `src/background/nativeAgent.js`: 原生 Function Calling 智能体循环
 - `src/background/index.js`: 服务工作线程、兼容模式与 iframe 读取
 - `assets/floating-icon.png`: 主 Logo（你维护的源图，不会被脚本覆盖）
@@ -85,6 +96,7 @@
 ```bash
 npm install
 npm run build
+npm test
 ```
 
 构建后请在扩展管理页点击“重新加载”，并刷新已打开的目标网页；content script 只会在页面加载时注入，单独执行构建不会更新已经打开的网页。

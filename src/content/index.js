@@ -1200,7 +1200,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
   };
 
-  const PAGE_ACTION_TOOLS = new Set(["click", "type", "select_option", "press_key", "scroll"]);
+  const PAGE_ACTION_TOOLS = new Set(["click", "check", "type", "select_option", "press_key", "scroll"]);
 
   const targetLabel = (targetId) => {
     if (!targetId) return "当前页面";
@@ -1210,6 +1210,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const actionSummary = (name, args = {}) => {
     if (name === "click") return `点击 ${targetLabel(args.targetId)}`;
+    if (name === "check") return `选中 ${targetLabel(args.targetId)}`;
     if (name === "type") {
       const target = pageController.describeTarget(args.targetId);
       const text = String(args.text ?? "");
@@ -1233,9 +1234,11 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       done(result) {
         item.classList.toggle("error", Boolean(result?.error));
         item.textContent = result?.error
-          ? `未完成：${result.error}`
+          ? `${result?.actionExecuted ? "待确认" : "未完成"}：${result.error}`
           : result?.queued
             ? `已安排：${actionSummary(name, args)}`
+            : result?.verified === false
+              ? `已派发，待确认：${actionSummary(name, args)}`
             : `已执行：${actionSummary(name, args)}`;
       }
     };
@@ -1256,11 +1259,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
     const log = appendToolLog(name, args, "正在执行");
     let result;
-    if (name === "click") result = pageController.click(args);
-    else if (name === "type") result = pageController.type(args);
-    else if (name === "select_option") result = pageController.selectOption(args);
-    else if (name === "press_key") result = pageController.pressKey(args);
-    else if (name === "scroll") result = pageController.scroll(args);
+    if (name === "click") result = await pageController.click(args);
+    else if (name === "check") result = await pageController.check(args);
+    else if (name === "type") result = await pageController.type(args);
+    else if (name === "select_option") result = await pageController.selectOption(args);
+    else if (name === "press_key") result = await pageController.pressKey(args);
+    else if (name === "scroll") result = await pageController.scroll(args);
     else result = { error: `未知页面操作: ${name}` };
     log.done(result);
     return result;
@@ -1268,6 +1272,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const runTool = async (name, args = {}) => {
     if (name === "get_page_state") return pageController.getPageState(args);
+    if (name === "list_targets") return pageController.listTargets(args);
+    if (name === "get_target_state") return pageController.getTargetState(args);
     if (name === "read_page") return tool_read_page(args);
     if (name === "get_visible_text") return tool_get_visible_text(args);
     if (name === "query") return tool_query(args);
