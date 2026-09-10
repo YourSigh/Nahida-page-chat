@@ -5578,8 +5578,8 @@
         if (["checked", "selected", "on", "active"].includes(dataState)) return true;
         if (["unchecked", "unselected", "off", "inactive"].includes(dataState)) return false;
         const tokens = classTokens(node);
-        if (tokens.some((token) => /(^|[-_])(un)?checked$|(^|[-_])(un)?selected$|(^|[-_])off$/.test(token))) return false;
-        if (tokens.some((token) => /(^|[-_])(is-)?(checked|selected|active|on)$/.test(token))) return true;
+        if (tokens.some((token) => /(^|[-_])(unchecked|unselected|off|inactive|not-checked|not-selected)$/.test(token))) return false;
+        if (tokens.some((token) => /(^|[-_])(checked|selected|active|on)$/.test(token))) return true;
       }
     }
     return null;
@@ -5621,12 +5621,13 @@
     }
     return clipText(group.innerText || group.textContent || "", 160);
   };
-  var hasClickHint = (element) => {
+  var hasClickHint = (element, { includeCursor = true } = {}) => {
     if (!element) return false;
     if (element.hasAttribute?.("onclick") || element.hasAttribute?.("onpointerdown") || element.hasAttribute?.("data-action")) return true;
     if (Number(element.tabIndex) >= 0) return true;
     const role = roleFor(element);
     if (["button", "link", "checkbox", "radio", "switch", "option", "tab", "menuitem", "menuitemcheckbox", "menuitemradio"].includes(role)) return true;
+    if (!includeCursor) return false;
     try {
       return window.getComputedStyle(element).cursor === "pointer";
     } catch {
@@ -5702,6 +5703,22 @@
     const y = Math.max(1, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
     try {
       return document.elementsFromPoint(x, y).some((hit) => composedContains(element, hit));
+    } catch {
+      return false;
+    }
+  };
+  var isScrollable = (element) => {
+    const tag = String(element?.tagName || "").toLowerCase();
+    if (!element?.isConnected || tag === "html" || tag === "body") return false;
+    if (!["div", "section", "main", "article", "aside", "nav", "ul", "ol", "pre", "table", "td", "th", "dialog"].includes(tag)) return false;
+    try {
+      const overflowsY = element.scrollHeight > element.clientHeight + 8;
+      const overflowsX = element.scrollWidth > element.clientWidth + 8;
+      if (!overflowsX && !overflowsY) return false;
+      const style = window.getComputedStyle(element);
+      const scrollableY = ["auto", "scroll", "overlay"].includes(style.overflowY) && overflowsY;
+      const scrollableX = ["auto", "scroll", "overlay"].includes(style.overflowX) && overflowsX;
+      return scrollableX || scrollableY;
     } catch {
       return false;
     }
@@ -6150,7 +6167,7 @@
 
   // src/page/perception/collectTargets.js
   var MAX_SCAN_NODES = 12e3;
-  var MAX_DISCOVERED_TARGETS = 1200;
+  var MAX_DISCOVERED_TARGETS = 12e3;
   var ACTIONABLE_ROLES = /* @__PURE__ */ new Set([
     "button",
     "link",
@@ -6232,11 +6249,12 @@
     if (ACTIONABLE_ROLES.has(role)) return 0.94;
     if (element.hasAttribute?.("aria-checked") || element.hasAttribute?.("aria-selected")) return 0.91;
     if (classControlKind(element)) return stateElement && stateElement !== element ? 0.89 : 0.82;
+    if (kind === "scroll-container") return 0.76;
     if (clickElement !== element && stateElement) return 0.86;
     if (hasClickHint(element)) return 0.63;
     return 0.5;
   };
-  var isCandidateLike = ({ element, stateElement, kind }) => {
+  var isCandidateLike = ({ element, stateElement, kind, probeCursor = false, scrollable = false }) => {
     const tag = String(element.tagName || "").toLowerCase();
     const role = roleFor(element);
     if (isNativeInteractive(element)) return true;
@@ -6245,7 +6263,15 @@
     if (element.hasAttribute?.("aria-checked") || element.hasAttribute?.("aria-selected")) return true;
     if (classControlKind(element)) return true;
     if (["radio", "checkbox", "switch"].includes(kind) && stateElement) return true;
-    return kind === "custom" && hasClickHint(element) && Boolean(clip(element.innerText || element.textContent || "", 180));
+    if (scrollable) return true;
+    return kind === "custom" && hasClickHint(element, { includeCursor: probeCursor }) && Boolean(clip(element.innerText || element.textContent || "", 180));
+  };
+  var isCursorProbeCandidate = (element) => {
+    const tag = String(element?.tagName || "").toLowerCase();
+    if (!["div", "span", "li", "td", "summary"].includes(tag)) return false;
+    if (element.hasAttribute?.("onclick") || element.hasAttribute?.("data-action") || element.hasAttribute?.("tabindex")) return true;
+    const text2 = String(element.textContent || "").replace(/\s+/g, " ").trim();
+    return text2.length > 0 && text2.length <= 180 && element.children.length <= 4;
   };
   var isCompositeControlContainer = (element) => {
     if (!classControlKind(element) || ACTIONABLE_ROLES.has(roleFor(element))) return false;
@@ -6256,12 +6282,13 @@
       return false;
     }
   };
-  var candidateFor = (element, extensionHost) => {
+  var candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
     if (!element?.isConnected || isExtensionElement(element, extensionHost)) return null;
     if (isCompositeControlContainer(element)) return null;
     const stateElement = stateElementFor(element);
     const kind = kindFor(element, stateElement);
-    if (!isCandidateLike({ element, stateElement, kind })) return null;
+    const scrollable = isScrollable(element);
+    if (!isCandidateLike({ element, stateElement, kind, probeCursor, scrollable })) return null;
     let clickElement = element;
     const tag = String(element.tagName || "").toLowerCase();
     if (tag === "label") {
@@ -6276,7 +6303,7 @@
     const text2 = clip(clickElement.innerText || clickElement.textContent || stateElement?.innerText || stateElement?.textContent || "", 220);
     if (!name && !text2 && kind === "custom") return null;
     const stateKind = kindFor(clickElement, stateElement);
-    const effectiveKind = kind === "custom" ? stateKind : kind;
+    const effectiveKind = kind === "custom" && stateKind === "custom" && scrollable ? "scroll-container" : kind === "custom" ? stateKind : kind;
     const checked = checkedStateFor(clickElement, stateElement, effectiveKind);
     return {
       element: clickElement,
@@ -6300,10 +6327,13 @@
     };
   };
   var candidateQuality = (candidate) => candidate.confidence * 100 + (candidate.hitTestable ? 8 : 0) + (candidate.inViewport ? 4 : 0) + (candidate.kind !== "custom" ? 2 : 0);
-  var collectSemanticTargets = ({ extensionHost, maxCandidates = MAX_DISCOVERED_TARGETS } = {}) => {
+  var collectSemanticTargets = ({ extensionHost, maxCandidates } = {}) => {
     const byLogicalControl = /* @__PURE__ */ new Map();
+    let cursorProbeBudget = 900;
     for (const element of allElements()) {
-      const candidate = candidateFor(element, extensionHost);
+      const probeCursor = cursorProbeBudget > 0 && isCursorProbeCandidate(element);
+      if (probeCursor) cursorProbeBudget -= 1;
+      const candidate = candidateFor(element, extensionHost, { probeCursor });
       if (!candidate) continue;
       const logicalKey = candidate.stateElement || candidate.clickElement;
       const previous = byLogicalControl.get(logicalKey);
@@ -6311,7 +6341,9 @@
         byLogicalControl.set(logicalKey, candidate);
       }
     }
-    return Array.from(byLogicalControl.values()).slice(0, Math.max(1, Number(maxCandidates) || MAX_DISCOVERED_TARGETS));
+    const requestedLimit = Number(maxCandidates);
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(MAX_DISCOVERED_TARGETS, Math.floor(requestedLimit))) : MAX_DISCOVERED_TARGETS;
+    return Array.from(byLogicalControl.values()).slice(0, limit);
   };
 
   // src/page/ranking/rankTargets.js
@@ -6326,6 +6358,7 @@
     option: 25,
     tab: 24,
     menuitem: 22,
+    "scroll-container": 18,
     custom: 12
   };
   var inDialog = (candidate) => {
@@ -6517,6 +6550,7 @@
 
   // src/page/pageController.js
   var MAX_TARGETS_PER_PAGE = 60;
+  var MAX_REGISTERED_TARGETS = 1200;
   var MAX_TEXT = 6e3;
   var pageText = (maxChars) => {
     const root = document.querySelector("main, article, [role='main']") || document.body;
@@ -6540,7 +6574,8 @@
   var targetSnapshot = (id, candidate) => {
     const clickElement = candidate.clickElement || candidate.element;
     const stateElement = candidate.stateElement || clickElement;
-    const kind = kindFor(clickElement, stateElement) || candidate.kind || "custom";
+    const inferredKind = kindFor(clickElement, stateElement);
+    const kind = inferredKind === "custom" ? candidate.kind || inferredKind : inferredKind;
     const checked = checkedStateFor(clickElement, stateElement, kind);
     const record = {
       id,
@@ -6594,12 +6629,13 @@
     const buildSnapshot = ({ region = "nearby" } = {}) => {
       const discovered = discover();
       const ranked = rankTargets(discovered, { region: normalizedRegion(region) });
-      const entries = registry.registerSnapshot(ranked.targets);
+      const entries = registry.registerSnapshot(ranked.targets.slice(0, MAX_REGISTERED_TARGETS));
       return {
         entries,
         region: ranked.region,
         didFallback: ranked.didFallback,
-        discoveredCount: discovered.length
+        discoveredCount: discovered.length,
+        registeredCount: entries.length
       };
     };
     const paginatedTargets = ({ region, page = 1, pageSize = 35 } = {}) => {
@@ -6616,12 +6652,13 @@
         regionFallback: snapshot.didFallback || void 0,
         totalTargets,
         discoveredCount: snapshot.discoveredCount,
+        registeredCount: snapshot.registeredCount,
         page: requestedPage,
         pageSize: size,
         pageCount,
         hasMore: requestedPage < pageCount,
         targets,
-        note: snapshot.discoveredCount >= 1200 ? "\u5DF2\u4FDD\u7559\u6392\u5E8F\u6700\u9AD8\u7684 1200 \u4E2A\u8BED\u4E49\u76EE\u6807\uFF1B\u53EF\u7528 region \u5207\u6362\u5230 above\u3001below \u6216 all \u7F29\u5C0F\u8303\u56F4\u3002" : "\u76EE\u6807\u6309\u53EF\u89C1\u6027\u3001\u8BED\u4E49\u7F6E\u4FE1\u5EA6\u3001\u8868\u5355/\u5BF9\u8BDD\u6846\u4E0A\u4E0B\u6587\u548C\u8DDD\u79BB\u6392\u5E8F\u3002"
+        note: snapshot.discoveredCount > snapshot.registeredCount ? `\u9875\u9762\u53D1\u73B0 ${snapshot.discoveredCount} \u4E2A\u8BED\u4E49\u76EE\u6807\uFF0C\u5F53\u524D\u6309\u6392\u5E8F\u4FDD\u7559\u6700\u9AD8\u7684 ${snapshot.registeredCount} \u4E2A\uFF1B\u53EF\u7528 region \u5207\u6362\u5230 above\u3001below \u6216 all \u7F29\u5C0F\u8303\u56F4\u3002` : "\u76EE\u6807\u6309\u53EF\u89C1\u6027\u3001\u8BED\u4E49\u7F6E\u4FE1\u5EA6\u3001\u8868\u5355/\u5BF9\u8BDD\u6846\u4E0A\u4E0B\u6587\u548C\u8DDD\u79BB\u6392\u5E8F\u3002"
       };
     };
     const getPageState = ({ maxElements = 35, maxText = 3e3, page = 1, region = "nearby" } = {}) => {
@@ -6687,11 +6724,38 @@
         rebound: resolved.rebound || void 0
       };
     };
+    const finalizeAction = (result, resolved, beforeTarget, beforeState) => {
+      let activeResolved = resolved;
+      let finalResult = result;
+      const candidateStillConnected = Boolean(
+        resolved.candidate?.clickElement?.isConnected && resolved.candidate?.stateElement?.isConnected
+      );
+      if (!result?.verified && !candidateStillConnected) {
+        const rebound = registry.resolve(resolved.id);
+        if (!rebound.error) {
+          activeResolved = rebound;
+          const afterState = snapshotTargetState(rebound.candidate);
+          const changes = meaningfulChanges(beforeState, afterState);
+          if (rebound.rebound && changes.length) {
+            finalResult = {
+              ...result,
+              ok: true,
+              verified: true,
+              status: "verified",
+              evidence: evidenceFor({ before: beforeState, after: afterState, changes, mutated: true }),
+              error: void 0
+            };
+          }
+        }
+      }
+      return attachActionTarget(finalResult, activeResolved, beforeTarget);
+    };
     const click = async ({ targetId } = {}) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
       const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
-      return attachActionTarget(await clickTarget(resolved.candidate), resolved, beforeTarget);
+      const beforeState = snapshotTargetState(resolved.candidate);
+      return finalizeAction(await clickTarget(resolved.candidate), resolved, beforeTarget, beforeState);
     };
     const check = async ({ targetId } = {}) => {
       const resolved = resolveTarget(targetId);
@@ -6700,32 +6764,37 @@
       if (!["radio", "checkbox", "switch"].includes(beforeTarget.kind)) {
         return { error: "\u76EE\u6807\u4E0D\u662F\u5355\u9009\u3001\u591A\u9009\u6216\u5F00\u5173\u63A7\u4EF6\u3002", target: beforeTarget };
       }
-      return attachActionTarget(await clickTarget(resolved.candidate, { check: true }), resolved, beforeTarget);
+      const beforeState = snapshotTargetState(resolved.candidate);
+      return finalizeAction(await clickTarget(resolved.candidate, { check: true }), resolved, beforeTarget, beforeState);
     };
     const type = async ({ targetId, text: text2 = "", clear = true } = {}) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
       const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
-      return attachActionTarget(await typeIntoTarget(resolved.candidate, { text: text2, clear }), resolved, beforeTarget);
+      const beforeState = snapshotTargetState(resolved.candidate);
+      return finalizeAction(await typeIntoTarget(resolved.candidate, { text: text2, clear }), resolved, beforeTarget, beforeState);
     };
     const selectOption = async ({ targetId, value, label } = {}) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
       const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
-      return attachActionTarget(await selectOptionInTarget(resolved.candidate, { value, label }), resolved, beforeTarget);
+      const beforeState = snapshotTargetState(resolved.candidate);
+      return finalizeAction(await selectOptionInTarget(resolved.candidate, { value, label }), resolved, beforeTarget, beforeState);
     };
     const pressKey = async ({ targetId, key } = {}) => {
       const resolved = targetId ? resolveTarget(targetId) : { id: "active", candidate: fallbackActiveTarget(), rebound: false };
       if (resolved.error) return resolved;
       const beforeTarget = targetId ? targetSnapshot(resolved.id, resolved.candidate) : { label: "\u5F53\u524D\u7126\u70B9", kind: resolved.candidate.kind };
-      return attachActionTarget(await pressKeyOnTarget(resolved.candidate, { key }), resolved, beforeTarget);
+      const beforeState = snapshotTargetState(resolved.candidate);
+      return finalizeAction(await pressKeyOnTarget(resolved.candidate, { key }), resolved, beforeTarget, beforeState);
     };
     const scroll = async ({ direction = "down", amount = 600, targetId } = {}) => {
       const resolved = targetId ? resolveTarget(targetId) : null;
       if (resolved?.error) return resolved;
       const beforeTarget = resolved ? targetSnapshot(resolved.id, resolved.candidate) : null;
+      const beforeState = resolved ? snapshotTargetState(resolved.candidate) : null;
       const result = await scrollTarget({ target: resolved?.candidate, direction, amount });
-      return resolved ? attachActionTarget(result, resolved, beforeTarget) : result;
+      return resolved ? finalizeAction(result, resolved, beforeTarget, beforeState) : result;
     };
     const wait = async ({ ms = 700 } = {}) => {
       const duration = clampNumber(ms, 700, 50, 5e3);

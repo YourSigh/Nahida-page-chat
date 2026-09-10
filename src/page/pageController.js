@@ -12,9 +12,10 @@ import {
 import { isDisabled, isInViewport, isVisible, rectFor } from "./perception/visibility.js";
 import { rankTargets } from "./ranking/rankTargets.js";
 import { TargetRegistry } from "./registry/targetRegistry.js";
-import { snapshotTargetState } from "./verification/stateSnapshot.js";
+import { evidenceFor, meaningfulChanges, snapshotTargetState } from "./verification/stateSnapshot.js";
 
 const MAX_TARGETS_PER_PAGE = 60;
+const MAX_REGISTERED_TARGETS = 1_200;
 const MAX_TEXT = 6_000;
 
 const pageText = (maxChars) => {
@@ -45,7 +46,8 @@ const rectSnapshot = (element) => {
 const targetSnapshot = (id, candidate) => {
   const clickElement = candidate.clickElement || candidate.element;
   const stateElement = candidate.stateElement || clickElement;
-  const kind = kindFor(clickElement, stateElement) || candidate.kind || "custom";
+  const inferredKind = kindFor(clickElement, stateElement);
+  const kind = inferredKind === "custom" ? (candidate.kind || inferredKind) : inferredKind;
   const checked = checkedStateFor(clickElement, stateElement, kind);
   const record = {
     id,
@@ -103,12 +105,16 @@ export function createPageController({ extensionHost } = {}) {
   const buildSnapshot = ({ region = "nearby" } = {}) => {
     const discovered = discover();
     const ranked = rankTargets(discovered, { region: normalizedRegion(region) });
-    const entries = registry.registerSnapshot(ranked.targets);
+    // Keep the safety cap after semantic ranking, never in DOM order. This means
+    // controls far down a large page can still be addressed when they are the
+    // best match for the requested region.
+    const entries = registry.registerSnapshot(ranked.targets.slice(0, MAX_REGISTERED_TARGETS));
     return {
       entries,
       region: ranked.region,
       didFallback: ranked.didFallback,
-      discoveredCount: discovered.length
+      discoveredCount: discovered.length,
+      registeredCount: entries.length
     };
   };
 
@@ -126,13 +132,14 @@ export function createPageController({ extensionHost } = {}) {
       regionFallback: snapshot.didFallback || undefined,
       totalTargets,
       discoveredCount: snapshot.discoveredCount,
+      registeredCount: snapshot.registeredCount,
       page: requestedPage,
       pageSize: size,
       pageCount,
       hasMore: requestedPage < pageCount,
       targets,
-      note: snapshot.discoveredCount >= 1_200
-        ? "已保留排序最高的 1200 个语义目标；可用 region 切换到 above、below 或 all 缩小范围。"
+      note: snapshot.discoveredCount > snapshot.registeredCount
+        ? `页面发现 ${snapshot.discoveredCount} 个语义目标，当前按排序保留最高的 ${snapshot.registeredCount} 个；可用 region 切换到 above、below 或 all 缩小范围。`
         : "目标按可见性、语义置信度、表单/对话框上下文和距离排序。"
     };
   };
@@ -206,11 +213,43 @@ export function createPageController({ extensionHost } = {}) {
     };
   };
 
+  const finalizeAction = (result, resolved, beforeTarget, beforeState) => {
+    let activeResolved = resolved;
+    let finalResult = result;
+    const candidateStillConnected = Boolean(
+      resolved.candidate?.clickElement?.isConnected && resolved.candidate?.stateElement?.isConnected
+    );
+
+    // Frameworks frequently replace the clicked node during the event handler.
+    // Rebind once by fingerprint so verification observes the new instance too.
+    if (!result?.verified && !candidateStillConnected) {
+      const rebound = registry.resolve(resolved.id);
+      if (!rebound.error) {
+        activeResolved = rebound;
+        const afterState = snapshotTargetState(rebound.candidate);
+        const changes = meaningfulChanges(beforeState, afterState);
+        if (rebound.rebound && changes.length) {
+          finalResult = {
+            ...result,
+            ok: true,
+            verified: true,
+            status: "verified",
+            evidence: evidenceFor({ before: beforeState, after: afterState, changes, mutated: true }),
+            error: undefined
+          };
+        }
+      }
+    }
+
+    return attachActionTarget(finalResult, activeResolved, beforeTarget);
+  };
+
   const click = async ({ targetId } = {}) => {
     const resolved = resolveTarget(targetId);
     if (resolved.error) return resolved;
     const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
-    return attachActionTarget(await clickTarget(resolved.candidate), resolved, beforeTarget);
+    const beforeState = snapshotTargetState(resolved.candidate);
+    return finalizeAction(await clickTarget(resolved.candidate), resolved, beforeTarget, beforeState);
   };
 
   const check = async ({ targetId } = {}) => {
@@ -220,36 +259,41 @@ export function createPageController({ extensionHost } = {}) {
     if (!["radio", "checkbox", "switch"].includes(beforeTarget.kind)) {
       return { error: "目标不是单选、多选或开关控件。", target: beforeTarget };
     }
-    return attachActionTarget(await clickTarget(resolved.candidate, { check: true }), resolved, beforeTarget);
+    const beforeState = snapshotTargetState(resolved.candidate);
+    return finalizeAction(await clickTarget(resolved.candidate, { check: true }), resolved, beforeTarget, beforeState);
   };
 
   const type = async ({ targetId, text = "", clear = true } = {}) => {
     const resolved = resolveTarget(targetId);
     if (resolved.error) return resolved;
     const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
-    return attachActionTarget(await typeIntoTarget(resolved.candidate, { text, clear }), resolved, beforeTarget);
+    const beforeState = snapshotTargetState(resolved.candidate);
+    return finalizeAction(await typeIntoTarget(resolved.candidate, { text, clear }), resolved, beforeTarget, beforeState);
   };
 
   const selectOption = async ({ targetId, value, label } = {}) => {
     const resolved = resolveTarget(targetId);
     if (resolved.error) return resolved;
     const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
-    return attachActionTarget(await selectOptionInTarget(resolved.candidate, { value, label }), resolved, beforeTarget);
+    const beforeState = snapshotTargetState(resolved.candidate);
+    return finalizeAction(await selectOptionInTarget(resolved.candidate, { value, label }), resolved, beforeTarget, beforeState);
   };
 
   const pressKey = async ({ targetId, key } = {}) => {
     const resolved = targetId ? resolveTarget(targetId) : { id: "active", candidate: fallbackActiveTarget(), rebound: false };
     if (resolved.error) return resolved;
     const beforeTarget = targetId ? targetSnapshot(resolved.id, resolved.candidate) : { label: "当前焦点", kind: resolved.candidate.kind };
-    return attachActionTarget(await pressKeyOnTarget(resolved.candidate, { key }), resolved, beforeTarget);
+    const beforeState = snapshotTargetState(resolved.candidate);
+    return finalizeAction(await pressKeyOnTarget(resolved.candidate, { key }), resolved, beforeTarget, beforeState);
   };
 
   const scroll = async ({ direction = "down", amount = 600, targetId } = {}) => {
     const resolved = targetId ? resolveTarget(targetId) : null;
     if (resolved?.error) return resolved;
     const beforeTarget = resolved ? targetSnapshot(resolved.id, resolved.candidate) : null;
+    const beforeState = resolved ? snapshotTargetState(resolved.candidate) : null;
     const result = await scrollTarget({ target: resolved?.candidate, direction, amount });
-    return resolved ? attachActionTarget(result, resolved, beforeTarget) : result;
+    return resolved ? finalizeAction(result, resolved, beforeTarget, beforeState) : result;
   };
 
   const wait = async ({ ms = 700 } = {}) => {

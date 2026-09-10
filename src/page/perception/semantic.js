@@ -194,8 +194,8 @@ export const checkedStateFor = (element, stateElement, kind = kindFor(element, s
       if (["unchecked", "unselected", "off", "inactive"].includes(dataState)) return false;
 
       const tokens = classTokens(node);
-      if (tokens.some((token) => /(^|[-_])(un)?checked$|(^|[-_])(un)?selected$|(^|[-_])off$/.test(token))) return false;
-      if (tokens.some((token) => /(^|[-_])(is-)?(checked|selected|active|on)$/.test(token))) return true;
+      if (tokens.some((token) => /(^|[-_])(unchecked|unselected|off|inactive|not-checked|not-selected)$/.test(token))) return false;
+      if (tokens.some((token) => /(^|[-_])(checked|selected|active|on)$/.test(token))) return true;
     }
   }
   return null;
