@@ -1,5 +1,6 @@
 import stylesText from "../ui/styles.css";
 import MarkdownIt from "markdown-it";
+import { createPageController } from "../page/pageController.js";
 import {
   anchorIconPosition,
   computeAnchoredDialogPosition,
@@ -490,6 +491,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const headerActions = document.createElement("div");
   headerActions.className = "dialog-actions";
 
+  let globalPageActionEnabled = false;
+  let pageActionSettingLoaded = false;
+
   const settingsButton = document.createElement("button");
   settingsButton.className = "icon-button settings-button";
   settingsButton.type = "button";
@@ -527,7 +531,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const settingsTitle = document.createElement("div");
   settingsTitle.className = "settings-title";
-  settingsTitle.textContent = "大模型配置";
+  settingsTitle.textContent = "设置";
 
   const fieldBaseUrlLabel = document.createElement("label");
   fieldBaseUrlLabel.className = "settings-label";
@@ -553,9 +557,33 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   fieldKey.type = "password";
   fieldKey.placeholder = "sk-...";
 
+  const pageActionSection = document.createElement("section");
+  pageActionSection.className = "settings-section";
+  const pageActionTitle = document.createElement("div");
+  pageActionTitle.className = "settings-section-title";
+  pageActionTitle.textContent = "页面操作";
+  const pageActionToggleRow = document.createElement("label");
+  pageActionToggleRow.className = "settings-toggle-row";
+  const pageActionCopy = document.createElement("div");
+  pageActionCopy.className = "settings-toggle-copy";
+  const pageActionLabel = document.createElement("div");
+  pageActionLabel.className = "settings-toggle-label";
+  pageActionLabel.textContent = "启用页面操作（全局）";
+  const pageActionDescription = document.createElement("div");
+  pageActionDescription.className = "settings-toggle-description";
+  pageActionDescription.textContent = "切换后立即生效：开启后可在所有网页点击、填写、选择和滚动；关闭后仅读取页面内容。";
+  const pageActionToggle = document.createElement("input");
+  pageActionToggle.className = "settings-toggle";
+  pageActionToggle.type = "checkbox";
+  pageActionToggle.setAttribute("role", "switch");
+  pageActionToggle.setAttribute("aria-label", "启用页面操作（全局）");
+  pageActionCopy.append(pageActionLabel, pageActionDescription);
+  pageActionToggleRow.append(pageActionCopy, pageActionToggle);
+  pageActionSection.append(pageActionTitle, pageActionToggleRow);
+
   const settingsHint = document.createElement("div");
   settingsHint.className = "settings-hint";
-  settingsHint.textContent = "配置会保存在本地浏览器（chrome.storage.local），不会上传。";
+  settingsHint.textContent = "模型配置和页面操作开关都会保存在本地浏览器（chrome.storage.local），不会上传。";
 
   const settingsActions = document.createElement("div");
   settingsActions.className = "settings-actions";
@@ -574,6 +602,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     fieldBaseUrlLabel, fieldBaseUrl,
     fieldModelLabel, fieldModel,
     fieldKeyLabel, fieldKey,
+    pageActionSection,
     settingsHint,
     settingsActions
   );
@@ -583,7 +612,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const welcome = document.createElement("div");
   welcome.className = "msg-welcome";
-  welcome.textContent = "你好呀～我是纳西妲！有什么我可以帮你的吗？";
+  welcome.textContent = "你好呀～我是纳西妲！我可以理解当前页面；如需我点击、填写或滚动，请先在右上角设置中开启“启用页面操作（全局）”。";
  
   const composerWrap = document.createElement("div");
   composerWrap.className = "composer-wrap";
@@ -622,7 +651,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   input.className = "input";
   input.rows = 2;
   input.placeholder =
-    "输入消息，Enter 发送；回形针选图，或在此 Ctrl+V 粘贴截图 / 拖入图片";
+    "问我页面内容，或让我点击、填写、滚动；Enter 发送，回形针可选图";
 
   const sendIconUrl = chrome.runtime.getURL("assets/send.png");
   const stopIconUrl = chrome.runtime.getURL("assets/stop.png");
@@ -645,6 +674,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   dialog.append(header, settingsPanel, body);
 
   // --- Chat state & logic ---
+  const pageController = createPageController({ extensionHost: host });
   const chatHistory = [];
   const MAX_CHAT_IMAGES = 8;
   const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -715,6 +745,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }, 180_000);
   };
   const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
+  const STORAGE_KEY_PAGE_ACTION_ENABLED = "nahida_page_action_enabled";
   const DEFAULT_LLM_CONFIG = {
     apiBaseUrl: "https://api.openai.com/v1",
     model: "gpt-4o-mini",
@@ -740,17 +771,47 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   document.addEventListener("pointerdown", closeSettingsIfClickOutside, true);
 
+  const setGlobalPageActionEnabled = (enabled) => {
+    globalPageActionEnabled = Boolean(enabled);
+    pageActionToggle.checked = globalPageActionEnabled;
+  };
+
+  const loadGlobalPageActionSetting = async () => {
+    try {
+      const data = await chrome.storage.local.get(STORAGE_KEY_PAGE_ACTION_ENABLED);
+      setGlobalPageActionEnabled(data?.[STORAGE_KEY_PAGE_ACTION_ENABLED] === true);
+    } catch {
+      setGlobalPageActionEnabled(false);
+    } finally {
+      pageActionSettingLoaded = true;
+    }
+  };
+
+  const saveGlobalPageActionSetting = async (enabled) => {
+    setGlobalPageActionEnabled(enabled);
+    pageActionSettingLoaded = true;
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY_PAGE_ACTION_ENABLED]: globalPageActionEnabled });
+    } catch {
+      await loadGlobalPageActionSetting();
+    }
+  };
+
   const loadLlmConfigIntoForm = async () => {
     try {
-      const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+      const data = await chrome.storage.local.get([STORAGE_KEY_LLM_CONFIG, STORAGE_KEY_PAGE_ACTION_ENABLED]);
       const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
       fieldBaseUrl.value = String(cfg.apiBaseUrl || DEFAULT_LLM_CONFIG.apiBaseUrl);
       fieldModel.value = String(cfg.model || DEFAULT_LLM_CONFIG.model);
       fieldKey.value = String(cfg.apiKey || DEFAULT_LLM_CONFIG.apiKey);
+      setGlobalPageActionEnabled(data?.[STORAGE_KEY_PAGE_ACTION_ENABLED] === true);
+      pageActionSettingLoaded = true;
     } catch {
       fieldBaseUrl.value = DEFAULT_LLM_CONFIG.apiBaseUrl;
       fieldModel.value = DEFAULT_LLM_CONFIG.model;
       fieldKey.value = DEFAULT_LLM_CONFIG.apiKey;
+      setGlobalPageActionEnabled(false);
+      pageActionSettingLoaded = true;
     }
   };
 
@@ -1099,7 +1160,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         text: (el.innerText || el.textContent || "").trim().slice(0, 500),
         attrs,
         rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
-        frameUrl: location.href
+        frameUrl: location.href,
+        frameId: 0
       };
     });
     return { selector, count: results.length, results };
@@ -1124,7 +1186,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       for (const pf of resp.perFrame) {
         if (pf.error) continue;
         for (const r of pf.results || []) {
-          merged.push({ ...r, frameUrl: pf.url });
+          merged.push({ ...r, frameUrl: pf.url, frameId: pf.frameId ?? 0 });
           if (merged.length >= lim) break;
         }
         if (merged.length >= lim) break;
@@ -1138,12 +1200,81 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
   };
 
-  const runTool = async (name, args) => {
+  const PAGE_ACTION_TOOLS = new Set(["click", "type", "select_option", "press_key", "scroll"]);
+
+  const targetLabel = (targetId) => {
+    if (!targetId) return "当前页面";
+    const target = pageController.describeTarget(targetId);
+    return target.error ? `目标 ${targetId}` : `「${target.label || targetId}」`;
+  };
+
+  const actionSummary = (name, args = {}) => {
+    if (name === "click") return `点击 ${targetLabel(args.targetId)}`;
+    if (name === "type") {
+      const target = pageController.describeTarget(args.targetId);
+      const text = String(args.text ?? "");
+      const sensitive = /password|passwd|token|secret|api[-_]?key/i.test(`${target.kind || ""} ${target.label || ""}`);
+      const preview = sensitive ? "（内容已隐藏）" : text.length > 80 ? `${text.slice(0, 80)}…` : text;
+      return `在 ${targetLabel(args.targetId)} ${args.clear === false ? "追加" : "填写"}「${preview}」`;
+    }
+    if (name === "select_option") return `在 ${targetLabel(args.targetId)} 选择「${args.label ?? args.value ?? "未指定选项"}」`;
+    if (name === "press_key") return `在 ${targetLabel(args.targetId)} 按下 ${args.key || "未指定按键"}`;
+    if (name === "scroll") return `将${args.targetId ? targetLabel(args.targetId) : "页面"}向 ${args.direction || "down"} 滚动 ${args.amount || 600}px`;
+    return `执行 ${name}`;
+  };
+
+  const appendToolLog = (name, args = {}, status = "正在准备") => {
+    const item = document.createElement("div");
+    item.className = "tool-log";
+    item.textContent = `${status}：${actionSummary(name, args)}`;
+    messagesEl.appendChild(item);
+    scrollToBottom();
+    return {
+      done(result) {
+        item.classList.toggle("error", Boolean(result?.error));
+        item.textContent = result?.error
+          ? `未完成：${result.error}`
+          : result?.queued
+            ? `已安排：${actionSummary(name, args)}`
+            : `已执行：${actionSummary(name, args)}`;
+      }
+    };
+  };
+
+  const runPageAction = async (name, args = {}) => {
+    if (!pageActionSettingLoaded) {
+      await loadGlobalPageActionSetting();
+    }
+    if (!globalPageActionEnabled) {
+      const result = {
+        ok: false,
+        disabled: true,
+        error: "全局页面操作已关闭。请在右上角设置中开启“启用页面操作（全局）”。"
+      };
+      appendToolLog(name, args, "未执行").done(result);
+      return result;
+    }
+    const log = appendToolLog(name, args, "正在执行");
+    let result;
+    if (name === "click") result = pageController.click(args);
+    else if (name === "type") result = pageController.type(args);
+    else if (name === "select_option") result = pageController.selectOption(args);
+    else if (name === "press_key") result = pageController.pressKey(args);
+    else if (name === "scroll") result = pageController.scroll(args);
+    else result = { error: `未知页面操作: ${name}` };
+    log.done(result);
+    return result;
+  };
+
+  const runTool = async (name, args = {}) => {
+    if (name === "get_page_state") return pageController.getPageState(args);
     if (name === "read_page") return tool_read_page(args);
     if (name === "get_visible_text") return tool_get_visible_text(args);
     if (name === "query") return tool_query(args);
     if (name === "get_api_endpoints") return tool_get_api_endpoints(args);
     if (name === "get_api_responses") return tool_get_api_responses(args);
+    if (name === "wait") return pageController.wait(args);
+    if (PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args);
     return { error: `未知工具: ${name}` };
   };
 
@@ -1321,20 +1452,29 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       return;
     }
 
-    activePort.onMessage.addListener((msg) => {
+    const turnPort = activePort;
+
+    turnPort.onMessage.addListener((msg) => {
       if (msg?.type === "tool") {
+        if (typingIndicator.parentNode) typingIndicator.remove();
         runTool(msg.name, msg.args)
           .then((result) => {
-            activePort?.postMessage({ type: "tool_result", id: msg.id, result });
+            turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           })
           .catch((error) => {
-            activePort?.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error?.message || error) } });
+            turnPort.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error?.message || error) } });
           });
         return;
       }
 
       if (msg?.type === "tool_log") {
-        // TODO: 可以在 UI 里显示工具调用日志（先不影响主流程）
+        if (msg.name === "compatibility") {
+          const item = document.createElement("div");
+          item.className = "tool-log";
+          item.textContent = String(msg.args?.message || "已切换到兼容工具模式。");
+          messagesEl.appendChild(item);
+          scrollToBottom();
+        }
         return;
       }
 
@@ -1392,7 +1532,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
           })
           .catch(() => {});
 
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
       } else if (msg.type === "error") {
         if (turnHandled) return;
         turnHandled = true;
@@ -1407,14 +1547,14 @@ const requestStickerDecision = ({ userText, assistantText }) => {
           assistantEl.textContent = msg.error;
         }
         setInputEnabled(true);
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
       }
     });
 
-    activePort.onDisconnect.addListener(() => {
+    turnPort.onDisconnect.addListener(() => {
       chatStreamPort = null;
       if (turnHandled) {
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
         return;
       }
       if (isStreaming) {
@@ -1436,13 +1576,13 @@ const requestStickerDecision = ({ userText, assistantText }) => {
           chatHistory.push({ role: "assistant", content: reply || rawResponse });
         }
         setInputEnabled(true);
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
       } else {
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
       }
     });
 
-    activePort.postMessage({ type: "chat", messages: chatHistory });
+    turnPort.postMessage({ type: "chat", messages: chatHistory });
   };
 
   const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
@@ -1790,6 +1930,11 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     if (areaName !== "local") {
       return;
     }
+    const pageActionChange = changes?.[STORAGE_KEY_PAGE_ACTION_ENABLED];
+    if (pageActionChange) {
+      setGlobalPageActionEnabled(pageActionChange.newValue === true);
+      pageActionSettingLoaded = true;
+    }
     const change = changes?.[STORAGE_KEY];
     const nextValue = change?.newValue;
     if (!nextValue || !Number.isFinite(nextValue.x) || !Number.isFinite(nextValue.y)) {
@@ -1809,6 +1954,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   button.addEventListener("dragstart", (event) => event.preventDefault());
 
   closeButton.addEventListener("click", () => setDialogOpen(false));
+  pageActionToggle.addEventListener("change", () => {
+    saveGlobalPageActionSetting(pageActionToggle.checked).catch(() => {});
+  });
   settingsButton.addEventListener("click", async () => {
     await loadLlmConfigIntoForm();
     setSettingsOpen(true);
@@ -2151,7 +2299,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const bootstrap = async () => {
     renderIcon();
-    const stored = await safeReadPosition(STORAGE_KEY);
+    const [stored] = await Promise.all([
+      safeReadPosition(STORAGE_KEY),
+      loadGlobalPageActionSetting()
+    ]);
     if (stored) {
       iconPosition = resolveAnchoredIconPosition(
         stored,

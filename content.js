@@ -6,7 +6,7 @@
   };
 
   // src/ui/styles.css
-  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 100px;\n  height: 100px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.88);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: none;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog::before {\n  content: "";\n  position: absolute;\n  inset: 0;\n  background-image: var(--dialog-bg-url);\n  background-size: cover;\n  background-position: center;\n  background-repeat: no-repeat;\n  opacity: 0.22;\n  pointer-events: none;\n}\n\n.dialog > * {\n  position: relative;\n  z-index: 1;\n}\n\n.dialog.open {\n  display: flex;\n}\n\n.dialog.visible {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.selection-action-menu {\n  position: fixed;\n  z-index: 60;\n  min-width: 108px;\n  padding: 4px;\n  border-radius: 12px;\n  background: rgba(255, 255, 255, 0.94);\n  backdrop-filter: blur(12px);\n  -webkit-backdrop-filter: blur(12px);\n  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);\n  border: 1px solid rgba(255, 255, 255, 0.55);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  pointer-events: auto;\n  opacity: 0;\n  transform: translateY(4px);\n  transition: opacity 120ms ease, transform 120ms ease;\n}\n\n.selection-action-menu.open {\n  opacity: 1;\n  transform: none;\n}\n\n.selection-action-item {\n  all: unset;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  padding: 8px 12px;\n  border-radius: 8px;\n  font-size: 14px;\n  font-weight: 500;\n  color: rgba(20, 26, 22, 0.92);\n  cursor: pointer;\n  text-align: center;\n}\n\n.selection-action-item:hover {\n  background: rgba(120, 180, 90, 0.18);\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, #ddffaa, #ddffaa00);\n  border-bottom: 1px solid rgba(20, 26, 22, 0.10);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  color: rgba(12, 26, 18, 0.88);\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n}\n\n.icon-button[aria-label] {\n  position: relative;\n}\n\n.icon-button[aria-label]::after {\n  content: attr(aria-label);\n  position: absolute;\n  left: 50%;\n  transform: translateX(-50%) translateY(-2px);\n  opacity: 0;\n  pointer-events: none;\n  white-space: nowrap;\n  font-size: 11px;\n  line-height: 1;\n  padding: 7px 9px;\n  border-radius: 10px;\n  background: rgba(20, 26, 22, 0.86);\n  color: rgba(255, 255, 255, 0.94);\n  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 40;\n}\n\n.icon-button[aria-label]::before {\n  content: "";\n  position: absolute;\n  left: 50%;\n  width: 10px;\n  height: 10px;\n  transform: translateX(-50%) rotate(45deg);\n  opacity: 0;\n  pointer-events: none;\n  background: rgba(20, 26, 22, 0.86);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 39;\n}\n\n/* Top-right buttons: tooltip below (avoid dialog overflow clipping) */\n.settings-button[aria-label]::after,\n.close-button[aria-label]::after {\n  top: calc(100% + 10px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  top: calc(100% + 6px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  transform: translateX(-50%) rotate(45deg);\n}\n\n/* Send button: tooltip above (keeps it inside dialog) */\n.send[aria-label]::after {\n  bottom: calc(100% + 10px);\n}\n.send[aria-label]::before {\n  bottom: calc(100% + 6px);\n}\n\n.attach[aria-label]::after {\n  bottom: calc(100% + 10px);\n}\n.attach[aria-label]::before {\n  bottom: calc(100% + 6px);\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::after,\n.icon-button[aria-label]:focus-visible::before {\n  opacity: 1;\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::before {\n  transform: translateX(-50%) rotate(45deg) translateY(0);\n}\n\n.send[aria-label]:hover::after,\n.send[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[disabled]::after,\n.icon-button[disabled]::before {\n  display: none;\n}\n\n.close-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.close-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.close-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-actions {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n}\n\n.settings-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.settings-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.settings-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.settings-panel {\n  position: absolute;\n  top: 48px;\n  right: 12px;\n  width: min(340px, calc(100% - 24px));\n  display: none;\n  flex-direction: column;\n  gap: 8px;\n  padding: 12px;\n  border-radius: 14px;\n  background: rgba(255, 255, 255, 0.96);\n  border: 1px solid rgba(20, 26, 22, 0.10);\n  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);\n  backdrop-filter: blur(10px);\n  -webkit-backdrop-filter: blur(10px);\n  z-index: 20;\n}\n\n.settings-panel.open {\n  display: flex;\n}\n\n.settings-title {\n  font-size: 13px;\n  font-weight: 650;\n  color: rgba(20, 26, 22, 0.9);\n  margin-bottom: 2px;\n}\n\n.settings-label {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.55);\n}\n\n.settings-input {\n  width: 100%;\n  box-sizing: border-box;\n  border-radius: 12px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.95);\n  color: rgba(20, 26, 22, 0.92);\n  padding: 8px 10px;\n  font-family: inherit;\n  font-size: 12px;\n  outline: none;\n}\n\n.settings-input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.12);\n}\n\n.settings-hint {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  line-height: 1.4;\n}\n\n.settings-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  margin-top: 4px;\n}\n\n.settings-cancel,\n.settings-save {\n  padding: 8px 10px;\n  border-radius: 12px;\n}\n\n.send {\n  background: transparent;\n  padding: 0;\n  width: 36px;\n  height: 36px;\n  border-radius: 12px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin-bottom: 4px;\n}\n\n.send:hover {\n  transform: none;\n}\n\n.send:disabled {\n  background: transparent;\n}\n\n.send-icon,\n.stop-icon {\n  width: 36px;\n  height: 36px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 10px 8px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  scroll-behavior: smooth;\n}\n\n.msg {\n  max-width: 85%;\n  padding: 8px 12px;\n  border-radius: 14px;\n  font-size: 13px;\n  line-height: 1.5;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n.msg.user {\n  align-self: flex-end;\n  background: linear-gradient(135deg, #6db082, #4a9960);\n  color: #fff;\n  border-bottom-right-radius: 4px;\n}\n\n.msg.assistant {\n  align-self: flex-start;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.92);\n  border-bottom-left-radius: 4px;\n}\n\n.msg.error {\n  align-self: center;\n  background: rgba(200, 50, 50, 0.08);\n  color: rgba(180, 40, 40, 0.9);\n  font-size: 12px;\n  text-align: center;\n}\n\n.msg-welcome {\n  text-align: center;\n  font-size: 12px;\n  color: rgba(20, 26, 22, 0.42);\n  padding: 20px 10px 6px;\n  line-height: 1.5;\n}\n\n.think-block {\n  margin-bottom: 6px;\n}\n\n.think-toggle {\n  all: initial;\n  box-sizing: border-box;\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  cursor: pointer;\n  font-family: inherit;\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  padding: 2px 0;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n.think-toggle:hover {\n  color: rgba(20, 26, 22, 0.7);\n}\n\n.think-arrow {\n  display: inline-block;\n  font-size: 10px;\n  transition: transform 160ms ease;\n}\n\n.think-block.collapsed .think-arrow {\n  transform: rotate(-90deg);\n}\n\n.think-content {\n  margin-top: 4px;\n  padding: 6px 10px;\n  border-left: 2px solid rgba(20, 26, 22, 0.1);\n  font-size: 12px;\n  line-height: 1.5;\n  color: rgba(20, 26, 22, 0.5);\n  white-space: pre-wrap;\n  word-break: break-word;\n  max-height: 200px;\n  overflow-y: auto;\n  transition: max-height 200ms ease, opacity 200ms ease;\n}\n\n.think-block.collapsed .think-content {\n  max-height: 0;\n  overflow: hidden;\n  opacity: 0;\n  margin-top: 0;\n  padding-top: 0;\n  padding-bottom: 0;\n}\n\n.think-block.streaming .think-content {\n  max-height: none;\n}\n\n.sticker {\n  display: block;\n  width: 120px;\n  height: 120px;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n}\n\n.msg.sticker-msg {\n  background: transparent;\n  padding: 2px 0;\n  max-width: none;\n  border-radius: 0;\n}\n\n.reply-content {\n  white-space: normal;\n  word-break: break-word;\n}\n\n.reply-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.reply-content :where(p, ul, ol):last-child {\n  margin-bottom: 0;\n}\n\n.reply-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.reply-content :where(a) {\n  color: rgba(70, 120, 90, 0.95);\n  text-decoration: underline;\n}\n\n.reply-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.reply-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.reply-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.think-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.think-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.think-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.think-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.think-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.typing-indicator {\n  display: inline-flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.typing-indicator span {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: rgba(20, 26, 22, 0.3);\n  animation: typing-bounce 1.2s ease-in-out infinite;\n}\n\n.typing-indicator span:nth-child(2) {\n  animation-delay: 0.15s;\n}\n\n.typing-indicator span:nth-child(3) {\n  animation-delay: 0.3s;\n}\n\n@keyframes typing-bounce {\n  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }\n  30% { transform: translateY(-4px); opacity: 1; }\n}\n/* \u900F\u660E file \u53E0\u5728\u56FE\u6807\u4E0A\uFF1A\u6BD4 label \u5D4C\u5957 input \u5728\u6269\u5C55\u91CC\u66F4\u53EF\u9760 */\n.attach-slot {\n  position: relative;\n  flex-shrink: 0;\n  width: 40px;\n  height: 40px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  border-radius: 12px;\n  color: rgba(20, 26, 22, 0.72);\n}\n\n.attach-slot .image-file-input {\n  position: absolute;\n  inset: 0;\n  width: 100%;\n  height: 100%;\n  margin: 0;\n  padding: 0;\n  opacity: 0;\n  cursor: pointer;\n  z-index: 2;\n  font-size: 0;\n}\n\n.attach-icon-layer {\n  position: absolute;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  z-index: 1;\n  pointer-events: none;\n}\n\n.attach-slot.attach-disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n\n.attach-slot.attach-disabled .image-file-input {\n  cursor: not-allowed;\n  pointer-events: none;\n}\n\n.composer-wrap {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  flex-shrink: 0;\n  position: relative;\n  border-radius: 14px;\n  transition: box-shadow 120ms ease, background 120ms ease;\n}\n\n.composer-wrap.composer-drag {\n  box-shadow: inset 0 0 0 2px rgba(70, 120, 90, 0.55);\n  background: rgba(70, 120, 90, 0.06);\n}\n\n.composer-hint {\n  font-size: 11px;\n  line-height: 1.35;\n  color: rgba(180, 60, 50, 0.95);\n  padding: 4px 2px 0;\n}\n\n.image-preview-row {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  align-items: flex-start;\n  max-height: 132px;\n  overflow-y: auto;\n}\n\n.image-preview-meta {\n  flex: 1 0 100%;\n  font-size: 11px;\n  line-height: 1.3;\n  color: rgba(20, 26, 22, 0.52);\n}\n\n.image-preview-item {\n  position: relative;\n  width: 56px;\n  height: 56px;\n  border-radius: 10px;\n  overflow: hidden;\n  flex-shrink: 0;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.65);\n}\n\n.image-preview-thumb {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  display: block;\n}\n\n.image-preview-remove {\n  all: initial;\n  position: absolute;\n  top: 2px;\n  right: 2px;\n  width: 20px;\n  height: 20px;\n  border-radius: 50%;\n  background: rgba(0, 0, 0, 0.55);\n  color: #fff;\n  font-size: 14px;\n  line-height: 20px;\n  text-align: center;\n  cursor: pointer;\n  font-family: inherit;\n}\n\n.image-preview-remove:hover {\n  background: rgba(0, 0, 0, 0.72);\n}\n\n.composer {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.attach-icon {\n  display: block;\n}\n\n.msg-images {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 6px;\n  margin-bottom: 6px;\n}\n\n.msg-image {\n  max-width: 140px;\n  max-height: 140px;\n  border-radius: 10px;\n  object-fit: cover;\n  border: 1px solid rgba(20, 26, 22, 0.08);\n}\n\n.msg.user .msg-text {\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  color: rgba(20, 26, 22, 0.92);\n  caret-color: rgba(20, 26, 22, 0.92);\n  color-scheme: light;\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input::placeholder {\n  color: rgba(20, 26, 22, 0.45);\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n.send:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n\n';
+  var styles_default = ':host {\n  position: fixed;\n  inset: 0;\n  z-index: 2147483647;\n  pointer-events: none;\n}\n\n.widget {\n  position: absolute;\n  left: 0;\n  top: 0;\n  width: 100px;\n  height: 100px;\n  pointer-events: none;\n  transition: transform 140ms ease;\n  will-change: left, top, transform;\n}\n\n.widget.dragging {\n  transition: none;\n}\n\n.widget.hidden {\n  opacity: 0;\n  transform: scale(0.92);\n  pointer-events: none;\n}\n\n.button {\n  all: initial;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  height: 100%;\n  cursor: grab;\n  pointer-events: auto;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n  border: none;\n  background: transparent;\n  padding: 0;\n  transition: transform 160ms ease, filter 160ms ease;\n}\n\n.button:hover {\n  transform: translateY(-2px) scale(1.02);\n  filter: drop-shadow(0 14px 28px rgba(21, 38, 23, 0.22));\n}\n\n.button:active,\n.widget.dragging .button {\n  cursor: grabbing;\n  transform: scale(1.04);\n}\n\n.avatar {\n  display: block;\n  width: 100%;\n  height: 100%;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n  filter: drop-shadow(0 10px 20px rgba(60, 82, 48, 0.24));\n}\n\n.dialog {\n  position: fixed;\n  left: 20px;\n  top: 20px;\n  width: min(420px, calc(100vw - 40px));\n  height: min(520px, calc(100vh - 40px));\n  min-width: 280px;\n  min-height: 220px;\n  max-width: calc(100vw - 40px);\n  max-height: calc(100vh - 40px);\n  overflow: hidden;\n  border-radius: 18px;\n  background: rgba(255, 255, 255, 0.88);\n  backdrop-filter: blur(14px);\n  -webkit-backdrop-filter: blur(14px);\n  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);\n  border: 1px solid rgba(255, 255, 255, 0.5);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  color: rgba(20, 26, 22, 0.92);\n  display: none;\n  flex-direction: column;\n  pointer-events: auto;\n  opacity: 0;\n  visibility: hidden;\n  transform: translateY(6px) scale(0.99);\n  transition: opacity 160ms ease, visibility 160ms ease, transform 160ms ease;\n}\n\n.dialog::before {\n  content: "";\n  position: absolute;\n  inset: 0;\n  background-image: var(--dialog-bg-url);\n  background-size: cover;\n  background-position: center;\n  background-repeat: no-repeat;\n  opacity: 0.22;\n  pointer-events: none;\n}\n\n.dialog > * {\n  position: relative;\n  z-index: 1;\n}\n\n.dialog.open {\n  display: flex;\n}\n\n.dialog.visible {\n  opacity: 1;\n  visibility: visible;\n  transform: none;\n}\n\n.selection-action-menu {\n  position: fixed;\n  z-index: 60;\n  min-width: 108px;\n  padding: 4px;\n  border-radius: 12px;\n  background: rgba(255, 255, 255, 0.94);\n  backdrop-filter: blur(12px);\n  -webkit-backdrop-filter: blur(12px);\n  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);\n  border: 1px solid rgba(255, 255, 255, 0.55);\n  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,\n    "Apple Color Emoji", "Segoe UI Emoji";\n  pointer-events: auto;\n  opacity: 0;\n  transform: translateY(4px);\n  transition: opacity 120ms ease, transform 120ms ease;\n}\n\n.selection-action-menu.open {\n  opacity: 1;\n  transform: none;\n}\n\n.selection-action-item {\n  all: unset;\n  box-sizing: border-box;\n  display: block;\n  width: 100%;\n  padding: 8px 12px;\n  border-radius: 8px;\n  font-size: 14px;\n  font-weight: 500;\n  color: rgba(20, 26, 22, 0.92);\n  cursor: pointer;\n  text-align: center;\n}\n\n.selection-action-item:hover {\n  background: rgba(120, 180, 90, 0.18);\n}\n\n.tool-log {\n  align-self: flex-start;\n  max-width: 92%;\n  padding: 5px 9px;\n  border-radius: 9px;\n  background: rgba(74, 153, 96, 0.10);\n  color: rgba(36, 100, 54, 0.82);\n  font-size: 11px;\n  line-height: 1.4;\n  word-break: break-word;\n}\n\n.tool-log.error {\n  background: rgba(200, 50, 50, 0.10);\n  color: rgba(170, 45, 45, 0.9);\n}\n\n.dialog.dragging .dialog-header {\n  cursor: grabbing;\n}\n\n.resize-handle {\n  position: absolute;\n  z-index: 10;\n  pointer-events: auto;\n  background: transparent;\n}\n\n.resize-handle.n,\n.resize-handle.s {\n  left: 10px;\n  right: 10px;\n  height: 10px;\n}\n\n.resize-handle.e,\n.resize-handle.w {\n  top: 10px;\n  bottom: 10px;\n  width: 10px;\n}\n\n.resize-handle.n {\n  top: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.s {\n  bottom: -4px;\n  cursor: ns-resize;\n}\n\n.resize-handle.e {\n  right: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.w {\n  left: -4px;\n  cursor: ew-resize;\n}\n\n.resize-handle.ne,\n.resize-handle.nw,\n.resize-handle.se,\n.resize-handle.sw {\n  width: 14px;\n  height: 14px;\n}\n\n.resize-handle.ne {\n  top: -5px;\n  right: -5px;\n  cursor: nesw-resize;\n}\n\n.resize-handle.nw {\n  top: -5px;\n  left: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.se {\n  bottom: -5px;\n  right: -5px;\n  cursor: nwse-resize;\n}\n\n.resize-handle.sw {\n  bottom: -5px;\n  left: -5px;\n  cursor: nesw-resize;\n}\n\n.dialog-header {\n  position: sticky;\n  top: 0;\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  padding: 12px 14px;\n  background: linear-gradient(180deg, #ddffaa, #ddffaa00);\n  border-bottom: 1px solid rgba(20, 26, 22, 0.10);\n  cursor: move;\n  user-select: none;\n  -webkit-user-select: none;\n  touch-action: none;\n}\n\n.dialog-title {\n  font-size: 14px;\n  font-weight: 650;\n  letter-spacing: 0.2px;\n  white-space: nowrap;\n  overflow: hidden;\n  text-overflow: ellipsis;\n  color: rgba(12, 26, 18, 0.88);\n}\n\n.icon-button {\n  all: initial;\n  box-sizing: border-box;\n  pointer-events: auto;\n  cursor: pointer;\n  border: none;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.86);\n  border-radius: 12px;\n  padding: 8px 10px;\n  font-size: 12px;\n  line-height: 1;\n  transition: transform 120ms ease, background 120ms ease;\n  font-family: inherit;\n}\n\n.icon-button:hover {\n  transform: translateY(-1px);\n}\n\n.icon-button[aria-label] {\n  position: relative;\n}\n\n.icon-button[aria-label]::after {\n  content: attr(aria-label);\n  position: absolute;\n  left: 50%;\n  transform: translateX(-50%) translateY(-2px);\n  opacity: 0;\n  pointer-events: none;\n  white-space: nowrap;\n  font-size: 11px;\n  line-height: 1;\n  padding: 7px 9px;\n  border-radius: 10px;\n  background: rgba(20, 26, 22, 0.86);\n  color: rgba(255, 255, 255, 0.94);\n  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 40;\n}\n\n.icon-button[aria-label]::before {\n  content: "";\n  position: absolute;\n  left: 50%;\n  width: 10px;\n  height: 10px;\n  transform: translateX(-50%) rotate(45deg);\n  opacity: 0;\n  pointer-events: none;\n  background: rgba(20, 26, 22, 0.86);\n  transition: opacity 120ms ease, transform 120ms ease;\n  z-index: 39;\n}\n\n/* Top-right buttons: tooltip below (avoid dialog overflow clipping) */\n.settings-button[aria-label]::after,\n.close-button[aria-label]::after {\n  top: calc(100% + 10px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  top: calc(100% + 6px);\n}\n.settings-button[aria-label]::before,\n.close-button[aria-label]::before {\n  transform: translateX(-50%) rotate(45deg);\n}\n\n/* Send button: tooltip above (keeps it inside dialog) */\n.send[aria-label]::after {\n  bottom: calc(100% + 10px);\n}\n.send[aria-label]::before {\n  bottom: calc(100% + 6px);\n}\n\n.attach[aria-label]::after {\n  bottom: calc(100% + 10px);\n}\n.attach[aria-label]::before {\n  bottom: calc(100% + 6px);\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::after,\n.icon-button[aria-label]:focus-visible::before {\n  opacity: 1;\n}\n\n.icon-button[aria-label]:hover::after,\n.icon-button[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[aria-label]:hover::before,\n.icon-button[aria-label]:focus-visible::before {\n  transform: translateX(-50%) rotate(45deg) translateY(0);\n}\n\n.send[aria-label]:hover::after,\n.send[aria-label]:focus-visible::after {\n  transform: translateX(-50%) translateY(0);\n}\n\n.icon-button[disabled]::after,\n.icon-button[disabled]::before {\n  display: none;\n}\n\n.close-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.close-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.close-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-actions {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n}\n\n.settings-button {\n  background: transparent;\n  padding: 0;\n  width: 28px;\n  height: 28px;\n  border-radius: 10px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n}\n\n.settings-button:hover {\n  background: transparent;\n  transform: none;\n}\n\n.settings-icon {\n  width: 28px;\n  height: 28px;\n  object-fit: contain;\n  display: block;\n}\n\n.settings-panel {\n  position: absolute;\n  top: 48px;\n  right: 12px;\n  width: min(340px, calc(100% - 24px));\n  display: none;\n  flex-direction: column;\n  gap: 8px;\n  padding: 12px;\n  border-radius: 14px;\n  background: rgba(255, 255, 255, 0.96);\n  border: 1px solid rgba(20, 26, 22, 0.10);\n  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);\n  backdrop-filter: blur(10px);\n  -webkit-backdrop-filter: blur(10px);\n  z-index: 20;\n}\n\n.settings-panel.open {\n  display: flex;\n}\n\n.settings-title {\n  font-size: 13px;\n  font-weight: 650;\n  color: rgba(20, 26, 22, 0.9);\n  margin-bottom: 2px;\n}\n\n.settings-label {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.55);\n}\n\n.settings-input {\n  width: 100%;\n  box-sizing: border-box;\n  border-radius: 12px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.95);\n  color: rgba(20, 26, 22, 0.92);\n  padding: 8px 10px;\n  font-family: inherit;\n  font-size: 12px;\n  outline: none;\n}\n\n.settings-input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.12);\n}\n\n.settings-hint {\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  line-height: 1.4;\n}\n\n.settings-section {\n  display: flex;\n  flex-direction: column;\n  gap: 7px;\n  margin-top: 2px;\n  padding-top: 10px;\n  border-top: 1px solid rgba(20, 26, 22, 0.08);\n}\n\n.settings-section-title {\n  font-size: 12px;\n  font-weight: 650;\n  color: rgba(20, 26, 22, 0.82);\n}\n\n.settings-toggle-row {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  gap: 12px;\n  cursor: pointer;\n}\n\n.settings-toggle-copy {\n  min-width: 0;\n}\n\n.settings-toggle-label {\n  font-size: 12px;\n  font-weight: 600;\n  color: rgba(20, 26, 22, 0.84);\n}\n\n.settings-toggle-description {\n  margin-top: 3px;\n  font-size: 11px;\n  line-height: 1.38;\n  color: rgba(20, 26, 22, 0.52);\n}\n\n.settings-toggle {\n  appearance: none;\n  -webkit-appearance: none;\n  position: relative;\n  flex: 0 0 auto;\n  width: 38px;\n  height: 22px;\n  margin: 0;\n  border: 1px solid rgba(20, 26, 22, 0.16);\n  border-radius: 999px;\n  background: rgba(20, 26, 22, 0.14);\n  cursor: pointer;\n  transition: background 160ms ease, border-color 160ms ease;\n}\n\n.settings-toggle::after {\n  content: "";\n  position: absolute;\n  top: 2px;\n  left: 2px;\n  width: 16px;\n  height: 16px;\n  border-radius: 50%;\n  background: #fff;\n  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);\n  transition: transform 160ms ease;\n}\n\n.settings-toggle:checked {\n  border-color: transparent;\n  background: linear-gradient(135deg, #6db082, #4a9960);\n}\n\n.settings-toggle:checked::after {\n  transform: translateX(16px);\n}\n\n.settings-toggle:focus-visible {\n  outline: 3px solid rgba(70, 120, 90, 0.24);\n  outline-offset: 2px;\n}\n\n.settings-actions {\n  display: flex;\n  justify-content: flex-end;\n  gap: 8px;\n  margin-top: 4px;\n}\n\n.settings-cancel,\n.settings-save {\n  padding: 8px 10px;\n  border-radius: 12px;\n}\n\n.send {\n  background: transparent;\n  padding: 0;\n  width: 36px;\n  height: 36px;\n  border-radius: 12px;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  margin-bottom: 4px;\n}\n\n.send:hover {\n  transform: none;\n}\n\n.send:disabled {\n  background: transparent;\n}\n\n.send-icon,\n.stop-icon {\n  width: 36px;\n  height: 36px;\n  object-fit: contain;\n  display: block;\n}\n\n.dialog-body {\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  padding: 12px 14px;\n  flex: 1;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.messages {\n  flex: 1;\n  min-height: 0;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 10px 8px;\n  display: flex;\n  flex-direction: column;\n  gap: 10px;\n  scroll-behavior: smooth;\n}\n\n.msg {\n  max-width: 85%;\n  padding: 8px 12px;\n  border-radius: 14px;\n  font-size: 13px;\n  line-height: 1.5;\n  word-break: break-word;\n  white-space: pre-wrap;\n}\n\n.msg.user {\n  align-self: flex-end;\n  background: linear-gradient(135deg, #6db082, #4a9960);\n  color: #fff;\n  border-bottom-right-radius: 4px;\n}\n\n.msg.assistant {\n  align-self: flex-start;\n  background: rgba(20, 26, 22, 0.06);\n  color: rgba(20, 26, 22, 0.92);\n  border-bottom-left-radius: 4px;\n}\n\n.msg.error {\n  align-self: center;\n  background: rgba(200, 50, 50, 0.08);\n  color: rgba(180, 40, 40, 0.9);\n  font-size: 12px;\n  text-align: center;\n}\n\n.msg-welcome {\n  text-align: center;\n  font-size: 12px;\n  color: rgba(20, 26, 22, 0.42);\n  padding: 20px 10px 6px;\n  line-height: 1.5;\n}\n\n.think-block {\n  margin-bottom: 6px;\n}\n\n.think-toggle {\n  all: initial;\n  box-sizing: border-box;\n  display: inline-flex;\n  align-items: center;\n  gap: 4px;\n  cursor: pointer;\n  font-family: inherit;\n  font-size: 11px;\n  color: rgba(20, 26, 22, 0.45);\n  padding: 2px 0;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n.think-toggle:hover {\n  color: rgba(20, 26, 22, 0.7);\n}\n\n.think-arrow {\n  display: inline-block;\n  font-size: 10px;\n  transition: transform 160ms ease;\n}\n\n.think-block.collapsed .think-arrow {\n  transform: rotate(-90deg);\n}\n\n.think-content {\n  margin-top: 4px;\n  padding: 6px 10px;\n  border-left: 2px solid rgba(20, 26, 22, 0.1);\n  font-size: 12px;\n  line-height: 1.5;\n  color: rgba(20, 26, 22, 0.5);\n  white-space: pre-wrap;\n  word-break: break-word;\n  max-height: 200px;\n  overflow-y: auto;\n  transition: max-height 200ms ease, opacity 200ms ease;\n}\n\n.think-block.collapsed .think-content {\n  max-height: 0;\n  overflow: hidden;\n  opacity: 0;\n  margin-top: 0;\n  padding-top: 0;\n  padding-bottom: 0;\n}\n\n.think-block.streaming .think-content {\n  max-height: none;\n}\n\n.sticker {\n  display: block;\n  width: 120px;\n  height: 120px;\n  object-fit: contain;\n  pointer-events: none;\n  -webkit-user-drag: none;\n}\n\n.msg.sticker-msg {\n  background: transparent;\n  padding: 2px 0;\n  max-width: none;\n  border-radius: 0;\n}\n\n.reply-content {\n  white-space: normal;\n  word-break: break-word;\n}\n\n.reply-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.reply-content :where(p, ul, ol):last-child {\n  margin-bottom: 0;\n}\n\n.reply-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.reply-content :where(a) {\n  color: rgba(70, 120, 90, 0.95);\n  text-decoration: underline;\n}\n\n.reply-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.reply-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.reply-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.think-content :where(p, ul, ol) {\n  margin: 0 0 8px 0;\n}\n\n.think-content :where(ul, ol) {\n  padding-left: 18px;\n}\n\n.think-content :where(pre) {\n  background: rgba(20, 26, 22, 0.06);\n  border: 1px solid rgba(20, 26, 22, 0.08);\n  border-radius: 12px;\n  padding: 10px;\n  overflow: auto;\n}\n\n.think-content :where(code) {\n  background: rgba(20, 26, 22, 0.06);\n  border-radius: 8px;\n  padding: 2px 6px;\n  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;\n  font-size: 12px;\n}\n\n.think-content :where(pre code) {\n  padding: 0;\n  background: transparent;\n  border-radius: 0;\n}\n\n.typing-indicator {\n  display: inline-flex;\n  gap: 4px;\n  padding: 4px 0;\n}\n\n.typing-indicator span {\n  display: inline-block;\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: rgba(20, 26, 22, 0.3);\n  animation: typing-bounce 1.2s ease-in-out infinite;\n}\n\n.typing-indicator span:nth-child(2) {\n  animation-delay: 0.15s;\n}\n\n.typing-indicator span:nth-child(3) {\n  animation-delay: 0.3s;\n}\n\n@keyframes typing-bounce {\n  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }\n  30% { transform: translateY(-4px); opacity: 1; }\n}\n/* \u900F\u660E file \u53E0\u5728\u56FE\u6807\u4E0A\uFF1A\u6BD4 label \u5D4C\u5957 input \u5728\u6269\u5C55\u91CC\u66F4\u53EF\u9760 */\n.attach-slot {\n  position: relative;\n  flex-shrink: 0;\n  width: 40px;\n  height: 40px;\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  border-radius: 12px;\n  color: rgba(20, 26, 22, 0.72);\n}\n\n.attach-slot .image-file-input {\n  position: absolute;\n  inset: 0;\n  width: 100%;\n  height: 100%;\n  margin: 0;\n  padding: 0;\n  opacity: 0;\n  cursor: pointer;\n  z-index: 2;\n  font-size: 0;\n}\n\n.attach-icon-layer {\n  position: absolute;\n  inset: 0;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  z-index: 1;\n  pointer-events: none;\n}\n\n.attach-slot.attach-disabled {\n  opacity: 0.35;\n  cursor: not-allowed;\n}\n\n.attach-slot.attach-disabled .image-file-input {\n  cursor: not-allowed;\n  pointer-events: none;\n}\n\n.composer-wrap {\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  flex-shrink: 0;\n  position: relative;\n  border-radius: 14px;\n  transition: box-shadow 120ms ease, background 120ms ease;\n}\n\n.composer-wrap.composer-drag {\n  box-shadow: inset 0 0 0 2px rgba(70, 120, 90, 0.55);\n  background: rgba(70, 120, 90, 0.06);\n}\n\n.composer-hint {\n  font-size: 11px;\n  line-height: 1.35;\n  color: rgba(180, 60, 50, 0.95);\n  padding: 4px 2px 0;\n}\n\n.image-preview-row {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 8px;\n  align-items: flex-start;\n  max-height: 132px;\n  overflow-y: auto;\n}\n\n.image-preview-meta {\n  flex: 1 0 100%;\n  font-size: 11px;\n  line-height: 1.3;\n  color: rgba(20, 26, 22, 0.52);\n}\n\n.image-preview-item {\n  position: relative;\n  width: 56px;\n  height: 56px;\n  border-radius: 10px;\n  overflow: hidden;\n  flex-shrink: 0;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.65);\n}\n\n.image-preview-thumb {\n  width: 100%;\n  height: 100%;\n  object-fit: cover;\n  display: block;\n}\n\n.image-preview-remove {\n  all: initial;\n  position: absolute;\n  top: 2px;\n  right: 2px;\n  width: 20px;\n  height: 20px;\n  border-radius: 50%;\n  background: rgba(0, 0, 0, 0.55);\n  color: #fff;\n  font-size: 14px;\n  line-height: 20px;\n  text-align: center;\n  cursor: pointer;\n  font-family: inherit;\n}\n\n.image-preview-remove:hover {\n  background: rgba(0, 0, 0, 0.72);\n}\n\n.composer {\n  display: flex;\n  gap: 8px;\n  align-items: flex-end;\n}\n\n.attach-icon {\n  display: block;\n}\n\n.msg-images {\n  display: flex;\n  flex-wrap: wrap;\n  gap: 6px;\n  margin-bottom: 6px;\n}\n\n.msg-image {\n  max-width: 140px;\n  max-height: 140px;\n  border-radius: 10px;\n  object-fit: cover;\n  border: 1px solid rgba(20, 26, 22, 0.08);\n}\n\n.msg.user .msg-text {\n  white-space: pre-wrap;\n  word-break: break-word;\n}\n\n.input {\n  flex: 1;\n  min-width: 0;\n  resize: none;\n  border-radius: 14px;\n  border: 1px solid rgba(20, 26, 22, 0.12);\n  background: rgba(255, 255, 255, 0.9);\n  color: rgba(20, 26, 22, 0.92);\n  caret-color: rgba(20, 26, 22, 0.92);\n  color-scheme: light;\n  padding: 10px 12px;\n  font-family: inherit;\n  font-size: 13px;\n  line-height: 1.35;\n  outline: none;\n}\n\n.input::placeholder {\n  color: rgba(20, 26, 22, 0.45);\n}\n\n.input:focus {\n  border-color: rgba(70, 120, 90, 0.55);\n  box-shadow: 0 0 0 4px rgba(70, 120, 90, 0.18);\n}\n\n.input:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.send {\n  white-space: nowrap;\n  font-weight: 650;\n}\n\n.send:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}\n';
 
   // node_modules/markdown-it/lib/common/utils.mjs
   var utils_exports = {};
@@ -5411,6 +5411,338 @@
   };
   var lib_default = MarkdownIt;
 
+  // src/page/pageController.js
+  var INTERACTIVE_SELECTOR = [
+    "a[href]",
+    "button",
+    "input:not([type='hidden'])",
+    "textarea",
+    "select",
+    "[contenteditable='true']",
+    "[role='button']",
+    "[role='link']",
+    "[role='checkbox']",
+    "[role='switch']",
+    "[onclick]"
+  ].join(",");
+  var MAX_TARGETS = 60;
+  var MAX_TEXT = 6e3;
+  var clip = (value, max) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+  var isVisible = (element) => {
+    if (!element?.isConnected) return false;
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 1 || rect.height <= 1) return false;
+    const style = window.getComputedStyle(element);
+    return style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0" && style.pointerEvents !== "none";
+  };
+  var isInViewport = (element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.bottom >= 0 && rect.right >= 0 && rect.top <= window.innerHeight && rect.left <= window.innerWidth;
+  };
+  var isDisabled = (element) => Boolean(element?.disabled) || element?.getAttribute?.("aria-disabled") === "true";
+  var labelledByText = (element) => {
+    const ids = String(element.getAttribute?.("aria-labelledby") || "").trim().split(/\s+/).filter(Boolean);
+    if (!ids.length) return "";
+    return clip(ids.map((id) => document.getElementById(id)?.innerText || document.getElementById(id)?.textContent || "").join(" "), 180);
+  };
+  var nameFor = (element) => {
+    const tag = element.tagName?.toLowerCase() || "";
+    const label = element.getAttribute?.("aria-label") || labelledByText(element);
+    if (label) return clip(label, 180);
+    if (tag === "input" || tag === "textarea" || tag === "select") {
+      const id = element.id;
+      const htmlLabel = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`) : null;
+      const formLabel = element.closest?.("label");
+      const labelText = htmlLabel?.innerText || formLabel?.innerText || "";
+      if (labelText) return clip(labelText, 180);
+      const own = element.name || element.placeholder || element.title || "";
+      if (own) return clip(own, 180);
+    }
+    if (tag === "img") return clip(element.alt || element.title || "\u56FE\u7247", 180);
+    return clip(element.innerText || element.textContent || element.title || "", 180);
+  };
+  var kindFor = (element) => {
+    const tag = element.tagName?.toLowerCase() || "element";
+    const role = element.getAttribute?.("role") || "";
+    if (tag === "input") return `input:${element.type || "text"}`;
+    if (tag === "textarea") return "textarea";
+    if (tag === "select") return "select";
+    if (tag === "a" || role === "link") return "link";
+    if (tag === "button" || role === "button") return "button";
+    if (element.isContentEditable) return "contenteditable";
+    return role || tag;
+  };
+  var isSensitive = (element) => element instanceof HTMLInputElement && element.type === "password" || /password|passwd|token|secret|api[-_]?key/i.test(
+    `${element.name || ""} ${element.id || ""} ${element.getAttribute?.("aria-label") || ""}`
+  );
+  var targetSnapshot = (id, element) => {
+    const rect = element.getBoundingClientRect();
+    const tag = element.tagName?.toLowerCase() || "";
+    const record = {
+      id,
+      kind: kindFor(element),
+      name: nameFor(element),
+      text: clip(element.innerText || element.textContent || "", 180),
+      disabled: isDisabled(element),
+      rect: {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      },
+      inViewport: isInViewport(element)
+    };
+    if (tag === "a") record.href = String(element.href || "").slice(0, 500);
+    if (tag === "input" || tag === "textarea") {
+      record.inputType = element.type || tag;
+      record.placeholder = clip(element.placeholder || "", 120);
+      if (!isSensitive(element) && ["checkbox", "radio"].includes(element.type)) record.checked = Boolean(element.checked);
+    }
+    if (tag === "select") {
+      record.options = Array.from(element.options || []).slice(0, 50).map((option) => ({
+        value: option.value,
+        label: clip(option.label || option.textContent || "", 120),
+        selected: option.selected
+      }));
+    }
+    return record;
+  };
+  var pageText = (maxChars) => {
+    const root = document.querySelector("main, article, [role='main']") || document.body;
+    return clip(root?.innerText || "", maxChars);
+  };
+  function createPageController({ extensionHost } = {}) {
+    const targets = /* @__PURE__ */ new Map();
+    let snapshotVersion = 0;
+    const isExtensionElement = (element) => element === extensionHost || extensionHost?.contains?.(element);
+    const resolveTarget = (targetId) => {
+      const id = String(targetId || "");
+      const entry = targets.get(id);
+      if (!entry) {
+        return { error: "\u76EE\u6807\u5DF2\u5931\u6548\u6216\u4ECE\u672A\u88AB\u8BC6\u522B\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
+      }
+      if (!entry.element.isConnected || isExtensionElement(entry.element)) {
+        targets.delete(id);
+        return { error: "\u76EE\u6807\u5DF2\u7ECF\u53D8\u5316\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
+      }
+      return { element: entry.element, id };
+    };
+    const getPageState = ({ maxElements = 35, maxText = 3e3 } = {}) => {
+      snapshotVersion += 1;
+      targets.clear();
+      const limit = Math.min(MAX_TARGETS, Math.max(10, Number(maxElements) || 35));
+      const candidates = [];
+      const seen = /* @__PURE__ */ new Set();
+      for (const element of document.querySelectorAll(INTERACTIVE_SELECTOR)) {
+        if (seen.has(element) || isExtensionElement(element) || !isVisible(element)) continue;
+        seen.add(element);
+        candidates.push(element);
+        if (candidates.length >= 600) break;
+      }
+      const elements = candidates.sort((left, right) => Number(isInViewport(right)) - Number(isInViewport(left))).slice(0, limit);
+      const targetList = elements.map((element, index) => {
+        const id = `p${snapshotVersion}-${index + 1}`;
+        targets.set(id, { element, snapshotVersion });
+        return targetSnapshot(id, element);
+      });
+      return {
+        ok: true,
+        snapshotVersion,
+        title: String(document.title || ""),
+        url: String(location.href || ""),
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        scroll: {
+          x: Math.round(window.scrollX),
+          y: Math.round(window.scrollY),
+          maxY: Math.max(0, Math.round(document.documentElement.scrollHeight - window.innerHeight))
+        },
+        text: pageText(Math.min(MAX_TEXT, Math.max(500, Number(maxText) || 3e3))),
+        targets: targetList,
+        note: "target ID \u53EA\u5728\u5F53\u524D\u9875\u9762\u72B6\u6001\u6709\u6548\u3002\u9875\u9762\u66F4\u65B0\u3001\u8DF3\u8F6C\u6216\u91CD\u65B0\u8BFB\u53D6\u72B6\u6001\u540E\uFF0C\u8BF7\u4F7F\u7528\u65B0\u7684 ID\u3002"
+      };
+    };
+    const describeTarget = (targetId) => {
+      const resolved = resolveTarget(targetId);
+      if (resolved.error) return { targetId: String(targetId || ""), label: "\u76EE\u6807\u5DF2\u5931\u6548", error: resolved.error };
+      const snapshot = targetSnapshot(resolved.id, resolved.element);
+      return {
+        targetId: resolved.id,
+        label: snapshot.name || snapshot.text || snapshot.kind,
+        kind: snapshot.kind,
+        disabled: snapshot.disabled,
+        href: snapshot.href || ""
+      };
+    };
+    const click = ({ targetId } = {}) => {
+      const resolved = resolveTarget(targetId);
+      if (resolved.error) return resolved;
+      const { element, id } = resolved;
+      if (!isVisible(element)) return { error: "\u76EE\u6807\u5F53\u524D\u4E0D\u53EF\u89C1\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
+      if (isDisabled(element)) return { error: "\u76EE\u6807\u5DF2\u7981\u7528\uFF0C\u65E0\u6CD5\u70B9\u51FB\u3002", target: describeTarget(id) };
+      const target = describeTarget(id);
+      setTimeout(() => {
+        if (!element.isConnected) return;
+        try {
+          element.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
+          element.focus?.({ preventScroll: true });
+          element.click();
+        } catch {
+        }
+      }, 80);
+      return {
+        ok: true,
+        action: "click",
+        queued: true,
+        target,
+        note: "\u70B9\u51FB\u5DF2\u5B89\u6392\u6267\u884C\u3002\u82E5\u5B83\u4F1A\u5BFC\u822A\u5230\u65B0\u9875\u9762\uFF0C\u5BF9\u8BDD\u5C06\u5728\u65B0\u9875\u9762\u91CD\u65B0\u5EFA\u7ACB\u3002"
+      };
+    };
+    const type = ({ targetId, text: text2 = "", clear = true } = {}) => {
+      const resolved = resolveTarget(targetId);
+      if (resolved.error) return resolved;
+      const { element, id } = resolved;
+      if (!isVisible(element) || isDisabled(element)) return { error: "\u76EE\u6807\u4E0D\u53EF\u8F93\u5165\u3002", target: describeTarget(id) };
+      const inputText = String(text2 ?? "");
+      if (inputText.length > 2e4) return { error: "\u8F93\u5165\u5185\u5BB9\u8FC7\u957F\uFF08\u6700\u591A 20000 \u4E2A\u5B57\u7B26\uFF09\u3002" };
+      const input = element instanceof HTMLInputElement;
+      const textarea = element instanceof HTMLTextAreaElement;
+      const editable = input || textarea || element.isContentEditable || element.getAttribute("contenteditable") === "true";
+      if (!editable) return { error: "\u76EE\u6807\u4E0D\u662F\u53EF\u8F93\u5165\u7684 input\u3001textarea \u6216 contenteditable\u3002", target: describeTarget(id) };
+      if (input && ["file", "checkbox", "radio", "button", "submit", "reset", "image"].includes(element.type)) {
+        return { error: `\u4E0D\u652F\u6301\u5411 ${element.type} \u8F93\u5165\u6587\u5B57\u3002`, target: describeTarget(id) };
+      }
+      const oldValue = input || textarea ? element.value : String(element.textContent || "");
+      const nextValue = clear === false ? `${oldValue}${inputText}` : inputText;
+      try {
+        element.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
+        element.focus?.({ preventScroll: true });
+        if (input) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+          if (setter) setter.call(element, nextValue);
+          else element.value = nextValue;
+        } else if (textarea) {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+          if (setter) setter.call(element, nextValue);
+          else element.value = nextValue;
+        } else {
+          element.textContent = nextValue;
+        }
+        element.dispatchEvent(new InputEvent("input", {
+          bubbles: true,
+          composed: true,
+          inputType: clear === false ? "insertText" : "insertReplacementText",
+          data: inputText
+        }));
+        element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+        return {
+          ok: true,
+          action: "type",
+          target: describeTarget(id),
+          value: isSensitive(element) ? "[\u5DF2\u9690\u85CF]" : clip(nextValue, 300),
+          note: "\u5DF2\u66F4\u65B0\u5143\u7D20\u503C\u5E76\u6D3E\u53D1 input/change \u4E8B\u4EF6\u3002"
+        };
+      } catch (error2) {
+        return { error: `\u8F93\u5165\u5931\u8D25: ${String(error2?.message || error2)}`, target: describeTarget(id) };
+      }
+    };
+    const selectOption = ({ targetId, value, label } = {}) => {
+      const resolved = resolveTarget(targetId);
+      if (resolved.error) return resolved;
+      const { element, id } = resolved;
+      if (!(element instanceof HTMLSelectElement)) return { error: "\u76EE\u6807\u4E0D\u662F\u539F\u751F select\u3002", target: describeTarget(id) };
+      if (isDisabled(element)) return { error: "\u76EE\u6807\u5DF2\u7981\u7528\u3002", target: describeTarget(id) };
+      const wantedValue = value == null ? null : String(value);
+      const wantedLabel = label == null ? null : String(label);
+      const option = Array.from(element.options).find(
+        (item) => wantedValue != null && item.value === wantedValue || wantedLabel != null && (item.label === wantedLabel || item.textContent?.trim() === wantedLabel)
+      );
+      if (!option) {
+        return {
+          error: "\u6CA1\u6709\u627E\u5230\u5339\u914D\u9009\u9879\u3002",
+          target: describeTarget(id),
+          options: Array.from(element.options).slice(0, 50).map((item) => ({ value: item.value, label: clip(item.label || item.textContent || "", 120) }))
+        };
+      }
+      try {
+        element.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
+        element.focus?.({ preventScroll: true });
+        element.value = option.value;
+        element.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+        element.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+        return { ok: true, action: "select_option", target: describeTarget(id), selected: { value: option.value, label: option.label } };
+      } catch (error2) {
+        return { error: `\u9009\u62E9\u5931\u8D25: ${String(error2?.message || error2)}`, target: describeTarget(id) };
+      }
+    };
+    const pressKey = ({ targetId, key } = {}) => {
+      const resolved = targetId ? resolveTarget(targetId) : { element: document.activeElement || document.body, id: "active" };
+      if (resolved.error) return resolved;
+      const keyName = String(key || "").trim();
+      if (!keyName || keyName.length > 40) return { error: "key \u5FC5\u586B\u4E14\u957F\u5EA6\u4E0D\u80FD\u8D85\u8FC7 40\u3002" };
+      try {
+        resolved.element.focus?.({ preventScroll: true });
+        const init = { key: keyName, bubbles: true, composed: true, cancelable: true };
+        const down = resolved.element.dispatchEvent(new KeyboardEvent("keydown", init));
+        resolved.element.dispatchEvent(new KeyboardEvent("keypress", init));
+        const up = resolved.element.dispatchEvent(new KeyboardEvent("keyup", init));
+        return {
+          ok: true,
+          action: "press_key",
+          key: keyName,
+          target: targetId ? describeTarget(resolved.id) : { label: "\u5F53\u524D\u7126\u70B9" },
+          defaultNotPrevented: down && up,
+          note: "\u8FD9\u662F DOM \u952E\u76D8\u4E8B\u4EF6\uFF1B\u8981\u6C42\u771F\u5B9E\u952E\u76D8\u624B\u52BF\u7684\u7F51\u7AD9\u53EF\u80FD\u4E0D\u4F1A\u54CD\u5E94\u3002"
+        };
+      } catch (error2) {
+        return { error: `\u6309\u952E\u5931\u8D25: ${String(error2?.message || error2)}` };
+      }
+    };
+    const scroll = ({ direction = "down", amount = 600, targetId } = {}) => {
+      let target = window;
+      let label = "\u9875\u9762";
+      if (targetId) {
+        const resolved = resolveTarget(targetId);
+        if (resolved.error) return resolved;
+        target = resolved.element;
+        label = describeTarget(resolved.id).label || "\u76EE\u6807\u5BB9\u5668";
+      }
+      const dir = String(direction || "down").toLowerCase();
+      if (!["up", "down", "left", "right", "top", "bottom"].includes(dir)) {
+        return { error: "direction \u53EA\u80FD\u662F up\u3001down\u3001left\u3001right\u3001top \u6216 bottom\u3002" };
+      }
+      const distance = Math.min(1e4, Math.max(1, Math.abs(Number(amount) || 600)));
+      const before = target === window ? { x: Math.round(window.scrollX), y: Math.round(window.scrollY) } : { x: Math.round(target.scrollLeft), y: Math.round(target.scrollTop) };
+      try {
+        if (dir === "top") target.scrollTo({ top: 0, behavior: "smooth" });
+        else if (dir === "bottom") target.scrollTo({ top: target === window ? document.documentElement.scrollHeight : target.scrollHeight, behavior: "smooth" });
+        else {
+          const sign = dir === "up" || dir === "left" ? -1 : 1;
+          const left = dir === "left" || dir === "right" ? sign * distance : 0;
+          const top = dir === "up" || dir === "down" ? sign * distance : 0;
+          target.scrollBy({ left, top, behavior: "smooth" });
+        }
+        return { ok: true, action: "scroll", direction: dir, amount: distance, target: label, before };
+      } catch (error2) {
+        return { error: `\u6EDA\u52A8\u5931\u8D25: ${String(error2?.message || error2)}` };
+      }
+    };
+    const wait = async ({ ms = 700 } = {}) => {
+      const duration = Math.min(5e3, Math.max(50, Number(ms) || 700));
+      await new Promise((resolve) => setTimeout(resolve, duration));
+      return { ok: true, action: "wait", ms: duration, url: String(location.href || "") };
+    };
+    return {
+      getPageState,
+      describeTarget,
+      click,
+      type,
+      selectOption,
+      pressKey,
+      scroll,
+      wait
+    };
+  }
+
   // src/utils/geometry.js
   var clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   var clampIconPosition = ({ x, y }, { edgeGap, buttonSize, viewportWidth, viewportHeight }) => ({
@@ -5929,6 +6261,8 @@
     title.textContent = "\u7EB3\u897F\u59B2";
     const headerActions = document.createElement("div");
     headerActions.className = "dialog-actions";
+    let globalPageActionEnabled = false;
+    let pageActionSettingLoaded = false;
     const settingsButton = document.createElement("button");
     settingsButton.className = "icon-button settings-button";
     settingsButton.type = "button";
@@ -5960,7 +6294,7 @@
     body.className = "dialog-body";
     const settingsTitle = document.createElement("div");
     settingsTitle.className = "settings-title";
-    settingsTitle.textContent = "\u5927\u6A21\u578B\u914D\u7F6E";
+    settingsTitle.textContent = "\u8BBE\u7F6E";
     const fieldBaseUrlLabel = document.createElement("label");
     fieldBaseUrlLabel.className = "settings-label";
     fieldBaseUrlLabel.textContent = "API Base URL";
@@ -5982,9 +6316,32 @@
     fieldKey.className = "settings-input";
     fieldKey.type = "password";
     fieldKey.placeholder = "sk-...";
+    const pageActionSection = document.createElement("section");
+    pageActionSection.className = "settings-section";
+    const pageActionTitle = document.createElement("div");
+    pageActionTitle.className = "settings-section-title";
+    pageActionTitle.textContent = "\u9875\u9762\u64CD\u4F5C";
+    const pageActionToggleRow = document.createElement("label");
+    pageActionToggleRow.className = "settings-toggle-row";
+    const pageActionCopy = document.createElement("div");
+    pageActionCopy.className = "settings-toggle-copy";
+    const pageActionLabel = document.createElement("div");
+    pageActionLabel.className = "settings-toggle-label";
+    pageActionLabel.textContent = "\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09";
+    const pageActionDescription = document.createElement("div");
+    pageActionDescription.className = "settings-toggle-description";
+    pageActionDescription.textContent = "\u5207\u6362\u540E\u7ACB\u5373\u751F\u6548\uFF1A\u5F00\u542F\u540E\u53EF\u5728\u6240\u6709\u7F51\u9875\u70B9\u51FB\u3001\u586B\u5199\u3001\u9009\u62E9\u548C\u6EDA\u52A8\uFF1B\u5173\u95ED\u540E\u4EC5\u8BFB\u53D6\u9875\u9762\u5185\u5BB9\u3002";
+    const pageActionToggle = document.createElement("input");
+    pageActionToggle.className = "settings-toggle";
+    pageActionToggle.type = "checkbox";
+    pageActionToggle.setAttribute("role", "switch");
+    pageActionToggle.setAttribute("aria-label", "\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09");
+    pageActionCopy.append(pageActionLabel, pageActionDescription);
+    pageActionToggleRow.append(pageActionCopy, pageActionToggle);
+    pageActionSection.append(pageActionTitle, pageActionToggleRow);
     const settingsHint = document.createElement("div");
     settingsHint.className = "settings-hint";
-    settingsHint.textContent = "\u914D\u7F6E\u4F1A\u4FDD\u5B58\u5728\u672C\u5730\u6D4F\u89C8\u5668\uFF08chrome.storage.local\uFF09\uFF0C\u4E0D\u4F1A\u4E0A\u4F20\u3002";
+    settingsHint.textContent = "\u6A21\u578B\u914D\u7F6E\u548C\u9875\u9762\u64CD\u4F5C\u5F00\u5173\u90FD\u4F1A\u4FDD\u5B58\u5728\u672C\u5730\u6D4F\u89C8\u5668\uFF08chrome.storage.local\uFF09\uFF0C\u4E0D\u4F1A\u4E0A\u4F20\u3002";
     const settingsActions = document.createElement("div");
     settingsActions.className = "settings-actions";
     const settingsCancel = document.createElement("button");
@@ -6004,6 +6361,7 @@
       fieldModel,
       fieldKeyLabel,
       fieldKey,
+      pageActionSection,
       settingsHint,
       settingsActions
     );
@@ -6011,7 +6369,7 @@
     messagesEl.className = "messages";
     const welcome = document.createElement("div");
     welcome.className = "msg-welcome";
-    welcome.textContent = "\u4F60\u597D\u5440\uFF5E\u6211\u662F\u7EB3\u897F\u59B2\uFF01\u6709\u4EC0\u4E48\u6211\u53EF\u4EE5\u5E2E\u4F60\u7684\u5417\uFF1F";
+    welcome.textContent = "\u4F60\u597D\u5440\uFF5E\u6211\u662F\u7EB3\u897F\u59B2\uFF01\u6211\u53EF\u4EE5\u7406\u89E3\u5F53\u524D\u9875\u9762\uFF1B\u5982\u9700\u6211\u70B9\u51FB\u3001\u586B\u5199\u6216\u6EDA\u52A8\uFF0C\u8BF7\u5148\u5728\u53F3\u4E0A\u89D2\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\u3002";
     const composerWrap = document.createElement("div");
     composerWrap.className = "composer-wrap";
     const imagePreviewRow = document.createElement("div");
@@ -6038,7 +6396,7 @@
     const input = document.createElement("textarea");
     input.className = "input";
     input.rows = 2;
-    input.placeholder = "\u8F93\u5165\u6D88\u606F\uFF0CEnter \u53D1\u9001\uFF1B\u56DE\u5F62\u9488\u9009\u56FE\uFF0C\u6216\u5728\u6B64 Ctrl+V \u7C98\u8D34\u622A\u56FE / \u62D6\u5165\u56FE\u7247";
+    input.placeholder = "\u95EE\u6211\u9875\u9762\u5185\u5BB9\uFF0C\u6216\u8BA9\u6211\u70B9\u51FB\u3001\u586B\u5199\u3001\u6EDA\u52A8\uFF1BEnter \u53D1\u9001\uFF0C\u56DE\u5F62\u9488\u53EF\u9009\u56FE";
     const sendIconUrl = chrome.runtime.getURL("assets/send.png");
     const stopIconUrl = chrome.runtime.getURL("assets/stop.png");
     const sendButton = document.createElement("button");
@@ -6055,6 +6413,7 @@
     composerWrap.append(imagePreviewRow, composerHint, composer);
     body.append(messagesEl, composerWrap);
     dialog.append(header, settingsPanel, body);
+    const pageController = createPageController({ extensionHost: host });
     const chatHistory = [];
     const MAX_CHAT_IMAGES = 8;
     const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -6121,6 +6480,7 @@
       }, 18e4);
     };
     const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
+    const STORAGE_KEY_PAGE_ACTION_ENABLED = "nahida_page_action_enabled";
     const DEFAULT_LLM_CONFIG = {
       apiBaseUrl: "https://api.openai.com/v1",
       model: "gpt-4o-mini",
@@ -6142,17 +6502,44 @@
       setSettingsOpen(false);
     };
     document.addEventListener("pointerdown", closeSettingsIfClickOutside, true);
+    const setGlobalPageActionEnabled = (enabled) => {
+      globalPageActionEnabled = Boolean(enabled);
+      pageActionToggle.checked = globalPageActionEnabled;
+    };
+    const loadGlobalPageActionSetting = async () => {
+      try {
+        const data = await chrome.storage.local.get(STORAGE_KEY_PAGE_ACTION_ENABLED);
+        setGlobalPageActionEnabled(data?.[STORAGE_KEY_PAGE_ACTION_ENABLED] === true);
+      } catch {
+        setGlobalPageActionEnabled(false);
+      } finally {
+        pageActionSettingLoaded = true;
+      }
+    };
+    const saveGlobalPageActionSetting = async (enabled) => {
+      setGlobalPageActionEnabled(enabled);
+      pageActionSettingLoaded = true;
+      try {
+        await chrome.storage.local.set({ [STORAGE_KEY_PAGE_ACTION_ENABLED]: globalPageActionEnabled });
+      } catch {
+        await loadGlobalPageActionSetting();
+      }
+    };
     const loadLlmConfigIntoForm = async () => {
       try {
-        const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+        const data = await chrome.storage.local.get([STORAGE_KEY_LLM_CONFIG, STORAGE_KEY_PAGE_ACTION_ENABLED]);
         const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
         fieldBaseUrl.value = String(cfg.apiBaseUrl || DEFAULT_LLM_CONFIG.apiBaseUrl);
         fieldModel.value = String(cfg.model || DEFAULT_LLM_CONFIG.model);
         fieldKey.value = String(cfg.apiKey || DEFAULT_LLM_CONFIG.apiKey);
+        setGlobalPageActionEnabled(data?.[STORAGE_KEY_PAGE_ACTION_ENABLED] === true);
+        pageActionSettingLoaded = true;
       } catch {
         fieldBaseUrl.value = DEFAULT_LLM_CONFIG.apiBaseUrl;
         fieldModel.value = DEFAULT_LLM_CONFIG.model;
         fieldKey.value = DEFAULT_LLM_CONFIG.apiKey;
+        setGlobalPageActionEnabled(false);
+        pageActionSettingLoaded = true;
       }
     };
     const saveLlmConfigFromForm = async () => {
@@ -6497,7 +6884,8 @@ ${f.text}
           text: (el.innerText || el.textContent || "").trim().slice(0, 500),
           attrs,
           rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
-          frameUrl: location.href
+          frameUrl: location.href,
+          frameId: 0
         };
       });
       return { selector, count: results.length, results };
@@ -6521,7 +6909,7 @@ ${f.text}
         for (const pf of resp.perFrame) {
           if (pf.error) continue;
           for (const r of pf.results || []) {
-            merged.push({ ...r, frameUrl: pf.url });
+            merged.push({ ...r, frameUrl: pf.url, frameId: pf.frameId ?? 0 });
             if (merged.length >= lim) break;
           }
           if (merged.length >= lim) break;
@@ -6534,12 +6922,72 @@ ${f.text}
         return tool_query_top_only({ selector, limit: lim, includeAttrs });
       }
     };
-    const runTool = async (name, args) => {
+    const PAGE_ACTION_TOOLS = /* @__PURE__ */ new Set(["click", "type", "select_option", "press_key", "scroll"]);
+    const targetLabel = (targetId) => {
+      if (!targetId) return "\u5F53\u524D\u9875\u9762";
+      const target = pageController.describeTarget(targetId);
+      return target.error ? `\u76EE\u6807 ${targetId}` : `\u300C${target.label || targetId}\u300D`;
+    };
+    const actionSummary = (name, args = {}) => {
+      if (name === "click") return `\u70B9\u51FB ${targetLabel(args.targetId)}`;
+      if (name === "type") {
+        const target = pageController.describeTarget(args.targetId);
+        const text2 = String(args.text ?? "");
+        const sensitive = /password|passwd|token|secret|api[-_]?key/i.test(`${target.kind || ""} ${target.label || ""}`);
+        const preview = sensitive ? "\uFF08\u5185\u5BB9\u5DF2\u9690\u85CF\uFF09" : text2.length > 80 ? `${text2.slice(0, 80)}\u2026` : text2;
+        return `\u5728 ${targetLabel(args.targetId)} ${args.clear === false ? "\u8FFD\u52A0" : "\u586B\u5199"}\u300C${preview}\u300D`;
+      }
+      if (name === "select_option") return `\u5728 ${targetLabel(args.targetId)} \u9009\u62E9\u300C${args.label ?? args.value ?? "\u672A\u6307\u5B9A\u9009\u9879"}\u300D`;
+      if (name === "press_key") return `\u5728 ${targetLabel(args.targetId)} \u6309\u4E0B ${args.key || "\u672A\u6307\u5B9A\u6309\u952E"}`;
+      if (name === "scroll") return `\u5C06${args.targetId ? targetLabel(args.targetId) : "\u9875\u9762"}\u5411 ${args.direction || "down"} \u6EDA\u52A8 ${args.amount || 600}px`;
+      return `\u6267\u884C ${name}`;
+    };
+    const appendToolLog = (name, args = {}, status = "\u6B63\u5728\u51C6\u5907") => {
+      const item = document.createElement("div");
+      item.className = "tool-log";
+      item.textContent = `${status}\uFF1A${actionSummary(name, args)}`;
+      messagesEl.appendChild(item);
+      scrollToBottom();
+      return {
+        done(result) {
+          item.classList.toggle("error", Boolean(result?.error));
+          item.textContent = result?.error ? `\u672A\u5B8C\u6210\uFF1A${result.error}` : result?.queued ? `\u5DF2\u5B89\u6392\uFF1A${actionSummary(name, args)}` : `\u5DF2\u6267\u884C\uFF1A${actionSummary(name, args)}`;
+        }
+      };
+    };
+    const runPageAction = async (name, args = {}) => {
+      if (!pageActionSettingLoaded) {
+        await loadGlobalPageActionSetting();
+      }
+      if (!globalPageActionEnabled) {
+        const result2 = {
+          ok: false,
+          disabled: true,
+          error: "\u5168\u5C40\u9875\u9762\u64CD\u4F5C\u5DF2\u5173\u95ED\u3002\u8BF7\u5728\u53F3\u4E0A\u89D2\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\u3002"
+        };
+        appendToolLog(name, args, "\u672A\u6267\u884C").done(result2);
+        return result2;
+      }
+      const log = appendToolLog(name, args, "\u6B63\u5728\u6267\u884C");
+      let result;
+      if (name === "click") result = pageController.click(args);
+      else if (name === "type") result = pageController.type(args);
+      else if (name === "select_option") result = pageController.selectOption(args);
+      else if (name === "press_key") result = pageController.pressKey(args);
+      else if (name === "scroll") result = pageController.scroll(args);
+      else result = { error: `\u672A\u77E5\u9875\u9762\u64CD\u4F5C: ${name}` };
+      log.done(result);
+      return result;
+    };
+    const runTool = async (name, args = {}) => {
+      if (name === "get_page_state") return pageController.getPageState(args);
       if (name === "read_page") return tool_read_page(args);
       if (name === "get_visible_text") return tool_get_visible_text(args);
       if (name === "query") return tool_query(args);
       if (name === "get_api_endpoints") return tool_get_api_endpoints(args);
       if (name === "get_api_responses") return tool_get_api_responses(args);
+      if (name === "wait") return pageController.wait(args);
+      if (PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args);
       return { error: `\u672A\u77E5\u5DE5\u5177: ${name}` };
     };
     const sendChat = () => {
@@ -6684,16 +7132,25 @@ ${replyText.slice(after2, c2)}`;
         setInputEnabled(true);
         return;
       }
-      activePort.onMessage.addListener((msg) => {
+      const turnPort = activePort;
+      turnPort.onMessage.addListener((msg) => {
         if (msg?.type === "tool") {
+          if (typingIndicator.parentNode) typingIndicator.remove();
           runTool(msg.name, msg.args).then((result) => {
-            activePort?.postMessage({ type: "tool_result", id: msg.id, result });
+            turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           }).catch((error2) => {
-            activePort?.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error2?.message || error2) } });
+            turnPort.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error2?.message || error2) } });
           });
           return;
         }
         if (msg?.type === "tool_log") {
+          if (msg.name === "compatibility") {
+            const item = document.createElement("div");
+            item.className = "tool-log";
+            item.textContent = String(msg.args?.message || "\u5DF2\u5207\u6362\u5230\u517C\u5BB9\u5DE5\u5177\u6A21\u5F0F\u3002");
+            messagesEl.appendChild(item);
+            scrollToBottom();
+          }
           return;
         }
         if (msg.type === "chunk_reset") {
@@ -6744,7 +7201,7 @@ ${replyText.slice(after2, c2)}`;
             scrollToBottom();
           }).catch(() => {
           });
-          activePort = null;
+          if (activePort === turnPort) activePort = null;
         } else if (msg.type === "error") {
           if (turnHandled) return;
           turnHandled = true;
@@ -6760,13 +7217,13 @@ ${replyText.slice(after2, c2)}`;
             assistantEl.textContent = msg.error;
           }
           setInputEnabled(true);
-          activePort = null;
+          if (activePort === turnPort) activePort = null;
         }
       });
-      activePort.onDisconnect.addListener(() => {
+      turnPort.onDisconnect.addListener(() => {
         chatStreamPort = null;
         if (turnHandled) {
-          activePort = null;
+          if (activePort === turnPort) activePort = null;
           return;
         }
         if (isStreaming) {
@@ -6788,12 +7245,12 @@ ${replyText.slice(after2, c2)}`;
             chatHistory.push({ role: "assistant", content: reply || rawResponse });
           }
           setInputEnabled(true);
-          activePort = null;
+          if (activePort === turnPort) activePort = null;
         } else {
-          activePort = null;
+          if (activePort === turnPort) activePort = null;
         }
       });
-      activePort.postMessage({ type: "chat", messages: chatHistory });
+      turnPort.postMessage({ type: "chat", messages: chatHistory });
     };
     const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
     const resizeHandles = resizeHandleDirs.map((dir) => {
@@ -7100,6 +7557,11 @@ ${body2}
       if (areaName !== "local") {
         return;
       }
+      const pageActionChange = changes?.[STORAGE_KEY_PAGE_ACTION_ENABLED];
+      if (pageActionChange) {
+        setGlobalPageActionEnabled(pageActionChange.newValue === true);
+        pageActionSettingLoaded = true;
+      }
       const change = changes?.[STORAGE_KEY];
       const nextValue = change?.newValue;
       if (!nextValue || !Number.isFinite(nextValue.x) || !Number.isFinite(nextValue.y)) {
@@ -7117,6 +7579,10 @@ ${body2}
     button.addEventListener("pointercancel", endPointer);
     button.addEventListener("dragstart", (event) => event.preventDefault());
     closeButton.addEventListener("click", () => setDialogOpen(false));
+    pageActionToggle.addEventListener("change", () => {
+      saveGlobalPageActionSetting(pageActionToggle.checked).catch(() => {
+      });
+    });
     settingsButton.addEventListener("click", async () => {
       await loadLlmConfigIntoForm();
       setSettingsOpen(true);
@@ -7408,7 +7874,10 @@ ${input.value.slice(end)}`;
     chrome.storage.onChanged.addListener(handleStorageChange);
     const bootstrap = async () => {
       renderIcon();
-      const stored = await safeReadPosition(STORAGE_KEY);
+      const [stored] = await Promise.all([
+        safeReadPosition(STORAGE_KEY),
+        loadGlobalPageActionSetting()
+      ]);
       if (stored) {
         iconPosition = resolveAnchoredIconPosition(
           stored,

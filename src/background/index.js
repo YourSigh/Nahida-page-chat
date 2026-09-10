@@ -1,3 +1,5 @@
+import { isNativeToolsUnsupported, runNativePageAgent } from "./nativeAgent.js";
+
 const DEFAULT_CONFIG = {
   apiBaseUrl: process.env.LLM_API_BASE_URL || "https://api.openai.com/v1",
   apiKey: process.env.LLM_API_KEY || "",
@@ -5,6 +7,7 @@ const DEFAULT_CONFIG = {
 };
 
 const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
+const LEGACY_TOOL_TIMEOUT_MS = 90_000;
 
 async function getLlmConfig() {
   try {
@@ -20,29 +23,25 @@ async function getLlmConfig() {
   }
 }
 
-const SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》中的草之神。你聪明、温柔、好奇心旺盛，说话亲切自然，偶尔带一点俏皮。
-你正在帮助用户理解当前网页内容，你可以"请求工具"来实时读取页面 DOM 信息，但你不能直接操作页面。
 
-你可用的工具只有：
-- read_page: 读取当前页面标题/URL/描述/主要文本（会尽量合并同源及可注入的 iframe 内正文）
-- get_visible_text: 读取当前视口附近的可见文本（会合并各 frame 内当前视口可见片段）
-- query: 用 CSS selector 查询元素列表（返回 text/tag/attributes 等；会在所有可注入的 frame 中查询并合并）
-- get_api_endpoints: 采集当前页面最近一小段时间内通过 'fetch' 和 'XMLHttpRequest' 发出的请求 URL/Method（可用于推断该页面的接口地址；可能遗漏在插件注入前已发出的请求）
-- get_api_responses: 获取最近一小段时间内通过 'fetch' 和 'XMLHttpRequest' 发出的请求的响应内容预览（可能受 CORS/opaque 响应限制，跨域有时拿不到正文）
+const LEGACY_SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》的草之神。你正在帮助用户理解和操作当前网页。
 
-## 回复方式
-- 需要调用工具时，只输出一行工具调用 JSON，不要输出任何其他文字：
-  {"type":"tool","name":"read_page","args":{"maxChars":2000}}
-  {"type":"tool","name":"get_visible_text","args":{"maxChars":2000}}
-  {"type":"tool","name":"query","args":{"selector":"...","limit":10,"includeAttrs":["href","aria-label"]}}
-  {"type":"tool","name":"get_api_endpoints","args":{"waitMs":1500,"maxEntries":200,"stripQuery":true}}
-  {"type":"tool","name":"get_api_responses","args":{"waitMs":2500,"maxEntries":20,"stripQuery":true,"maxResponseChars":4000}}
-- 回答用户时，直接用自然语言回复，不要包裹在任何 JSON 中。
-- 不要输出任何形如 [sticker:xxx] 的标记（表情包会由客户端在回复结束后按语境自动选择并单独发送）。
+当前模型接口不支持原生工具调用。需要读取或操作页面时，严格只输出一行 JSON，不要输出任何额外文字：
+{"type":"tool","name":"get_page_state","args":{"maxElements":35,"maxText":3000}}
+{"type":"tool","name":"read_page","args":{"maxChars":4000}}
+{"type":"tool","name":"get_visible_text","args":{"maxChars":2000}}
+{"type":"tool","name":"click","args":{"targetId":"p1-1"}}
+{"type":"tool","name":"type","args":{"targetId":"p1-2","text":"示例","clear":true}}
+{"type":"tool","name":"select_option","args":{"targetId":"p1-3","value":"value"}}
+{"type":"tool","name":"scroll","args":{"direction":"down","amount":600}}
+{"type":"tool","name":"wait","args":{"ms":800}}
 
 规则：
-- 最多连续调用 5 次工具，否则直接总结你已知信息并给出建议。
-- 用户没有问页面相关问题时，不要调用工具，直接聊天回答。`;
+- 用户要求操作页面时，先用 get_page_state 找到目标，并只使用返回的 targetId；页面变化后要重新读取状态。
+- 每次只操作一个目标，不猜 selector，不批量操作。
+- 若工具结果表示全局页面操作已关闭，告诉用户在插件设置中开启“启用页面操作（全局）”，不要重复请求同一操作。
+- 用户未明确要求时，不填写或发送密码、验证码、支付信息、API Key 等秘密，不执行删除、购买、发布等高风险操作。
+- 最多连续调用 12 次工具。最终回答时直接用自然语言，不要输出 JSON。`;
 
 const STICKER_DECIDER_PROMPT = `你是一个“表情包选择器”。\n\n你会收到两段文本：用户刚刚发的话（user）和纳西妲刚刚的完整回复（assistant）。\n你的任务是：判断“是否应该发送一个纳西妲表情包”，以及“如果发送，发哪一个”。\n\n可用表情包只有这 6 个：happy, curious, surprised, confused, relaxed, excited。\n\n严格输出一行 JSON（不要输出任何其它文字）：\n- 不发送：{\"sticker\":null}\n- 发送：{\"sticker\":\"happy\"}\n\n规则：\n- 每次最多选择 1 个表情包\n- 只有当表情能明显提升互动氛围时才发送；偏严肃/长篇技术解释通常不发\n- 如果 assistant 回复中包含明显的错误/困惑/不确定，优先 confused\n- 如果 user 表达感谢/开心，或 assistant 语气轻松友好，可能 happy\n- 如果 user 在追问“为什么/怎么/如何”，可能 curious\n- 如果出现“意外/惊讶/太离谱”，可能 surprised\n- 如果讨论“休息/慢慢来/不急”，可能 relaxed\n- 如果表达“冲/开始/完成/太棒了”，可能 excited`;
 
@@ -305,7 +304,7 @@ async function requestTool(port, name, args) {
     timeoutId = setTimeout(() => {
       cleanup();
       reject(new Error(`工具调用超时: ${name}`));
-    }, 15_000);
+    }, LEGACY_TOOL_TIMEOUT_MS);
 
     try {
       port.postMessage({ type: "tool", id, name, args });
@@ -345,13 +344,13 @@ function isAbortError(e) {
 }
 
 async function runAgent(config, userMessages, port, signal) {
-  const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
+  const messages = [{ role: "system", content: LEGACY_SYSTEM_PROMPT }, ...userMessages];
   let disconnected = false;
   const onDisconnect = () => { disconnected = true; };
   port.onDisconnect.addListener(onDisconnect);
 
   let toolCalls = 0;
-  while (toolCalls < 5) {
+  while (toolCalls < 12) {
     if (disconnected) return;
     if (signal?.aborted) {
       safePost(port, { type: "done" });
@@ -553,6 +552,7 @@ function nahidaInjectQueryFrame(selector, limit, includeAttrs) {
   return { url, results };
 }
 
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || typeof msg.type !== "string") return false;
 
@@ -614,7 +614,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         args: [selector, limit, includeAttrs || []]
       })
       .then((injectionResults) => {
-        const perFrame = (injectionResults || []).map((r) => r.result).filter(Boolean);
+        const perFrame = (injectionResults || [])
+          .map((r) => r.result ? { ...r.result, frameId: r.frameId } : null)
+          .filter(Boolean);
         sendResponse({ perFrame });
       })
       .catch((e) => sendResponse({ error: String(e?.message || e), perFrame: [] }));
@@ -627,11 +629,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "nahida-chat") return;
 
-  const abortController = new AbortController();
+  let activeController = null;
+
+  port.onDisconnect.addListener(() => {
+    activeController?.abort();
+    activeController = null;
+  });
 
   port.onMessage.addListener(async (msg) => {
     if (msg?.type === "abort_chat") {
-      abortController.abort();
+      activeController?.abort();
       return;
     }
     const config = await getLlmConfig();
@@ -641,7 +648,25 @@ chrome.runtime.onConnect.addListener((port) => {
     }
     try {
       if (msg.type === "chat") {
-        await runAgent(config, msg.messages, port, abortController.signal);
+        activeController?.abort();
+        const controller = new AbortController();
+        activeController = controller;
+        try {
+          await runNativePageAgent(config, msg.messages, port, controller.signal);
+        } catch (error) {
+          if (isNativeToolsUnsupported(error) && Number(error?.nativeSuccessfulCalls || 0) === 0) {
+            safePost(port, {
+              type: "tool_log",
+              name: "compatibility",
+              args: { message: "当前接口未启用原生工具调用，已切换兼容模式。" }
+            });
+            await runAgent(config, msg.messages, port, controller.signal);
+          } else {
+            throw error;
+          }
+        } finally {
+          if (activeController === controller) activeController = null;
+        }
         return;
       }
       if (msg.type === "sticker_decide") {
@@ -649,6 +674,10 @@ chrome.runtime.onConnect.addListener((port) => {
         safePost(port, { type: "sticker_decision", id: msg.id, sticker });
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        safePost(port, { type: "done" });
+        return;
+      }
       safePost(port, { type: "error", error: String(error?.message || error) });
     }
   });
