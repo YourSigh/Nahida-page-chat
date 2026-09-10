@@ -85,3 +85,20 @@ export const isHitTestable = (element) => {
     return false;
   }
 };
+
+export const isScrollable = (element) => {
+  const tag = String(element?.tagName || "").toLowerCase();
+  if (!element?.isConnected || tag === "html" || tag === "body") return false;
+  if (!["div", "section", "main", "article", "aside", "nav", "ul", "ol", "pre", "table", "td", "th", "dialog"].includes(tag)) return false;
+  try {
+    const overflowsY = element.scrollHeight > element.clientHeight + 8;
+    const overflowsX = element.scrollWidth > element.clientWidth + 8;
+    if (!overflowsX && !overflowsY) return false;
+    const style = window.getComputedStyle(element);
+    const scrollableY = ["auto", "scroll", "overlay"].includes(style.overflowY) && overflowsY;
+    const scrollableX = ["auto", "scroll", "overlay"].includes(style.overflowX) && overflowsX;
+    return scrollableX || scrollableY;
+  } catch {
+    return false;
+  }
+};

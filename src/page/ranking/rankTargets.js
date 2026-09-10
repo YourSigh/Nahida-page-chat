@@ -9,6 +9,7 @@ const kindWeight = {
   option: 25,
   tab: 24,
   menuitem: 22,
+  "scroll-container": 18,
   custom: 12
 };
 

@@ -19,11 +19,12 @@ import {
   isHitTestable,
   isInViewport,
   isVisible,
-  rectFor
+  rectFor,
+  isScrollable
 } from "./visibility.js";
 
 const MAX_SCAN_NODES = 12_000;
-const MAX_DISCOVERED_TARGETS = 1_200;
+const MAX_DISCOVERED_TARGETS = 12_000;
 
 const ACTIONABLE_ROLES = new Set([
   "button", "link", "checkbox", "radio", "switch", "textbox", "searchbox", "combobox", "spinbutton",
@@ -101,12 +102,13 @@ const candidateConfidence = ({ element, stateElement, kind, clickElement }) => {
   if (ACTIONABLE_ROLES.has(role)) return 0.94;
   if (element.hasAttribute?.("aria-checked") || element.hasAttribute?.("aria-selected")) return 0.91;
   if (classControlKind(element)) return stateElement && stateElement !== element ? 0.89 : 0.82;
+  if (kind === "scroll-container") return 0.76;
   if (clickElement !== element && stateElement) return 0.86;
   if (hasClickHint(element)) return 0.63;
   return 0.5;
 };
 
-const isCandidateLike = ({ element, stateElement, kind, probeCursor = false }) => {
+const isCandidateLike = ({ element, stateElement, kind, probeCursor = false, scrollable = false }) => {
   const tag = String(element.tagName || "").toLowerCase();
   const role = roleFor(element);
   if (isNativeInteractive(element)) return true;
@@ -115,6 +117,7 @@ const isCandidateLike = ({ element, stateElement, kind, probeCursor = false }) =
   if (element.hasAttribute?.("aria-checked") || element.hasAttribute?.("aria-selected")) return true;
   if (classControlKind(element)) return true;
   if (["radio", "checkbox", "switch"].includes(kind) && stateElement) return true;
+  if (scrollable) return true;
   return kind === "custom" && hasClickHint(element, { includeCursor: probeCursor }) && Boolean(clip(element.innerText || element.textContent || "", 180));
 };
 
@@ -142,7 +145,8 @@ const candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
 
   const stateElement = stateElementFor(element);
   const kind = kindFor(element, stateElement);
-  if (!isCandidateLike({ element, stateElement, kind, probeCursor })) return null;
+  const scrollable = isScrollable(element);
+  if (!isCandidateLike({ element, stateElement, kind, probeCursor, scrollable })) return null;
 
   let clickElement = element;
   const tag = String(element.tagName || "").toLowerCase();
@@ -160,7 +164,7 @@ const candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
   if (!name && !text && kind === "custom") return null;
 
   const stateKind = kindFor(clickElement, stateElement);
-  const effectiveKind = kind === "custom" ? stateKind : kind;
+  const effectiveKind = kind === "custom" && stateKind === "custom" && scrollable ? "scroll-container" : (kind === "custom" ? stateKind : kind);
   const checked = checkedStateFor(clickElement, stateElement, effectiveKind);
   return {
     element: clickElement,
@@ -190,7 +194,7 @@ const candidateQuality = (candidate) =>
   (candidate.inViewport ? 4 : 0) +
   (candidate.kind !== "custom" ? 2 : 0);
 
-export const collectSemanticTargets = ({ extensionHost, maxCandidates = MAX_DISCOVERED_TARGETS } = {}) => {
+export const collectSemanticTargets = ({ extensionHost, maxCandidates } = {}) => {
   const byLogicalControl = new Map();
   let cursorProbeBudget = 900;
   for (const element of allElements()) {
@@ -204,5 +208,9 @@ export const collectSemanticTargets = ({ extensionHost, maxCandidates = MAX_DISC
       byLogicalControl.set(logicalKey, candidate);
     }
   }
-  return Array.from(byLogicalControl.values()).slice(0, Math.max(1, Number(maxCandidates) || MAX_DISCOVERED_TARGETS));
+  const requestedLimit = Number(maxCandidates);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.max(1, Math.min(MAX_DISCOVERED_TARGETS, Math.floor(requestedLimit)))
+    : MAX_DISCOVERED_TARGETS;
+  return Array.from(byLogicalControl.values()).slice(0, limit);
 };

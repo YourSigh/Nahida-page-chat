@@ -18,7 +18,7 @@
 - 支持 `<think>...</think>` 思考过程展示（可折叠，类似 DeepSeek）
 - 内置网页智能体：优先使用 OpenAI 兼容的原生 Function Calling；不支持时自动回退到兼容模式
 - 内置 Browser Interaction Runtime：先生成可交互语义目标，再使用 `targetId` 操作精确元素，不让模型猜 CSS selector
-- 识别原生控件、ARIA 控件、可见 `label` 代理、Vue/React 风格自定义 radio/checkbox/switch，以及开放 Shadow DOM 内的目标
+- 识别原生控件、ARIA 控件、可见 `label` 代理、Vue/React 风格自定义 radio/checkbox/switch、可滚动容器，以及开放 Shadow DOM 内的目标
 - 支持点击、选中、输入、下拉选择、按键、滚动、等待等操作；每次动作都会返回验证状态与证据，不会把“事件已派发”误报成成功
 - 目标按视口、对话框/表单上下文与语义置信度排序；可用 `list_targets` 按区域翻页，避免固定前 35 个元素挤掉实际选项
 - 页面重绘后会用控件类型、名称、分组、DOM 身份与位置指纹尝试安全重绑目标

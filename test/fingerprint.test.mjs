@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { canRebindFingerprint, fingerprintScore } from "../src/page/registry/fingerprint.js";
+import { checkedStateFor } from "../src/page/perception/semantic.js";
 
 const radioFingerprint = (overrides = {}) => ({
   kind: "radio",
@@ -43,4 +44,18 @@ test("uses a stable DOM identity when one is available", () => {
   const score = fingerprintScore(before, after);
 
   assert.equal(canRebindFingerprint(before, after, score), true);
+});
+
+test("reads custom checked and selected class states in the correct direction", () => {
+  const element = (className) => ({
+    className,
+    getAttribute(name) {
+      return name === "data-state" ? "" : null;
+    }
+  });
+
+  assert.equal(checkedStateFor(element("radio-item selected"), null, "radio"), true);
+  assert.equal(checkedStateFor(element("radio-item is-checked"), null, "radio"), true);
+  assert.equal(checkedStateFor(element("radio-item unselected"), null, "radio"), false);
+  assert.equal(checkedStateFor(element("radio-item is-unchecked"), null, "radio"), false);
 });
