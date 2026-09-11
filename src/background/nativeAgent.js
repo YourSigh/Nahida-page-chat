@@ -550,6 +550,8 @@ export async function runNativePageAgent(config, userMessages, port, signal, { t
           isMutation,
           actionExecuted: didExecutePageMutation(result),
           retry: result?.status === "retrying",
+          failed: Boolean(result?.error),
+          status: result?.status,
           targetId: args.targetId
         });
         budget.observePageResult(result);

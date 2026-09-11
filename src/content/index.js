@@ -1239,6 +1239,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         item.classList.toggle("error", Boolean(result?.error));
         item.textContent = result?.error
           ? `${result?.actionExecuted ? "待确认" : "未完成"}：${result.error}`
+          : result?.status === "already_checked"
+            ? `已确认：${actionSummary(name, args)}（原本已经选中）`
+          : result?.status === "already_unchecked"
+            ? `已确认：${actionSummary(name, args)}（原本已经关闭）`
           : result?.status === "already_attempted"
             ? `已跳过重复操作：${actionSummary(name, args)}`
           : result?.queued

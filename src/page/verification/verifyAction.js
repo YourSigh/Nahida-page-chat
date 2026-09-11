@@ -6,6 +6,7 @@ const success = (status, observation, extra = {}) => ({
   ok: true,
   verified: true,
   status,
+  actionExecuted: true,
   evidence: evidenceFor(observation),
   ...extra
 });
@@ -35,7 +36,7 @@ export const verifyActivation = ({ action, target, before, observation, expected
   }
 
   if (action === "check") {
-    if (before.checked === true) return success("already_checked", observation);
+    if (before.checked === true) return success("already_checked", observation, { actionExecuted: false });
     if (after.checked === true) return success("verified", observation);
     return unverified(observation, "操作事件已发出，但目标没有变为已选中。请重新读取页面状态后再决定下一步。");
   }

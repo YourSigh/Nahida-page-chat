@@ -5904,6 +5904,7 @@
     ok: true,
     verified: true,
     status,
+    actionExecuted: true,
     evidence: evidenceFor(observation),
     ...extra
   });
@@ -5930,7 +5931,7 @@
       );
     }
     if (action === "check") {
-      if (before.checked === true) return success("already_checked", observation);
+      if (before.checked === true) return success("already_checked", observation, { actionExecuted: false });
       if (after.checked === true) return success("verified", observation);
       return unverified(observation, "\u64CD\u4F5C\u4E8B\u4EF6\u5DF2\u53D1\u51FA\uFF0C\u4F46\u76EE\u6807\u6CA1\u6709\u53D8\u4E3A\u5DF2\u9009\u4E2D\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u540E\u518D\u51B3\u5B9A\u4E0B\u4E00\u6B65\u3002");
     }
@@ -8154,7 +8155,7 @@ ${f.text}
       return {
         done(result) {
           item.classList.toggle("error", Boolean(result?.error));
-          item.textContent = result?.error ? `${result?.actionExecuted ? "\u5F85\u786E\u8BA4" : "\u672A\u5B8C\u6210"}\uFF1A${result.error}` : result?.status === "already_attempted" ? `\u5DF2\u8DF3\u8FC7\u91CD\u590D\u64CD\u4F5C\uFF1A${actionSummary(name, args)}` : result?.queued ? `\u5DF2\u5B89\u6392\uFF1A${actionSummary(name, args)}` : result?.verified === false ? `\u5DF2\u6D3E\u53D1\uFF0C\u5F85\u786E\u8BA4\uFF1A${actionSummary(name, args)}` : `\u5DF2\u6267\u884C\uFF1A${actionSummary(name, args)}`;
+          item.textContent = result?.error ? `${result?.actionExecuted ? "\u5F85\u786E\u8BA4" : "\u672A\u5B8C\u6210"}\uFF1A${result.error}` : result?.status === "already_checked" ? `\u5DF2\u786E\u8BA4\uFF1A${actionSummary(name, args)}\uFF08\u539F\u672C\u5DF2\u7ECF\u9009\u4E2D\uFF09` : result?.status === "already_unchecked" ? `\u5DF2\u786E\u8BA4\uFF1A${actionSummary(name, args)}\uFF08\u539F\u672C\u5DF2\u7ECF\u5173\u95ED\uFF09` : result?.status === "already_attempted" ? `\u5DF2\u8DF3\u8FC7\u91CD\u590D\u64CD\u4F5C\uFF1A${actionSummary(name, args)}` : result?.queued ? `\u5DF2\u5B89\u6392\uFF1A${actionSummary(name, args)}` : result?.verified === false ? `\u5DF2\u6D3E\u53D1\uFF0C\u5F85\u786E\u8BA4\uFF1A${actionSummary(name, args)}` : `\u5DF2\u6267\u884C\uFF1A${actionSummary(name, args)}`;
         }
       };
     };
