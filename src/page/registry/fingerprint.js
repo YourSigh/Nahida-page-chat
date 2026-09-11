@@ -34,6 +34,42 @@ const stableIdFor = (candidate) => {
   return "";
 };
 
+const stableHash = (value) => {
+  let hash = 2166136261;
+  for (const char of String(value || "")) {
+    hash ^= char.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+};
+
+export const questionKeyFor = (candidate) => {
+  const explicit = normalizeText(candidate?.questionKey);
+  if (explicit) return explicit;
+  const stem = normalizeText(candidate?.questionText);
+  const optionTexts = Array.isArray(candidate?.questionOptionTexts)
+    ? candidate.questionOptionTexts.map((text) => normalizeText(text)).filter(Boolean).sort().join("|")
+    : "";
+  const semanticQuestion = [stem, optionTexts].filter(Boolean).join("\u001f");
+  if (semanticQuestion) return `question_${stableHash(semanticQuestion)}`;
+  const questionId = normalizeText(candidate?.questionId);
+  if (questionId) return `question_${stableHash(questionId)}`;
+  const group = normalizeText(candidate?.group);
+  return group ? `question_${stableHash(group)}` : "";
+};
+
+export const logicalKeyFor = (candidate) => {
+  const questionKey = questionKeyFor(candidate);
+  const optionKey = String(candidate?.optionKey || "").trim().toUpperCase();
+  if (questionKey && optionKey) return `${questionKey}:${optionKey}`;
+  const stableId = stableIdFor(candidate);
+  if (stableId) return `target:${stableId}`;
+  const kind = String(candidate?.kind || "custom");
+  const name = normalizeText(candidate?.name);
+  const text = normalizeText(candidate?.text);
+  return name || text ? `target:${kind}:${name}:${text}` : "";
+};
+
 export const fingerprintFor = (candidate) => ({
   kind: String(candidate?.kind || "custom"),
   role: String(candidate?.role || ""),
@@ -41,7 +77,9 @@ export const fingerprintFor = (candidate) => ({
   text: normalizeText(candidate?.text),
   group: normalizeText(candidate?.group),
   questionId: normalizeText(candidate?.questionId),
+  questionKey: questionKeyFor(candidate),
   optionKey: String(candidate?.optionKey || "").toUpperCase(),
+  logicalKey: logicalKeyFor(candidate),
   inputType: String(candidate?.inputType || ""),
   inputName: String(candidate?.stateElement?.name || ""),
   stableId: stableIdFor(candidate),
@@ -75,7 +113,9 @@ export const fingerprintScore = (before, after) => {
   else if (partialText(before.text, after.text)) score += 10;
   if (sameText(before.group, after.group)) score += 28;
   if (sameText(before.questionId, after.questionId)) score += 18;
+  if (sameText(before.questionKey, after.questionKey)) score += 34;
   if (before.optionKey && before.optionKey === after.optionKey) score += 18;
+  if (before.logicalKey && before.logicalKey === after.logicalKey) score += 36;
   if (before.inputType && before.inputType === after.inputType) score += 12;
   if (before.inputName && before.inputName === after.inputName) score += 30;
   if (before.role && before.role === after.role) score += 10;
@@ -89,8 +129,11 @@ export const fingerprintScore = (before, after) => {
 
 export const canRebindFingerprint = (before, after, score = fingerprintScore(before, after)) => {
   if (!before || !after) return false;
-  if (before.questionId && after.questionId && before.questionId !== after.questionId) return false;
+  const sameLogicalKey = Boolean(before.logicalKey && after.logicalKey && before.logicalKey === after.logicalKey);
+  if (!sameLogicalKey && before.questionId && after.questionId && before.questionId !== after.questionId) return false;
+  if (before.questionKey && after.questionKey && before.questionKey !== after.questionKey) return false;
   if (before.optionKey && after.optionKey && before.optionKey !== after.optionKey) return false;
+  if (before.logicalKey && after.logicalKey && before.logicalKey !== after.logicalKey) return false;
   if (before.stableId && before.stableId === after.stableId) return score >= 165;
   if (before.kind !== after.kind && kindFamily(before.kind) !== kindFamily(after.kind)) return false;
 

@@ -1235,6 +1235,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     messagesEl.appendChild(item);
     scrollToBottom();
     return {
+      update(status) {
+        item.classList.remove("error");
+        item.textContent = `${status}：${actionSummary(name, args)}`;
+      },
       done(result) {
         item.classList.toggle("error", Boolean(result?.error));
         item.textContent = result?.error
@@ -1286,14 +1290,39 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
     if (ledgerKey) actionLedger.set(ledgerKey, { pending: true });
     const log = appendToolLog(name, args, "正在执行");
-    let result;
-    if (name === "click") result = await pageController.click(args);
-    else if (isCheckedAction) result = await pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
-    else if (name === "type") result = await pageController.type(args);
-    else if (name === "select_option") result = await pageController.selectOption(args);
-    else if (name === "press_key") result = await pageController.pressKey(args);
-    else if (name === "scroll") result = await pageController.scroll(args);
-    else result = { error: `未知页面操作: ${name}` };
+    const executeAction = async () => {
+      if (name === "click") return pageController.click(args);
+      if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
+      if (name === "type") return pageController.type(args);
+      if (name === "select_option") return pageController.selectOption(args);
+      if (name === "press_key") return pageController.pressKey(args);
+      if (name === "scroll") return pageController.scroll(args);
+      return { error: `未知页面操作: ${name}` };
+    };
+    let result = await executeAction();
+    const looksStale = (value) => value?.status === "target_stale" || /目标已失效|目标已经被页面重绘/.test(String(value?.error || ""));
+    if (looksStale(result)) {
+      log.update("目标已失效，正在刷新页面状态并重新绑定");
+      const freshState = await pageController.refresh({ region: "all", page: 1, maxElements: 60 });
+      if (freshState?.error) {
+        result = {
+          ...result,
+          status: "target_rebind_failed",
+          reason: "refresh_failed",
+          error: `刷新页面状态失败：${freshState.error}`
+        };
+      } else {
+        result = await executeAction();
+        if (looksStale(result)) {
+          result = {
+            ...result,
+            status: "target_rebind_failed",
+            reason: "not_found",
+            error: "刷新后仍无法安全重新绑定该目标，请重新读取页面状态。"
+          };
+        }
+      }
+    }
     log.done(result);
     if (ledgerKey) {
       if (result?.actionExecuted || result?.status === "already_checked" || result?.status === "already_unchecked") actionLedger.set(ledgerKey, result);
@@ -1572,10 +1601,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
 
       if (msg?.type === "tool_log") {
-        if (msg.name === "compatibility") {
+        if (msg.name === "compatibility" || msg.name === "resume_refresh") {
           const item = document.createElement("div");
           item.className = "tool-log";
-          item.textContent = String(msg.args?.message || "已切换到兼容工具模式。");
+          item.textContent = String(msg.args?.message || (msg.name === "compatibility" ? "已切换到兼容工具模式。" : "恢复任务前正在刷新页面状态…"));
           messagesEl.appendChild(item);
           scrollToBottom();
         }

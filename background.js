@@ -49,6 +49,7 @@
     tool_execution_limit: "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u5DE5\u5177\u8C03\u7528\u4E0A\u9650\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002",
     page_mutation_limit: "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u9875\u9762\u53D8\u66F4\u4E0A\u9650\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002",
     target_retry_limit: "\u64CD\u4F5C\u5DF2\u6682\u505C\uFF1A\u540C\u4E00\u9875\u9762\u76EE\u6807\u7684\u91CD\u8BD5\u6B21\u6570\u5DF2\u8FBE\u5230\u4E0A\u9650\uFF0C\u8BF7\u68C0\u67E5\u9875\u9762\u72B6\u6001\u540E\u518D\u7EE7\u7EED\u3002",
+    target_rebind_failed: "\u64CD\u4F5C\u5DF2\u6682\u505C\uFF1A\u76EE\u6807\u5237\u65B0\u540E\u4ECD\u65E0\u6CD5\u5B89\u5168\u91CD\u65B0\u7ED1\u5B9A\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002",
     no_progress: "\u64CD\u4F5C\u5DF2\u6682\u505C\uFF1A\u8FDE\u7EED\u591A\u8F6E\u6CA1\u6709\u89C2\u5BDF\u5230\u9875\u9762\u8FDB\u5C55\uFF0C\u8BF7\u68C0\u67E5\u9875\u9762\u6216\u70B9\u51FB\u201C\u7EE7\u7EED\u6267\u884C\u201D\u3002",
     soft_limit_without_progress: "\u64CD\u4F5C\u5DF2\u6682\u505C\uFF1A\u63A5\u8FD1\u6267\u884C\u9884\u7B97\u4E14\u9875\u9762\u6CA1\u6709\u7EE7\u7EED\u8FDB\u5C55\uFF0C\u8BF7\u68C0\u67E5\u9875\u9762\u6216\u70B9\u51FB\u201C\u7EE7\u7EED\u6267\u884C\u201D\u3002"
   })[reason] || "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u6267\u884C\u5DF2\u6682\u505C\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002";
@@ -179,10 +180,14 @@
   });
   var completionKeyFor = (result) => {
     const target = result?.target || {};
-    const questionId = String(target.questionId || "").trim();
+    const questionId = String(target.questionKey || target.questionId || "").trim();
     const optionKey = String(target.optionKey || "").trim();
     if (questionId && optionKey) return `${questionId}:${optionKey}`;
     return String(target.id || result?.targetId || "").trim();
+  };
+  var questionIdFor = (result) => {
+    const target = result?.target || {};
+    return String(target.questionId || target.questionKey || target.id || result?.targetId || "").trim();
   };
   var progressFromToolResult = (result, previous = {}) => {
     const action = String(result?.action || "");
@@ -190,27 +195,39 @@
     const alreadySatisfied = ["already_checked", "already_unchecked"].includes(String(result?.status || ""));
     const verifiedTaskItem = mutation && result?.verified === true && (result?.actionExecuted === true || alreadySatisfied);
     const actualMutation = mutation && result?.actionExecuted === true;
+    const target = result?.target || {};
+    const selectedOptions = Array.isArray(result?.selectedOptions) ? result.selectedOptions.map((option) => String(option).toUpperCase()).sort() : Array.isArray(result?.question?.selectedOptions) ? result.question.selectedOptions.map((option) => String(option).toUpperCase()).sort() : null;
+    const expectedOptions = Array.isArray(result?.expectedOptions) ? result.expectedOptions.map((option) => String(option).toUpperCase()).sort() : Array.isArray(result?.question?.expectedOptions) ? result.question.expectedOptions.map((option) => String(option).toUpperCase()).sort() : null;
+    const fullQuestionMatch = selectedOptions && expectedOptions && JSON.stringify(selectedOptions) === JSON.stringify(expectedOptions);
+    const questionVerified = Boolean(result?.questionVerified === true || fullQuestionMatch || verifiedTaskItem && (!target.questionId && !target.questionKey || target.questionType === "single"));
     const scrollOrPageChange = result?.action === "scroll" && result?.verified === true;
     const resultUrl = result?.url || "";
     const resultScroll = result?.scroll || result?.after || result?.evidence?.after || {};
     const priorVerified = Math.max(0, Number(previous?.verifiedItems) || 0);
     const priorCompleted = Math.max(0, Number(previous?.completedItems) || 0);
     const completedItemKeys = new Set(Array.isArray(previous?.completedItemKeys) ? previous.completedItemKeys.map((key) => String(key)) : []);
+    const completedQuestionIds = new Set(Array.isArray(previous?.completedQuestionIds) ? previous.completedQuestionIds.map((key) => String(key)) : []);
     const completionKey = verifiedTaskItem ? completionKeyFor(result) : "";
     const isNewCompletedItem = Boolean(completionKey && !completedItemKeys.has(completionKey));
     if (isNewCompletedItem) completedItemKeys.add(completionKey);
+    const questionId = questionVerified ? questionIdFor(result) : "";
+    const isNewCompletedQuestion = Boolean(questionId && !completedQuestionIds.has(questionId));
+    if (isNewCompletedQuestion) completedQuestionIds.add(questionId);
     const next = {
-      verifiedItems: priorVerified + (isNewCompletedItem ? 1 : 0),
-      completedItems: priorCompleted + (isNewCompletedItem ? 1 : 0),
+      verifiedItems: Math.max(priorVerified, completedQuestionIds.size),
+      completedItems: Math.max(priorCompleted, completedQuestionIds.size),
       completedItemKeys: Array.from(completedItemKeys),
+      completedQuestionIds: Array.from(completedQuestionIds),
+      questionVerified,
       actualMutation,
       currentPage: result?.page ?? previous?.currentPage ?? null,
       pageFingerprint: resultUrl || resultScroll?.x != null || resultScroll?.y != null || result?.page != null ? [resultUrl, resultScroll?.x ?? "", resultScroll?.y ?? "", result?.page ?? ""].join("|") : String(previous?.pageFingerprint || ""),
       unresolvedErrors: result?.error ? Math.max(1, Number(previous?.unresolvedErrors) || 0) : Math.max(0, Number(previous?.unresolvedErrors) || 0)
     };
-    const changed = isNewCompletedItem || actualMutation || scrollOrPageChange || String(next.currentPage ?? "") !== String(previous.currentPage ?? "") || String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "") || (Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0);
+    const changed = isNewCompletedQuestion || actualMutation || scrollOrPageChange || String(next.currentPage ?? "") !== String(previous.currentPage ?? "") || String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "") || (Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0);
     return {
       ...next,
+      issue: String(result?.status || "").startsWith("target_") ? result.status === "target_rebind_failed" ? "target_rebind_failed" : "target_stale" : void 0,
       changed
     };
   };
@@ -226,6 +243,7 @@
       this.reserveUnlocked = false;
       this.pauseReason = "";
       this.targetAttempts = /* @__PURE__ */ new Map();
+      this.lastIssue = "";
     }
     consumeAgentRound() {
       this.usage.agentRounds += 1;
@@ -235,7 +253,8 @@
       this.usage.toolExecutions += 1;
       if (isMutation && actionExecuted) this.usage.pageMutations += 1;
       const alreadySatisfied = String(status || "").startsWith("already_");
-      const countsAsTargetAttempt = isMutation && targetId && !alreadySatisfied && (actionExecuted || failed || retry);
+      const staleStatus = String(status || "").startsWith("target_");
+      const countsAsTargetAttempt = isMutation && targetId && !alreadySatisfied && !staleStatus && (actionExecuted || failed || retry);
       if (countsAsTargetAttempt) {
         const id = String(targetId);
         const attempts = (this.targetAttempts.get(id) || 0) + 1;
@@ -254,13 +273,20 @@
       const completedIncreased = (Number(next.completedItems) || 0) > (Number(previous.completedItems) || 0);
       const pageChanged = String(next.currentPage ?? "") !== String(previous.currentPage ?? "") || String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "");
       const errorsResolved = (Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0);
-      const changed = verifiedIncreased || completedIncreased || pageChanged || errorsResolved;
+      const observedMutation = next.actualMutation === true;
+      const changed = verifiedIncreased || completedIncreased || pageChanged || errorsResolved || observedMutation || next.changed === true;
       this.progress = next;
       this.lastProgressSignature = signature;
+      this.lastIssue = String(next.issue || "");
       if (changed) this.usage.lastProgressAt = this.now();
       return changed;
     }
     finishAgentRound({ progressChanged = false } = {}) {
+      if (this.lastIssue === "target_rebind_failed") this.pauseReason = "target_rebind_failed";
+      if (this.lastIssue === "target_stale" || this.lastIssue === "target_rebind_failed") {
+        this.lastRoundProgress = false;
+        return this.snapshot();
+      }
       this.lastRoundProgress = Boolean(progressChanged);
       if (progressChanged) this.usage.noProgressRounds = 0;
       else this.usage.noProgressRounds += 1;
@@ -268,7 +294,9 @@
     }
     observePageResult(result) {
       const observedPages = Math.max(0, Number(result?.pageCount) || 0);
-      const observedItems = Math.max(0, Number(result?.totalItems || result?.progress?.totalItems) || 0);
+      const hasQuestionSignal = result?.questionCount != null || Array.isArray(result?.questions) || result?.totalQuestionCount != null;
+      const observedQuestionCount = result?.questionCount != null ? Number(result.questionCount) : Array.isArray(result?.questions) ? result.questions.length : Number(result?.totalQuestionCount || 0);
+      const observedItems = Math.max(0, hasQuestionSignal && Number.isFinite(observedQuestionCount) ? observedQuestionCount : Number(result?.totalItems || result?.progress?.totalItems) || 0);
       const currentPages = Math.max(0, Number(this.budget.plan?.discoveryCalls) || 0);
       const currentItems = Math.max(1, Number(this.budget.plan?.estimatedItems) || 1);
       const nextItems = Math.max(currentItems, observedItems);
@@ -405,6 +433,7 @@
     "- \u7528\u6237\u8981\u4F60\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u5148\u8C03\u7528 get_page_state\uFF0C\u8BFB\u53D6\u53EF\u89C1\u6587\u672C\u548C\u53EF\u64CD\u4F5C\u8BED\u4E49\u76EE\u6807\u3002\u76EE\u6807\u53EF\u80FD\u662F\u539F\u751F\u63A7\u4EF6\uFF0C\u4E5F\u53EF\u80FD\u662F Vue/React \u7684\u81EA\u5B9A\u4E49 radio\u3001checkbox\u3001switch \u6216\u6309\u94AE\uFF1B\u4E0D\u80FD\u56E0\u4E3A\u5217\u8868\u91CC\u6682\u65F6\u6CA1\u6709\u76EE\u6807\u5C31\u65AD\u8A00\u9875\u9762\u662F canvas\u3002",
     "- \u521D\u59CB\u5217\u8868\u6309\u89C6\u53E3\u548C\u8868\u5355\u4E0A\u4E0B\u6587\u6392\u5E8F\u3002\u76EE\u6807\u4E0D\u5728\u5217\u8868\u4E2D\u65F6\uFF0C\u8C03\u7528 list_targets\uFF0C\u4F7F\u7528 region=below\u3001above \u6216 all \u5E76\u7FFB\u9875\uFF1B\u4E0D\u80FD\u731C\u6D4B\u9875\u9762\u5143\u7D20\uFF0C\u4E5F\u4E0D\u80FD\u51ED CSS selector \u64CD\u4F5C\u3002",
     "- \u70B9\u51FB\u3001\u8F93\u5165\u3001\u9009\u62E9\u548C\u6309\u952E\u90FD\u53EA\u80FD\u4F7F\u7528\u5DE5\u5177\u8FD4\u56DE\u7684 targetId\u3002radio\u3001checkbox\u3001switch \u53EA\u80FD\u4F7F\u7528\u5E42\u7B49\u7684 set_checked\uFF0C\u4E0D\u80FD\u7528 click\uFF1B\u52A8\u4F5C\u7ED3\u679C\u4F1A\u5305\u542B verified/status/evidence\u3002\u82E5\u672A\u9A8C\u8BC1\uFF0C\u5148 get_target_state \u6216\u91CD\u65B0 get_page_state\uFF0C\u518D\u51B3\u5B9A\u4E0B\u4E00\u6B65\uFF0C\u7EDD\u4E0D\u628A\u672A\u9A8C\u8BC1\u7ED3\u679C\u8BF4\u6210\u6210\u529F\u3002",
+    "- targetId \u53EA\u662F\u5F53\u524D\u9875\u9762\u5FEB\u7167\u4E2D\u7684\u4E34\u65F6\u53E5\u67C4\uFF0C\u4E0D\u662F\u6C38\u4E45\u8EAB\u4EFD\u3002\u9875\u9762\u91CD\u7ED8\u6216\u6062\u590D\u4EFB\u52A1\u540E\uFF0C\u65E7 targetId \u53EF\u80FD\u5931\u6548\uFF1B\u5982\u679C\u5DE5\u5177\u7ED3\u679C\u8868\u793A\u76EE\u6807\u5DF2\u5931\u6548\uFF0C\u7981\u6B62\u91CD\u590D\u8C03\u7528\u540C\u4E00\u4E2A\u65E7 ID\uFF0C\u5FC5\u987B\u5148\u8C03\u7528 get_page_state \u6216 list_targets\uFF0C\u518D\u4F7F\u7528\u65B0\u72B6\u6001\u8FD4\u56DE\u7684 targetId\u3002\u6062\u590D\u4EFB\u52A1\u6D88\u606F\u4E2D\u7684\u6700\u65B0\u9875\u9762\u72B6\u6001\u4F18\u5148\u4E8E\u4E4B\u524D\u5BF9\u8BDD\u4E2D\u7684\u65E7\u76EE\u6807\u3002",
     "- \u9875\u9762\u91CD\u7ED8\u65F6\u8FD0\u884C\u65F6\u4F1A\u5C1D\u8BD5\u6309\u8BED\u4E49\u6307\u7EB9\u91CD\u7ED1\u540C\u4E00\u4E2A\u76EE\u6807\uFF0C\u4F46\u53D1\u751F\u660E\u663E\u9875\u9762\u53D8\u5316\u540E\u4ECD\u5E94\u91CD\u65B0\u8BFB\u53D6\u72B6\u6001\u3002\u5BF9\u70B9\u51FB\u540E\u7684\u52A8\u6001\u9875\u9762\uFF0C\u8C03\u7528 wait\uFF08\u901A\u5E38 500-1200ms\uFF09\u540E\u518D\u89C2\u5BDF\u3002",
     "- \u5DE5\u5177\u4F1A\u5728\u524D\u7AEF\u663E\u793A\u64CD\u4F5C\u72B6\u6001\u3002\u82E5\u5DE5\u5177\u7ED3\u679C\u663E\u793A\u5168\u5C40\u9875\u9762\u64CD\u4F5C\u5DF2\u5173\u95ED\uFF0C\u544A\u8BC9\u7528\u6237\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\uFF1B\u4E0D\u8981\u53CD\u590D\u8BF7\u6C42\u540C\u4E00\u64CD\u4F5C\u3002",
     "- \u8F93\u5165\u3001\u63D0\u4EA4\u3001\u53D1\u9001\u3001\u5220\u9664\u3001\u8D2D\u4E70\u3001\u53D1\u5E03\u3001\u767B\u5F55\u3001\u6743\u9650\u4FEE\u6539\u7B49\u6709\u5F71\u54CD\u7684\u52A8\u4F5C\u5FC5\u987B\u6765\u81EA\u7528\u6237\u5F53\u524D\u5BF9\u8BDD\u7684\u660E\u786E\u8BF7\u6C42\u3002\u4E0D\u8981\u4E3B\u52A8\u586B\u5199\u5BC6\u7801\u3001\u9A8C\u8BC1\u7801\u3001\u652F\u4ED8\u4FE1\u606F\u3001API Key \u6216\u5176\u4ED6\u79D8\u5BC6\u3002",
@@ -774,6 +803,17 @@
       page: value.page,
       pageSize: value.pageSize,
       pageCount: value.pageCount,
+      questionCount: value.questionCount,
+      questionIds: value.questionIds,
+      questionTypes: value.questionTypes,
+      questions: Array.isArray(value.questions) ? value.questions.slice(0, 80).map((question) => ({
+        questionId: question.questionId,
+        questionKey: question.questionKey,
+        questionType: question.questionType,
+        stem: question.stem,
+        selectedOptions: question.selectedOptions,
+        options: Array.isArray(question.options) ? question.options.slice(0, 12).map((option) => ({ key: option.key, text: option.text, targetId: option.targetId, checked: option.checked })) : void 0
+      })) : void 0,
       totalTargets: value.totalTargets,
       registeredCount: value.registeredCount,
       hasMore: value.hasMore,
@@ -786,6 +826,8 @@
         text: target.text,
         optionKey: target.optionKey,
         questionId: target.questionId,
+        questionKey: target.questionKey,
+        logicalKey: target.logicalKey,
         questionText: target.questionText,
         questionType: target.questionType,
         group: target.group,
@@ -847,12 +889,45 @@
       emit({ type: "chunk", content: executionPauseNotice(reason) });
       emit({ type: "done", status: "incomplete", verified: false, executionId: taskId, reason });
     };
+    const forceRefreshOnResume = async () => {
+      if (!resume) return true;
+      const args = { region: "all", page: 1, maxElements: 60, maxText: 3e3 };
+      if (!budget.canExecuteTool()) {
+        finishIncomplete(budget.shouldPause() || "target_stale");
+        return false;
+      }
+      emit({ type: "tool_log", name: "resume_refresh", args: { message: "\u6062\u590D\u4EFB\u52A1\u524D\u6B63\u5728\u5237\u65B0\u9875\u9762\u72B6\u6001\u2026" } });
+      let freshState;
+      try {
+        freshState = await requestTool(port, "get_page_state", args);
+      } catch (error) {
+        freshState = { error: String(error?.message || error) };
+      }
+      budget.consumeTool({ failed: Boolean(freshState?.error), status: freshState?.status });
+      budget.observePageResult(freshState);
+      const refreshedProgress = progressFromToolResult(freshState, budget.progress || {});
+      budget.recordProgress(refreshedProgress);
+      emitProgress();
+      if (freshState?.error) {
+        finishIncomplete("target_stale");
+        return false;
+      }
+      messages.push({
+        role: "user",
+        content: `[\u6062\u590D\u4EFB\u52A1\u540E\u7684\u6700\u65B0\u9875\u9762\u72B6\u6001]
+${safeToolResult(freshState)}
+
+\u8FD9\u662F\u6062\u590D\u4EFB\u52A1\u540E\u91CD\u65B0\u8BFB\u53D6\u7684\u9875\u9762\u72B6\u6001\u3002\u4E4B\u524D\u5BF9\u8BDD\u4E2D\u7684 targetId \u53EF\u80FD\u5DF2\u7ECF\u5931\u6548\uFF0C\u540E\u7EED\u53EA\u80FD\u4F7F\u7528\u8FD9\u6B21\u72B6\u6001\u8FD4\u56DE\u7684\u6700\u65B0 targetId\u3002`
+      });
+      return true;
+    };
     const onDisconnect = () => {
       disconnected = true;
     };
     port.onDisconnect.addListener(onDisconnect);
     try {
       emitProgress();
+      if (!await forceRefreshOnResume()) return;
       while (budget.canStartAgentRound()) {
         if (disconnected || signal?.aborted) return;
         budget.consumeAgentRound();
@@ -888,6 +963,7 @@
           }))
         });
         let roundProgress = false;
+        let targetRebindFailed = false;
         for (const call of toolCalls) {
           if (disconnected || signal?.aborted) return;
           const args = parseArguments(call.arguments);
@@ -925,8 +1001,16 @@
             tool_call_id: call.id,
             content: safeToolResult(result)
           });
+          if (result?.status === "target_rebind_failed") {
+            targetRebindFailed = true;
+            break;
+          }
         }
         budget.finishAgentRound({ progressChanged: roundProgress });
+        if (targetRebindFailed) {
+          finishIncomplete("target_rebind_failed");
+          return;
+        }
         if (budget.softLimitReached()) {
           if (budget.healthyProgress()) budget.unlockReserve();
           const reason2 = budget.shouldPause();
@@ -986,6 +1070,7 @@
 - \u521D\u59CB\u5217\u8868\u6CA1\u6709\u76EE\u6807\u65F6\uFF0C\u7528 list_targets \u7684 region=below\u3001above \u6216 all \u7FFB\u9875\u67E5\u627E\uFF1B\u6BCF\u6B21\u53EA\u64CD\u4F5C\u4E00\u4E2A\u76EE\u6807\uFF0C\u4E0D\u731C selector\uFF0C\u4E0D\u6279\u91CF\u64CD\u4F5C\u3002
 - radio\u3001checkbox\u3001switch \u53EA\u80FD\u4F7F\u7528\u5E42\u7B49\u7684 set_checked\uFF0C\u4E0D\u80FD\u4F7F\u7528 click\uFF1B\u5DE5\u5177\u8FD4\u56DE verified:false \u6216 status:unverified \u65F6\uFF0C\u5148 get_target_state \u6216\u91CD\u65B0 get_page_state \u786E\u8BA4\uFF0C\u4E0D\u80FD\u628A\u672A\u9A8C\u8BC1\u7ED3\u679C\u8BF4\u6210\u6210\u529F\u3002
 - \u4E0D\u8981\u5BF9\u540C\u4E00\u4E2A targetId \u91CD\u590D\u6D3E\u53D1\u9009\u4E2D\u52A8\u4F5C\uFF1B\u5DF2\u9009\u4E2D\u7684\u76EE\u6807\u76F4\u63A5\u8BA4\u4E3A already_checked\u3002
+- targetId \u53EA\u662F\u5F53\u524D\u9875\u9762\u5FEB\u7167\u4E2D\u7684\u4E34\u65F6\u53E5\u67C4\uFF0C\u4E0D\u662F\u6C38\u4E45\u8EAB\u4EFD\u3002\u9875\u9762\u91CD\u7ED8\u6216\u6062\u590D\u4EFB\u52A1\u540E\uFF0C\u65E7 targetId \u53EF\u80FD\u5931\u6548\uFF1B\u5982\u679C\u5DE5\u5177\u7ED3\u679C\u8868\u793A\u76EE\u6807\u5DF2\u5931\u6548\uFF0C\u7981\u6B62\u91CD\u590D\u8C03\u7528\u540C\u4E00\u4E2A\u65E7 ID\uFF0C\u5FC5\u987B\u5148\u8C03\u7528 get_page_state \u6216 list_targets\uFF0C\u518D\u4F7F\u7528\u65B0\u72B6\u6001\u8FD4\u56DE\u7684 targetId\u3002\u6062\u590D\u4EFB\u52A1\u6D88\u606F\u4E2D\u7684\u6700\u65B0\u9875\u9762\u72B6\u6001\u4F18\u5148\u4E8E\u4E4B\u524D\u5BF9\u8BDD\u4E2D\u7684\u65E7\u76EE\u6807\u3002
 - \u82E5\u5DE5\u5177\u7ED3\u679C\u8868\u793A\u5168\u5C40\u9875\u9762\u64CD\u4F5C\u5DF2\u5173\u95ED\uFF0C\u544A\u8BC9\u7528\u6237\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\uFF0C\u4E0D\u8981\u91CD\u590D\u8BF7\u6C42\u540C\u4E00\u64CD\u4F5C\u3002
 - \u7528\u6237\u672A\u660E\u786E\u8981\u6C42\u65F6\uFF0C\u4E0D\u586B\u5199\u6216\u53D1\u9001\u5BC6\u7801\u3001\u9A8C\u8BC1\u7801\u3001\u652F\u4ED8\u4FE1\u606F\u3001API Key \u7B49\u79D8\u5BC6\uFF0C\u4E0D\u6267\u884C\u5220\u9664\u3001\u8D2D\u4E70\u3001\u53D1\u5E03\u7B49\u9AD8\u98CE\u9669\u64CD\u4F5C\u3002
 - \u5DE5\u5177\u8C03\u7528\u6B21\u6570\u7531\u8FD0\u884C\u65F6\u6839\u636E\u4EFB\u52A1\u89C4\u6A21\u3001\u9875\u9762\u8FDB\u5C55\u3001\u9875\u9762\u53D8\u66F4\u3001\u603B\u8017\u65F6\u548C\u65E0\u8FDB\u5C55\u72B6\u6001\u52A8\u6001\u63A7\u5236\u3002\u4E0D\u8981\u81EA\u884C\u5047\u8BBE\u8FD8\u6709\u591A\u5C11\u9884\u7B97\u3002\u6700\u7EC8\u56DE\u7B54\u65F6\u76F4\u63A5\u7528\u81EA\u7136\u8BED\u8A00\uFF0C\u4E0D\u8981\u8F93\u51FA JSON\u3002`;
@@ -1308,11 +1393,47 @@ ${String(assistantText || "").slice(0, 4e3)}` }
       emit({ type: "chunk", content: executionPauseNotice(reason2) });
       emit({ type: "done", status: "incomplete", verified: false, executionId: taskId, reason: reason2 });
     };
+    const forceRefreshOnResume = async () => {
+      if (!resume) return true;
+      const args = { region: "all", page: 1, maxElements: 60, maxText: 3e3 };
+      if (!budget.canExecuteTool()) {
+        finishIncomplete(budget.shouldPause() || "target_stale");
+        return false;
+      }
+      emit({ type: "tool_log", name: "resume_refresh", args: { message: "\u6062\u590D\u4EFB\u52A1\u524D\u6B63\u5728\u5237\u65B0\u9875\u9762\u72B6\u6001\u2026" } });
+      let freshState;
+      try {
+        freshState = await requestTool2(port, "get_page_state", args);
+      } catch (error) {
+        freshState = { error: String(error?.message || error) };
+      }
+      budget.consumeTool({ failed: Boolean(freshState?.error), status: freshState?.status });
+      budget.observePageResult(freshState);
+      const refreshedProgress = progressFromToolResult(freshState, budget.progress || {});
+      budget.recordProgress(refreshedProgress);
+      emitProgress();
+      if (freshState?.error) {
+        finishIncomplete("target_stale");
+        return false;
+      }
+      messages.push({
+        role: "user",
+        content: `[\u6062\u590D\u4EFB\u52A1\u540E\u7684\u6700\u65B0\u9875\u9762\u72B6\u6001]
+${JSON.stringify(freshState).slice(0, 12e3)}
+
+\u8FD9\u662F\u6062\u590D\u4EFB\u52A1\u540E\u91CD\u65B0\u8BFB\u53D6\u7684\u9875\u9762\u72B6\u6001\u3002\u4E4B\u524D\u5BF9\u8BDD\u4E2D\u7684 targetId \u53EF\u80FD\u5DF2\u7ECF\u5931\u6548\uFF0C\u540E\u7EED\u53EA\u80FD\u4F7F\u7528\u8FD9\u6B21\u72B6\u6001\u8FD4\u56DE\u7684\u6700\u65B0 targetId\u3002`
+      });
+      return true;
+    };
     const onDisconnect = () => {
       disconnected = true;
     };
     port.onDisconnect.addListener(onDisconnect);
     emitProgress();
+    if (!await forceRefreshOnResume()) {
+      port.onDisconnect.removeListener(onDisconnect);
+      return;
+    }
     while (budget.canStartAgentRound()) {
       if (disconnected) return;
       if (signal?.aborted) {
@@ -1403,6 +1524,10 @@ ${String(assistantText || "").slice(0, 4e3)}` }
         const roundProgress = budget.recordProgress(progress);
         budget.finishAgentRound({ progressChanged: roundProgress });
         emitProgress();
+        if (result?.status === "target_rebind_failed") {
+          finishIncomplete("target_rebind_failed");
+          return;
+        }
         if (budget.softLimitReached()) {
           if (budget.healthyProgress()) budget.unlockReserve();
           const reason2 = budget.shouldPause();

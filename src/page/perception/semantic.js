@@ -253,7 +253,7 @@ const questionContainerFor = (element) => closestComposed(
 
 export const questionContextFor = (element, stateElement) => {
   const container = questionContainerFor(element) || questionContainerFor(stateElement);
-  if (!container) return { id: "", stem: "", type: "" };
+  if (!container) return { id: "", stem: "", type: "", optionTexts: [] };
 
   const id = ["data-question-id", "data-question", "data-questionid", "id"]
     .map((name) => String(container.getAttribute?.(name) || (name === "id" ? container.id : "")).trim())
@@ -268,12 +268,17 @@ export const questionContextFor = (element, stateElement) => {
   if (!stem && roleFor(container) === "radiogroup") stem = labelledByText(container);
 
   let type = "";
+  let controls = [];
   try {
-    const controls = Array.from(container.querySelectorAll("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], [role='switch'], [class*='radio'], [class*='checkbox'], [class*='switch'], [class*='toggle']"));
+    controls = Array.from(container.querySelectorAll("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], [role='switch'], [class*='radio'], [class*='checkbox'], [class*='switch'], [class*='toggle']"));
     if (controls.some((node) => inputTypeFor(node) === "checkbox" || ["checkbox", "switch"].includes(roleFor(node)) || ["checkbox", "switch"].includes(classControlKind(node)))) type = "multiple";
     else if (controls.some((node) => inputTypeFor(node) === "radio" || roleFor(node) === "radio" || classControlKind(node) === "radio")) type = "single";
   } catch {}
-  return { id: clipText(id, 160), stem: clipText(stem, 500), type };
+  const optionTexts = controls
+    .map((node) => clipText(accessibleNameFor(node) || node.innerText || node.textContent || "", 220))
+    .filter(Boolean)
+    .slice(0, 24);
+  return { id: clipText(id, 160), stem: clipText(stem, 500), type, optionTexts };
 };
 
 export const groupFor = (element, stateElement) => {

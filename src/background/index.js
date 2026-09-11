@@ -53,6 +53,7 @@ const LEGACY_SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原�
 - 初始列表没有目标时，用 list_targets 的 region=below、above 或 all 翻页查找；每次只操作一个目标，不猜 selector，不批量操作。
 - radio、checkbox、switch 只能使用幂等的 set_checked，不能使用 click；工具返回 verified:false 或 status:unverified 时，先 get_target_state 或重新 get_page_state 确认，不能把未验证结果说成成功。
 - 不要对同一个 targetId 重复派发选中动作；已选中的目标直接认为 already_checked。
+- targetId 只是当前页面快照中的临时句柄，不是永久身份。页面重绘或恢复任务后，旧 targetId 可能失效；如果工具结果表示目标已失效，禁止重复调用同一个旧 ID，必须先调用 get_page_state 或 list_targets，再使用新状态返回的 targetId。恢复任务消息中的最新页面状态优先于之前对话中的旧目标。
 - 若工具结果表示全局页面操作已关闭，告诉用户在插件设置中开启“启用页面操作（全局）”，不要重复请求同一操作。
 - 用户未明确要求时，不填写或发送密码、验证码、支付信息、API Key 等秘密，不执行删除、购买、发布等高风险操作。
 - 工具调用次数由运行时根据任务规模、页面进展、页面变更、总耗时和无进展状态动态控制。不要自行假设还有多少预算。最终回答时直接用自然语言，不要输出 JSON。`;
@@ -379,10 +380,43 @@ async function runAgent(config, userMessages, port, signal, { turnId, executionI
     emit({ type: "chunk", content: executionPauseNotice(reason) });
     emit({ type: "done", status: "incomplete", verified: false, executionId: taskId, reason });
   };
+  const forceRefreshOnResume = async () => {
+    if (!resume) return true;
+    const args = { region: "all", page: 1, maxElements: 60, maxText: 3_000 };
+    if (!budget.canExecuteTool()) {
+      finishIncomplete(budget.shouldPause() || "target_stale");
+      return false;
+    }
+    emit({ type: "tool_log", name: "resume_refresh", args: { message: "恢复任务前正在刷新页面状态…" } });
+    let freshState;
+    try {
+      freshState = await requestTool(port, "get_page_state", args);
+    } catch (error) {
+      freshState = { error: String(error?.message || error) };
+    }
+    budget.consumeTool({ failed: Boolean(freshState?.error), status: freshState?.status });
+    budget.observePageResult(freshState);
+    const refreshedProgress = progressFromToolResult(freshState, budget.progress || {});
+    budget.recordProgress(refreshedProgress);
+    emitProgress();
+    if (freshState?.error) {
+      finishIncomplete("target_stale");
+      return false;
+    }
+    messages.push({
+      role: "user",
+      content: `[恢复任务后的最新页面状态]\n${JSON.stringify(freshState).slice(0, 12_000)}\n\n这是恢复任务后重新读取的页面状态。之前对话中的 targetId 可能已经失效，后续只能使用这次状态返回的最新 targetId。`
+    });
+    return true;
+  };
   const onDisconnect = () => { disconnected = true; };
   port.onDisconnect.addListener(onDisconnect);
 
   emitProgress();
+  if (!(await forceRefreshOnResume())) {
+    port.onDisconnect.removeListener(onDisconnect);
+    return;
+  }
   while (budget.canStartAgentRound()) {
     if (disconnected) return;
     if (signal?.aborted) {
@@ -482,6 +516,10 @@ async function runAgent(config, userMessages, port, signal, { turnId, executionI
       const roundProgress = budget.recordProgress(progress);
       budget.finishAgentRound({ progressChanged: roundProgress });
       emitProgress();
+      if (result?.status === "target_rebind_failed") {
+        finishIncomplete("target_rebind_failed");
+        return;
+      }
       if (budget.softLimitReached()) {
         if (budget.healthyProgress()) budget.unlockReserve();
         const reason = budget.shouldPause();

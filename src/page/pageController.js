@@ -45,6 +45,44 @@ const rectSnapshot = (element) => {
   };
 };
 
+const questionSummariesFor = (entries) => {
+  const byKey = new Map();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const candidate = entry?.candidate || {};
+    const questionKey = String(candidate.questionKey || candidate.questionId || "").trim();
+    const optionKey = String(candidate.optionKey || "").trim().toUpperCase();
+    if (!questionKey) continue;
+    const key = questionKey;
+    let question = byKey.get(key);
+    if (!question) {
+      question = {
+        questionId: String(candidate.questionId || key),
+        questionKey,
+        questionType: candidate.questionType || "",
+        stem: clip(candidate.questionText || "", 500),
+        options: [],
+        selectedOptions: []
+      };
+      byKey.set(key, question);
+    }
+    if (!question.questionType && candidate.kind === "radio") question.questionType = "single";
+    if (!question.questionType && ["checkbox", "switch"].includes(candidate.kind)) question.questionType = "multiple";
+    if (optionKey && !question.options.some((option) => option.key === optionKey)) {
+      question.options.push({
+        key: optionKey,
+        text: clip(candidate.text || candidate.name || "", 220),
+        targetId: entry.id,
+        checked: candidate.checked === true
+      });
+    }
+    if (optionKey && candidate.checked === true && !question.selectedOptions.includes(optionKey)) question.selectedOptions.push(optionKey);
+  }
+  return Array.from(byKey.values()).map((question) => ({
+    ...question,
+    questionType: question.questionType || "unknown"
+  }));
+};
+
 const targetSnapshot = (id, candidate) => {
   const clickElement = candidate.clickElement || candidate.element;
   const stateElement = candidate.stateElement || clickElement;
@@ -60,6 +98,8 @@ const targetSnapshot = (id, candidate) => {
     text: clip(clickElement?.innerText || clickElement?.textContent || stateElement?.innerText || stateElement?.textContent || candidate.text || "", 220),
     optionKey: optionKeyFor(clickElement, candidate.text || "") || candidate.optionKey || undefined,
     questionId: candidate.questionId || question.id || undefined,
+    questionKey: candidate.questionKey || question.id || undefined,
+    logicalKey: candidate.logicalKey || undefined,
     questionText: candidate.questionText || question.stem || undefined,
     questionType: candidate.questionType || question.type || undefined,
     group: groupFor(clickElement, stateElement) || candidate.group || undefined,
@@ -112,6 +152,10 @@ export function createPageController({ extensionHost } = {}) {
   const buildSnapshot = ({ region = "nearby" } = {}) => {
     const discovered = discover();
     const ranked = rankTargets(discovered, { region: normalizedRegion(region) });
+    // Count semantic question groups from the complete discovery result, not
+    // from the nearby target slice. Otherwise a long form can report 2/8 just
+    // because six questions are below the fold.
+    const allQuestions = questionSummariesFor(discovered.map((candidate) => ({ candidate })));
     // Keep the safety cap after semantic ranking, never in DOM order. This means
     // controls far down a large page can still be addressed when they are the
     // best match for the requested region.
@@ -121,7 +165,10 @@ export function createPageController({ extensionHost } = {}) {
       region: ranked.region,
       didFallback: ranked.didFallback,
       discoveredCount: discovered.length,
-      registeredCount: entries.length
+      registeredCount: entries.length,
+      questionCount: allQuestions.length,
+      questionIds: allQuestions.map((question) => question.questionId),
+      questionTypes: Object.fromEntries(allQuestions.map((question) => [question.questionId, question.questionType]))
     };
   };
 
@@ -133,6 +180,8 @@ export function createPageController({ extensionHost } = {}) {
     const requestedPage = clampNumber(page, 1, 1, pageCount);
     const start = (requestedPage - 1) * size;
     const targets = snapshot.entries.slice(start, start + size).map((entry) => targetSnapshot(entry.id, entry.candidate));
+    const questions = questionSummariesFor(snapshot.entries);
+    const questionTypes = Object.fromEntries(questions.map((question) => [question.questionId, question.questionType]));
     return {
       snapshotVersion: registry.snapshotVersion,
       region: snapshot.region,
@@ -144,6 +193,10 @@ export function createPageController({ extensionHost } = {}) {
       pageSize: size,
       pageCount,
       hasMore: requestedPage < pageCount,
+      questionCount: snapshot.questionCount || questions.length,
+      questionIds: snapshot.questionIds?.length ? snapshot.questionIds : questions.map((question) => question.questionId),
+      questionTypes: Object.keys(snapshot.questionTypes || {}).length ? snapshot.questionTypes : questionTypes,
+      questions,
       targets,
       note: snapshot.discoveredCount > snapshot.registeredCount
         ? `页面发现 ${snapshot.discoveredCount} 个语义目标，当前按排序保留最高的 ${snapshot.registeredCount} 个；可用 region 切换到 above、below 或 all 缩小范围。`
@@ -312,6 +365,7 @@ export function createPageController({ extensionHost } = {}) {
   };
 
   return {
+    refresh: ({ maxElements = 60, maxText = 3_000, region = "all" } = {}) => getPageState({ maxElements, maxText, region, page: 1 }),
     getPageState,
     listTargets,
     getTargetState,

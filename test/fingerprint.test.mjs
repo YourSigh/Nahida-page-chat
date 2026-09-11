@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { canRebindFingerprint, fingerprintScore } from "../src/page/registry/fingerprint.js";
 import { checkedStateFor } from "../src/page/perception/semantic.js";
+import { TargetRegistry } from "../src/page/registry/targetRegistry.js";
 
 const radioFingerprint = (overrides = {}) => ({
   kind: "radio",
@@ -64,4 +65,61 @@ test("reads custom checked and selected class states in the correct direction", 
   assert.equal(checkedStateFor(element("radio-item is-checked"), null, "radio"), true);
   assert.equal(checkedStateFor(element("radio-item unselected"), null, "radio"), false);
   assert.equal(checkedStateFor(element("radio-item is-unchecked"), null, "radio"), false);
+});
+
+const fakeCandidate = (optionKey = "B") => {
+  const node = {
+    isConnected: true,
+    tagName: "DIV",
+    className: "radio-item",
+    parentElement: null,
+    getAttribute(name) {
+      if (name === "role") return "radio";
+      if (name === "data-option-key") return optionKey;
+      return null;
+    }
+  };
+  return {
+    element: node,
+    clickElement: node,
+    stateElement: node,
+    kind: "radio",
+    role: "radio",
+    name: `${optionKey}．示例选项`,
+    text: `${optionKey}．示例选项`,
+    questionId: "q1",
+    questionKey: "question-q1",
+    questionText: "示例题干",
+    questionType: "single",
+    optionKey,
+    group: "question-q1",
+    checked: false,
+    rect: { x: 100, y: 200 }
+  };
+};
+
+test("keeps old snapshot metadata and rebinds a target after ten snapshots", () => {
+  const registry = new TargetRegistry({ discover: () => [fakeCandidate("B")] });
+  const first = registry.refresh()[0];
+  const oldId = first.id;
+
+  for (let index = 0; index < 10; index += 1) registry.refresh();
+
+  assert.equal(registry.entries.has(oldId), false);
+  assert.equal(registry.metadataForTarget(oldId).logicalKey, "question-q1:B");
+  const rebound = registry.resolve(oldId);
+  assert.equal(rebound.rebound, true);
+  assert.equal(rebound.candidate.optionKey, "B");
+});
+
+test("returns a distinct stale result when no safe logical rebind exists", () => {
+  let available = true;
+  const registry = new TargetRegistry({ discover: () => available ? [fakeCandidate("B")] : [] });
+  const oldId = registry.refresh()[0].id;
+  available = false;
+  registry.refresh();
+
+  const result = registry.resolve(oldId);
+  assert.equal(result.status, "target_stale");
+  assert.equal(result.error.includes("无"), true);
 });
