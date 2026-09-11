@@ -473,6 +473,8 @@ async function runAgent(config, userMessages, port, signal, { turnId, executionI
         isMutation: isPageMutationTool(toolName),
         actionExecuted: didExecutePageMutation(result),
         retry: result?.status === "retrying",
+        failed: Boolean(result?.error),
+        status: result?.status,
         targetId: toolArgs.targetId
       });
       budget.observePageResult(result);

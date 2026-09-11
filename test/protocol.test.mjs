@@ -197,9 +197,34 @@ test("mutation retries are capped per target independently of total tool calls",
     budget: createExecutionBudget({ maxRetriesPerTarget: 1 })
   });
   assert.equal(manager.canExecuteTool({ isMutation: true, targetId: "target-a" }), true);
-  manager.consumeTool({ isMutation: true, targetId: "target-a" });
+  manager.consumeTool({ isMutation: true, targetId: "target-a", failed: true });
   assert.equal(manager.canExecuteTool({ isMutation: true, targetId: "target-a" }), true);
-  manager.consumeTool({ isMutation: true, targetId: "target-a" });
+  manager.consumeTool({ isMutation: true, targetId: "target-a", failed: true });
   assert.equal(manager.canExecuteTool({ isMutation: true, targetId: "target-a" }), false);
   assert.equal(manager.shouldPause(), "target_retry_limit");
+});
+
+test("already satisfied targets advance task progress once without a page mutation or retry", () => {
+  const alreadySelected = {
+    action: "set_checked",
+    status: "already_checked",
+    verified: true,
+    actionExecuted: false,
+    target: { id: "t-q2-a", questionId: "q2", optionKey: "A" }
+  };
+  const first = progressFromToolResult(alreadySelected, {});
+  assert.equal(first.completedItems, 1);
+  assert.equal(first.verifiedItems, 1);
+  assert.equal(first.actualMutation, false);
+  assert.deepEqual(first.completedItemKeys, ["q2:A"]);
+
+  const duplicate = progressFromToolResult(alreadySelected, first);
+  assert.equal(duplicate.completedItems, 1);
+  assert.equal(duplicate.verifiedItems, 1);
+  assert.equal(duplicate.changed, false);
+
+  const manager = new ExecutionBudgetManager({ budget: createExecutionBudget({ maxRetriesPerTarget: 1 }) });
+  manager.consumeTool({ isMutation: true, targetId: "t-q2-a", status: "already_checked", actionExecuted: false });
+  manager.consumeTool({ isMutation: true, targetId: "t-q2-a", status: "already_checked", actionExecuted: false });
+  assert.equal(manager.canExecuteTool({ isMutation: true, targetId: "t-q2-a" }), true);
 });

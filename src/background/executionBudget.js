@@ -14,7 +14,7 @@ export const isPageMutationTool = (name) => PAGE_MUTATION_TOOLS.has(String(name 
 
 export const didExecutePageMutation = (result) => {
   if (!result || String(result.status || "").startsWith("already_")) return false;
-  return result.actionExecuted === true || result.verified === true;
+  return result.actionExecuted === true;
 };
 
 export const executionPauseNotice = (reason) => ({
@@ -183,25 +183,41 @@ const progressSignature = (progress) => JSON.stringify({
   unresolvedErrors: Math.max(0, Number(progress?.unresolvedErrors) || 0)
 });
 
+const completionKeyFor = (result) => {
+  const target = result?.target || {};
+  const questionId = String(target.questionId || "").trim();
+  const optionKey = String(target.optionKey || "").trim();
+  if (questionId && optionKey) return `${questionId}:${optionKey}`;
+  return String(target.id || result?.targetId || "").trim();
+};
+
 export const progressFromToolResult = (result, previous = {}) => {
   const action = String(result?.action || "");
   const mutation = PAGE_MUTATION_TOOLS.has(action);
-  const verifiedMutation = mutation && result?.verified === true && result?.actionExecuted !== false;
+  const alreadySatisfied = ["already_checked", "already_unchecked"].includes(String(result?.status || ""));
+  const verifiedTaskItem = mutation && result?.verified === true && (result?.actionExecuted === true || alreadySatisfied);
+  const actualMutation = mutation && result?.actionExecuted === true;
   const scrollOrPageChange = result?.action === "scroll" && result?.verified === true;
   const resultUrl = result?.url || "";
   const resultScroll = result?.scroll || result?.after || result?.evidence?.after || {};
   const priorVerified = Math.max(0, Number(previous?.verifiedItems) || 0);
   const priorCompleted = Math.max(0, Number(previous?.completedItems) || 0);
+  const completedItemKeys = new Set(Array.isArray(previous?.completedItemKeys) ? previous.completedItemKeys.map((key) => String(key)) : []);
+  const completionKey = verifiedTaskItem ? completionKeyFor(result) : "";
+  const isNewCompletedItem = Boolean(completionKey && !completedItemKeys.has(completionKey));
+  if (isNewCompletedItem) completedItemKeys.add(completionKey);
   const next = {
-    verifiedItems: priorVerified + (verifiedMutation ? 1 : 0),
-    completedItems: priorCompleted + (verifiedMutation ? 1 : 0),
+    verifiedItems: priorVerified + (isNewCompletedItem ? 1 : 0),
+    completedItems: priorCompleted + (isNewCompletedItem ? 1 : 0),
+    completedItemKeys: Array.from(completedItemKeys),
+    actualMutation,
     currentPage: result?.page ?? previous?.currentPage ?? null,
     pageFingerprint: resultUrl || resultScroll?.x != null || resultScroll?.y != null || result?.page != null
       ? [resultUrl, resultScroll?.x ?? "", resultScroll?.y ?? "", result?.page ?? ""].join("|")
       : String(previous?.pageFingerprint || ""),
     unresolvedErrors: result?.error ? Math.max(1, Number(previous?.unresolvedErrors) || 0) : Math.max(0, Number(previous?.unresolvedErrors) || 0)
   };
-  const changed = verifiedMutation || scrollOrPageChange ||
+  const changed = isNewCompletedItem || actualMutation || scrollOrPageChange ||
     (String(next.currentPage ?? "") !== String(previous.currentPage ?? "")) ||
     (String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "")) ||
     ((Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0));
@@ -230,10 +246,12 @@ export class ExecutionBudgetManager {
     return this.snapshot();
   }
 
-  consumeTool({ isMutation = false, actionExecuted = false, retry = false, targetId } = {}) {
+  consumeTool({ isMutation = false, actionExecuted = false, retry = false, failed = false, targetId, status = "" } = {}) {
     this.usage.toolExecutions += 1;
     if (isMutation && actionExecuted) this.usage.pageMutations += 1;
-    if (isMutation && targetId) {
+    const alreadySatisfied = String(status || "").startsWith("already_");
+    const countsAsTargetAttempt = isMutation && targetId && !alreadySatisfied && (actionExecuted || failed || retry);
+    if (countsAsTargetAttempt) {
       const id = String(targetId);
       const attempts = (this.targetAttempts.get(id) || 0) + 1;
       this.targetAttempts.set(id, attempts);
@@ -361,10 +379,10 @@ export class ExecutionBudgetManager {
     const p = this.progress || {};
     const total = Number(this.budget.plan?.estimatedItems) || 0;
     const completed = Math.max(Number(p.completedItems) || 0, Number(p.verifiedItems) || 0);
-    const itemText = total > 1 ? ` · 进度 ${Math.min(completed, total)} / ${total}` : "";
+    const itemText = total > 1 ? ` · 已完成题目 ${Math.min(completed, total)} / ${total}` : "";
     const remainingMs = Math.max(0, this.budget.maxWallTimeMs - (this.now() - this.usage.startedAt));
     const remaining = Math.ceil(remainingMs / 60_000);
-    return `执行进度${itemText} · 工具 ${this.usage.toolExecutions} / ${this.budget.maxToolExecutions} · 页面操作 ${this.usage.pageMutations} / ${this.budget.maxPageMutations} · 预计剩余约 ${remaining} 分钟`;
+    return `执行进度${itemText} · 页面变更 ${this.usage.pageMutations} / ${this.budget.maxPageMutations} · 工具 ${this.usage.toolExecutions} / ${this.budget.maxToolExecutions} · 预计剩余约 ${remaining} 分钟`;
   }
 
   snapshot() {

@@ -41,7 +41,7 @@
   var isPageMutationTool = (name) => PAGE_MUTATION_TOOLS.has(String(name || ""));
   var didExecutePageMutation = (result) => {
     if (!result || String(result.status || "").startsWith("already_")) return false;
-    return result.actionExecuted === true || result.verified === true;
+    return result.actionExecuted === true;
   };
   var executionPauseNotice = (reason) => ({
     wall_time_limit: "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u672C\u6B21\u6267\u884C\u65F6\u95F4\u4E0A\u9650\uFF0C\u5DF2\u6682\u505C\uFF1B\u9875\u9762\u72B6\u6001\u548C\u8FDB\u5EA6\u5DF2\u4FDD\u7559\u3002",
@@ -177,23 +177,38 @@
     pageFingerprint: String(progress?.pageFingerprint || ""),
     unresolvedErrors: Math.max(0, Number(progress?.unresolvedErrors) || 0)
   });
+  var completionKeyFor = (result) => {
+    const target = result?.target || {};
+    const questionId = String(target.questionId || "").trim();
+    const optionKey = String(target.optionKey || "").trim();
+    if (questionId && optionKey) return `${questionId}:${optionKey}`;
+    return String(target.id || result?.targetId || "").trim();
+  };
   var progressFromToolResult = (result, previous = {}) => {
     const action = String(result?.action || "");
     const mutation = PAGE_MUTATION_TOOLS.has(action);
-    const verifiedMutation = mutation && result?.verified === true && result?.actionExecuted !== false;
+    const alreadySatisfied = ["already_checked", "already_unchecked"].includes(String(result?.status || ""));
+    const verifiedTaskItem = mutation && result?.verified === true && (result?.actionExecuted === true || alreadySatisfied);
+    const actualMutation = mutation && result?.actionExecuted === true;
     const scrollOrPageChange = result?.action === "scroll" && result?.verified === true;
     const resultUrl = result?.url || "";
     const resultScroll = result?.scroll || result?.after || result?.evidence?.after || {};
     const priorVerified = Math.max(0, Number(previous?.verifiedItems) || 0);
     const priorCompleted = Math.max(0, Number(previous?.completedItems) || 0);
+    const completedItemKeys = new Set(Array.isArray(previous?.completedItemKeys) ? previous.completedItemKeys.map((key) => String(key)) : []);
+    const completionKey = verifiedTaskItem ? completionKeyFor(result) : "";
+    const isNewCompletedItem = Boolean(completionKey && !completedItemKeys.has(completionKey));
+    if (isNewCompletedItem) completedItemKeys.add(completionKey);
     const next = {
-      verifiedItems: priorVerified + (verifiedMutation ? 1 : 0),
-      completedItems: priorCompleted + (verifiedMutation ? 1 : 0),
+      verifiedItems: priorVerified + (isNewCompletedItem ? 1 : 0),
+      completedItems: priorCompleted + (isNewCompletedItem ? 1 : 0),
+      completedItemKeys: Array.from(completedItemKeys),
+      actualMutation,
       currentPage: result?.page ?? previous?.currentPage ?? null,
       pageFingerprint: resultUrl || resultScroll?.x != null || resultScroll?.y != null || result?.page != null ? [resultUrl, resultScroll?.x ?? "", resultScroll?.y ?? "", result?.page ?? ""].join("|") : String(previous?.pageFingerprint || ""),
       unresolvedErrors: result?.error ? Math.max(1, Number(previous?.unresolvedErrors) || 0) : Math.max(0, Number(previous?.unresolvedErrors) || 0)
     };
-    const changed = verifiedMutation || scrollOrPageChange || String(next.currentPage ?? "") !== String(previous.currentPage ?? "") || String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "") || (Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0);
+    const changed = isNewCompletedItem || actualMutation || scrollOrPageChange || String(next.currentPage ?? "") !== String(previous.currentPage ?? "") || String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "") || (Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0);
     return {
       ...next,
       changed
@@ -216,10 +231,12 @@
       this.usage.agentRounds += 1;
       return this.snapshot();
     }
-    consumeTool({ isMutation = false, actionExecuted = false, retry = false, targetId } = {}) {
+    consumeTool({ isMutation = false, actionExecuted = false, retry = false, failed = false, targetId, status = "" } = {}) {
       this.usage.toolExecutions += 1;
       if (isMutation && actionExecuted) this.usage.pageMutations += 1;
-      if (isMutation && targetId) {
+      const alreadySatisfied = String(status || "").startsWith("already_");
+      const countsAsTargetAttempt = isMutation && targetId && !alreadySatisfied && (actionExecuted || failed || retry);
+      if (countsAsTargetAttempt) {
         const id = String(targetId);
         const attempts = (this.targetAttempts.get(id) || 0) + 1;
         this.targetAttempts.set(id, attempts);
@@ -331,10 +348,10 @@
       const p = this.progress || {};
       const total = Number(this.budget.plan?.estimatedItems) || 0;
       const completed = Math.max(Number(p.completedItems) || 0, Number(p.verifiedItems) || 0);
-      const itemText = total > 1 ? ` \xB7 \u8FDB\u5EA6 ${Math.min(completed, total)} / ${total}` : "";
+      const itemText = total > 1 ? ` \xB7 \u5DF2\u5B8C\u6210\u9898\u76EE ${Math.min(completed, total)} / ${total}` : "";
       const remainingMs = Math.max(0, this.budget.maxWallTimeMs - (this.now() - this.usage.startedAt));
       const remaining = Math.ceil(remainingMs / 6e4);
-      return `\u6267\u884C\u8FDB\u5EA6${itemText} \xB7 \u5DE5\u5177 ${this.usage.toolExecutions} / ${this.budget.maxToolExecutions} \xB7 \u9875\u9762\u64CD\u4F5C ${this.usage.pageMutations} / ${this.budget.maxPageMutations} \xB7 \u9884\u8BA1\u5269\u4F59\u7EA6 ${remaining} \u5206\u949F`;
+      return `\u6267\u884C\u8FDB\u5EA6${itemText} \xB7 \u9875\u9762\u53D8\u66F4 ${this.usage.pageMutations} / ${this.budget.maxPageMutations} \xB7 \u5DE5\u5177 ${this.usage.toolExecutions} / ${this.budget.maxToolExecutions} \xB7 \u9884\u8BA1\u5269\u4F59\u7EA6 ${remaining} \u5206\u949F`;
     }
     snapshot() {
       const elapsed = Math.max(0, this.now() - this.usage.startedAt);
@@ -895,6 +912,8 @@
             isMutation,
             actionExecuted: didExecutePageMutation(result),
             retry: result?.status === "retrying",
+            failed: Boolean(result?.error),
+            status: result?.status,
             targetId: args.targetId
           });
           budget.observePageResult(result);
@@ -1375,6 +1394,8 @@ ${String(assistantText || "").slice(0, 4e3)}` }
           isMutation: isPageMutationTool(toolName),
           actionExecuted: didExecutePageMutation(result),
           retry: result?.status === "retrying",
+          failed: Boolean(result?.error),
+          status: result?.status,
           targetId: toolArgs.targetId
         });
         budget.observePageResult(result);
