@@ -1389,8 +1389,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         : trimmed || (urls.length ? "[用户上传了图片]" : "");
     let turnHandled = false;
     const turnId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const executionTaskId = String(streamOptions.executionId || turnId);
+    let lastExecutionProgress = null;
     let lastStreamSeq = 0;
-    const streamMessageTypes = new Set(["chunk", "chunk_reset", "done", "error"]);
+    const streamMessageTypes = new Set(["chunk", "chunk_reset", "progress", "tool_log", "done", "error"]);
     const actionLedger = new Map();
 
     const parseThinkAndReply = (raw) => {
@@ -1468,6 +1470,46 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       assistantEl.appendChild(replyContentEl);
     };
 
+    let executionProgressEl = null;
+    let executionProgressTextEl = null;
+    let executionResumeButton = null;
+    const ensureExecutionProgress = () => {
+      if (executionProgressEl) return;
+      executionProgressEl = document.createElement("div");
+      executionProgressEl.className = "execution-progress";
+      executionProgressTextEl = document.createElement("span");
+      executionProgressTextEl.className = "execution-progress-text";
+      executionProgressEl.appendChild(executionProgressTextEl);
+      assistantEl.insertBefore(executionProgressEl, assistantEl.firstChild);
+    };
+
+    const renderExecutionProgress = (progressMessage) => {
+      const progress = progressMessage?.progress || progressMessage || {};
+      lastExecutionProgress = progress;
+      ensureExecutionProgress();
+      executionProgressEl.classList.toggle("paused", progress.status === "paused");
+      executionProgressTextEl.textContent = progress.text || "正在计算执行预算…";
+
+      if (progress.status === "paused" && progress.canResume && !executionResumeButton) {
+        executionResumeButton = document.createElement("button");
+        executionResumeButton.type = "button";
+        executionResumeButton.className = "execution-resume";
+        executionResumeButton.textContent = "继续执行";
+        executionResumeButton.addEventListener("click", () => {
+          if (!lastExecutionProgress || !sendGate.tryAcquire()) return;
+          executionResumeButton.disabled = true;
+          doSendChat("继续执行", [], {
+            includePageContext: false,
+            bubbleText: "继续执行",
+            turnUserText: "继续执行",
+            executionId: executionTaskId,
+            resume: lastExecutionProgress
+          });
+        });
+        executionProgressEl.appendChild(executionResumeButton);
+      }
+    };
+
     const renderStream = (finished) => {
       const { thinkText, replyText, thinkClosed } = parseThinkAndReply(rawResponse);
 
@@ -1536,6 +1578,13 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         return;
       }
 
+      if (msg?.type === "progress") {
+        if (typingIndicator.parentNode) typingIndicator.remove();
+        renderExecutionProgress(msg);
+        scrollToBottom();
+        return;
+      }
+
       if (msg.type === "chunk_reset") {
         if (typingIndicator.parentNode) typingIndicator.remove();
         rawResponse = String(msg.content ?? "");
@@ -1574,8 +1623,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         setInputEnabled(true);
         input.focus();
 
-        requestStickerDecision({ userText: turnUserText, assistantText: cleanedReply })
-          .then((stickerName) => {
+        const stickerPromise = lastExecutionProgress?.status === "paused"
+          ? Promise.resolve(null)
+          : requestStickerDecision({ userText: turnUserText, assistantText: cleanedReply });
+        stickerPromise.then((stickerName) => {
             if (!stickerName || !STICKER_URLS[stickerName]) return;
             const bubble = document.createElement("div");
             bubble.className = "msg assistant sticker-msg";
@@ -1640,7 +1691,13 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
     });
 
-    turnPort.postMessage({ type: "chat", messages: chatHistory, turnId });
+    turnPort.postMessage({
+      type: "chat",
+      messages: chatHistory,
+      turnId,
+      executionId: executionTaskId,
+      resume: streamOptions.resume || undefined
+    });
   };
 
   const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];

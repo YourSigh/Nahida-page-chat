@@ -1,6 +1,5 @@
 (() => {
   // src/common/streamProtocol.js
-  var TOOL_LIMIT_NOTICE = "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u5DE5\u5177\u8C03\u7528\u4E0A\u9650\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002";
   var parseSseLine = (line) => {
     const trimmed = String(line || "").trim();
     if (!trimmed || !trimmed.startsWith("data:")) return null;
@@ -30,8 +29,355 @@
     return { remainder, events };
   };
 
+  // src/background/executionBudget.js
+  var PAGE_MUTATION_TOOLS = /* @__PURE__ */ new Set([
+    "click",
+    "set_checked",
+    "check",
+    "type",
+    "select_option",
+    "press_key"
+  ]);
+  var isPageMutationTool = (name) => PAGE_MUTATION_TOOLS.has(String(name || ""));
+  var didExecutePageMutation = (result) => {
+    if (!result || String(result.status || "").startsWith("already_")) return false;
+    return result.actionExecuted === true || result.verified === true;
+  };
+  var executionPauseNotice = (reason) => ({
+    wall_time_limit: "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u672C\u6B21\u6267\u884C\u65F6\u95F4\u4E0A\u9650\uFF0C\u5DF2\u6682\u505C\uFF1B\u9875\u9762\u72B6\u6001\u548C\u8FDB\u5EA6\u5DF2\u4FDD\u7559\u3002",
+    agent_round_limit: "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u6A21\u578B\u51B3\u7B56\u8F6E\u6B21\u4E0A\u9650\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002",
+    tool_execution_limit: "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u5DE5\u5177\u8C03\u7528\u4E0A\u9650\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002",
+    page_mutation_limit: "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u9875\u9762\u53D8\u66F4\u4E0A\u9650\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002",
+    target_retry_limit: "\u64CD\u4F5C\u5DF2\u6682\u505C\uFF1A\u540C\u4E00\u9875\u9762\u76EE\u6807\u7684\u91CD\u8BD5\u6B21\u6570\u5DF2\u8FBE\u5230\u4E0A\u9650\uFF0C\u8BF7\u68C0\u67E5\u9875\u9762\u72B6\u6001\u540E\u518D\u7EE7\u7EED\u3002",
+    no_progress: "\u64CD\u4F5C\u5DF2\u6682\u505C\uFF1A\u8FDE\u7EED\u591A\u8F6E\u6CA1\u6709\u89C2\u5BDF\u5230\u9875\u9762\u8FDB\u5C55\uFF0C\u8BF7\u68C0\u67E5\u9875\u9762\u6216\u70B9\u51FB\u201C\u7EE7\u7EED\u6267\u884C\u201D\u3002",
+    soft_limit_without_progress: "\u64CD\u4F5C\u5DF2\u6682\u505C\uFF1A\u63A5\u8FD1\u6267\u884C\u9884\u7B97\u4E14\u9875\u9762\u6CA1\u6709\u7EE7\u7EED\u8FDB\u5C55\uFF0C\u8BF7\u68C0\u67E5\u9875\u9762\u6216\u70B9\u51FB\u201C\u7EE7\u7EED\u6267\u884C\u201D\u3002"
+  })[reason] || "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u6267\u884C\u5DF2\u6682\u505C\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002";
+  var ABSOLUTE_EXECUTION_CAPS = Object.freeze({
+    maxAgentRounds: 512,
+    maxToolExecutions: 768,
+    maxPageMutations: 512,
+    maxWallTimeMs: 15 * 6e4,
+    maxLifetimeWallTimeMs: 30 * 6e4,
+    maxRetriesPerTarget: 5,
+    maxNoProgressRounds: 3
+  });
+  var DEFAULTS = Object.freeze({
+    maxAgentRounds: 12,
+    maxToolExecutions: 24,
+    maxPageMutations: 12,
+    maxWallTimeMs: 2 * 6e4,
+    maxRetriesPerTarget: 2,
+    maxNoProgressRounds: 3,
+    softAgentRounds: 9,
+    softToolExecutions: 18,
+    softPageMutations: 9
+  });
+  var clamp = (value, min, max) => Math.min(max, Math.max(min, Math.round(Number(value) || 0)));
+  var textFromMessages = (messages) => (Array.isArray(messages) ? messages : []).filter((message) => message?.role === "user").map((message) => {
+    if (typeof message?.content === "string") return message.content;
+    if (!Array.isArray(message?.content)) return "";
+    return message.content.filter((part) => part?.type === "text").map((part) => String(part.text || "")).join(" ");
+  }).join("\n");
+  var extractCount = (text) => {
+    const matches = [...String(text || "").matchAll(/(?:约|大概|共|一共|总共|全部)?\s*(\d{1,4})\s*(?:道题|道|题目|条记录|条|项|个表单|个任务|个|份)/giu)].map((match) => Number(match[1])).filter((value) => Number.isFinite(value) && value > 0);
+    return matches.length ? Math.max(...matches) : 0;
+  };
+  var extractPageCount = (text) => {
+    const match = String(text || "").match(/(?:共|总共|全部)?\s*(\d{1,3})\s*(?:页|页面)/iu);
+    const value = Number(match?.[1]);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+  var estimateExecutionPlan = (messages, { observedItems = 0, estimatedRemainingItems = 0 } = {}) => {
+    const text = textFromMessages(messages);
+    const explicitItems = extractCount(text);
+    const pages = extractPageCount(text);
+    const items = Math.max(1, explicitItems, Number(observedItems) || 0, Number(estimatedRemainingItems) || 0);
+    const longTask = explicitItems > 1 || /批量|全部|所有|逐个|逐条|每一个|长任务/iu.test(text);
+    const batchSize = 1;
+    const discoveryCalls = longTask ? Math.max(2, Math.min(36, Math.ceil(items / 10))) : 2;
+    const expectedWrites = items;
+    const expectedVerifications = items;
+    const expectedToolExecutions = discoveryCalls + expectedWrites + expectedVerifications + 1;
+    const expectedAgentRounds = expectedToolExecutions + 2;
+    return {
+      taskType: longTask ? "long_page_workflow" : "single_page_workflow",
+      estimatedItems: items,
+      explicitItems,
+      pageCount: pages,
+      batchSize,
+      expectedWrites,
+      expectedVerifications,
+      discoveryCalls,
+      expectedToolExecutions,
+      expectedAgentRounds,
+      planningSource: explicitItems ? "user_hint" : observedItems ? "page_observation" : "conservative_default"
+    };
+  };
+  var createExecutionBudget = (plan = {}) => {
+    const source = plan?.plan && typeof plan.plan === "object" ? { ...plan.plan, ...plan } : plan;
+    const {
+      maxAgentRounds: requestedAgentRounds,
+      maxToolExecutions: requestedToolExecutions,
+      maxPageMutations: requestedPageMutations,
+      maxWallTimeMs: requestedWallTime,
+      maxRetriesPerTarget: requestedRetries,
+      maxNoProgressRounds: requestedNoProgress,
+      softAgentRounds: requestedSoftAgentRounds,
+      softToolExecutions: requestedSoftToolExecutions,
+      softPageMutations: requestedSoftPageMutations,
+      plan: nestedPlan,
+      ...planFields
+    } = source;
+    const items = Math.max(1, Number(source.estimatedItems) || 1);
+    const writes = Math.max(1, Number(source.expectedWrites) || items);
+    const expectedTools = Math.max(4, Number(source.expectedToolExecutions) || writes * 2 + 3);
+    const expectedRounds = Math.max(4, Number(source.expectedAgentRounds) || expectedTools + 2);
+    const wall = clamp(12e4 + items * 8e3, DEFAULTS.maxWallTimeMs, ABSOLUTE_EXECUTION_CAPS.maxWallTimeMs);
+    const maxAgentRounds = clamp(requestedAgentRounds ?? Math.max(DEFAULTS.maxAgentRounds, Math.ceil(expectedRounds * 1.35)), DEFAULTS.maxAgentRounds, ABSOLUTE_EXECUTION_CAPS.maxAgentRounds);
+    const maxToolExecutions = clamp(requestedToolExecutions ?? Math.max(DEFAULTS.maxToolExecutions, Math.ceil(expectedTools * 1.35)), DEFAULTS.maxToolExecutions, ABSOLUTE_EXECUTION_CAPS.maxToolExecutions);
+    const maxPageMutations = clamp(requestedPageMutations ?? Math.max(DEFAULTS.maxPageMutations, Math.ceil(writes * 1.35) + 8), DEFAULTS.maxPageMutations, ABSOLUTE_EXECUTION_CAPS.maxPageMutations);
+    return {
+      maxAgentRounds,
+      maxToolExecutions,
+      maxPageMutations,
+      maxWallTimeMs: clamp(requestedWallTime ?? wall, DEFAULTS.maxWallTimeMs, ABSOLUTE_EXECUTION_CAPS.maxWallTimeMs),
+      maxRetriesPerTarget: clamp(requestedRetries ?? DEFAULTS.maxRetriesPerTarget, 0, ABSOLUTE_EXECUTION_CAPS.maxRetriesPerTarget),
+      maxNoProgressRounds: clamp(requestedNoProgress ?? DEFAULTS.maxNoProgressRounds, 1, ABSOLUTE_EXECUTION_CAPS.maxNoProgressRounds),
+      softAgentRounds: clamp(requestedSoftAgentRounds ?? Math.ceil(maxAgentRounds * 0.75), 1, maxAgentRounds),
+      softToolExecutions: clamp(requestedSoftToolExecutions ?? Math.ceil(maxToolExecutions * 0.75), 1, maxToolExecutions),
+      softPageMutations: clamp(requestedSoftPageMutations ?? Math.ceil(maxPageMutations * 0.75), 1, maxPageMutations),
+      plan: { ...planFields, estimatedItems: items, expectedWrites: writes, expectedToolExecutions: expectedTools, expectedAgentRounds: expectedRounds }
+    };
+  };
+  var emptyUsage = (startedAt) => ({
+    agentRounds: 0,
+    toolExecutions: 0,
+    pageMutations: 0,
+    retries: 0,
+    noProgressRounds: 0,
+    startedAt,
+    lastProgressAt: startedAt,
+    lifetimeStartedAt: startedAt
+  });
+  var numericUsage = (usage, startedAt) => {
+    const base = emptyUsage(startedAt);
+    for (const key of Object.keys(base)) {
+      if (key === "startedAt" || key === "lastProgressAt" || key === "lifetimeStartedAt") continue;
+      base[key] = Math.max(0, Number(usage?.[key]) || 0);
+    }
+    base.startedAt = Number(usage?.startedAt) || startedAt;
+    base.lastProgressAt = Number(usage?.lastProgressAt) || base.startedAt;
+    base.lifetimeStartedAt = Number(usage?.lifetimeStartedAt) || base.startedAt;
+    return base;
+  };
+  var progressSignature = (progress) => JSON.stringify({
+    verifiedItems: Math.max(0, Number(progress?.verifiedItems) || 0),
+    completedItems: Math.max(0, Number(progress?.completedItems) || 0),
+    currentPage: progress?.currentPage == null ? null : String(progress.currentPage),
+    pageFingerprint: String(progress?.pageFingerprint || ""),
+    unresolvedErrors: Math.max(0, Number(progress?.unresolvedErrors) || 0)
+  });
+  var progressFromToolResult = (result, previous = {}) => {
+    const action = String(result?.action || "");
+    const mutation = PAGE_MUTATION_TOOLS.has(action);
+    const verifiedMutation = mutation && result?.verified === true && result?.actionExecuted !== false;
+    const scrollOrPageChange = result?.action === "scroll" && result?.verified === true;
+    const resultUrl = result?.url || "";
+    const resultScroll = result?.scroll || result?.after || result?.evidence?.after || {};
+    const priorVerified = Math.max(0, Number(previous?.verifiedItems) || 0);
+    const priorCompleted = Math.max(0, Number(previous?.completedItems) || 0);
+    const next = {
+      verifiedItems: priorVerified + (verifiedMutation ? 1 : 0),
+      completedItems: priorCompleted + (verifiedMutation ? 1 : 0),
+      currentPage: result?.page ?? previous?.currentPage ?? null,
+      pageFingerprint: resultUrl || resultScroll?.x != null || resultScroll?.y != null || result?.page != null ? [resultUrl, resultScroll?.x ?? "", resultScroll?.y ?? "", result?.page ?? ""].join("|") : String(previous?.pageFingerprint || ""),
+      unresolvedErrors: result?.error ? Math.max(1, Number(previous?.unresolvedErrors) || 0) : Math.max(0, Number(previous?.unresolvedErrors) || 0)
+    };
+    const changed = verifiedMutation || scrollOrPageChange || String(next.currentPage ?? "") !== String(previous.currentPage ?? "") || String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "") || (Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0);
+    return {
+      ...next,
+      changed
+    };
+  };
+  var ExecutionBudgetManager = class {
+    constructor({ budget, now = () => Date.now(), usage, progress, tranche } = {}) {
+      this.now = now;
+      this.budget = createExecutionBudget(budget || {});
+      this.usage = numericUsage(usage, this.now());
+      this.progress = progress || null;
+      this.lastProgressSignature = this.progress ? progressSignature(this.progress) : "";
+      this.lastRoundProgress = false;
+      this.tranche = Math.max(1, Number(tranche) || 1);
+      this.reserveUnlocked = false;
+      this.pauseReason = "";
+      this.targetAttempts = /* @__PURE__ */ new Map();
+    }
+    consumeAgentRound() {
+      this.usage.agentRounds += 1;
+      return this.snapshot();
+    }
+    consumeTool({ isMutation = false, actionExecuted = false, retry = false, targetId } = {}) {
+      this.usage.toolExecutions += 1;
+      if (isMutation && actionExecuted) this.usage.pageMutations += 1;
+      if (isMutation && targetId) {
+        const id = String(targetId);
+        const attempts = (this.targetAttempts.get(id) || 0) + 1;
+        this.targetAttempts.set(id, attempts);
+        if (attempts > 1) this.usage.retries += 1;
+      } else if (retry) {
+        this.usage.retries += 1;
+      }
+      return this.snapshot();
+    }
+    recordProgress(nextProgress) {
+      const next = nextProgress || {};
+      const signature = progressSignature(next);
+      const previous = this.progress || {};
+      const verifiedIncreased = (Number(next.verifiedItems) || 0) > (Number(previous.verifiedItems) || 0);
+      const completedIncreased = (Number(next.completedItems) || 0) > (Number(previous.completedItems) || 0);
+      const pageChanged = String(next.currentPage ?? "") !== String(previous.currentPage ?? "") || String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "");
+      const errorsResolved = (Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0);
+      const changed = verifiedIncreased || completedIncreased || pageChanged || errorsResolved;
+      this.progress = next;
+      this.lastProgressSignature = signature;
+      if (changed) this.usage.lastProgressAt = this.now();
+      return changed;
+    }
+    finishAgentRound({ progressChanged = false } = {}) {
+      this.lastRoundProgress = Boolean(progressChanged);
+      if (progressChanged) this.usage.noProgressRounds = 0;
+      else this.usage.noProgressRounds += 1;
+      return this.snapshot();
+    }
+    observePageResult(result) {
+      const observedPages = Math.max(0, Number(result?.pageCount) || 0);
+      const observedItems = Math.max(0, Number(result?.totalItems || result?.progress?.totalItems) || 0);
+      const currentPages = Math.max(0, Number(this.budget.plan?.discoveryCalls) || 0);
+      const currentItems = Math.max(1, Number(this.budget.plan?.estimatedItems) || 1);
+      const nextItems = Math.max(currentItems, observedItems);
+      const nextPages = Math.max(currentPages, observedPages);
+      if (nextItems === currentItems && nextPages === currentPages) return false;
+      const pageDelta = nextPages - currentPages;
+      const currentExpectedTools = Math.max(4, Number(this.budget.plan?.expectedToolExecutions) || 4);
+      const nextPlan = {
+        ...this.budget.plan,
+        estimatedItems: nextItems,
+        expectedWrites: Math.max(Number(this.budget.plan?.expectedWrites) || 1, nextItems),
+        expectedVerifications: Math.max(Number(this.budget.plan?.expectedVerifications) || 1, nextItems),
+        discoveryCalls: nextPages,
+        expectedToolExecutions: currentExpectedTools + pageDelta + Math.max(0, nextItems - currentItems) * 2,
+        expectedAgentRounds: Math.max(Number(this.budget.plan?.expectedAgentRounds) || 4, currentExpectedTools + pageDelta + Math.max(0, nextItems - currentItems) * 2 + 2),
+        planningSource: "runtime_observation"
+      };
+      const nextBudget = createExecutionBudget(nextPlan);
+      for (const key of ["maxAgentRounds", "maxToolExecutions", "maxPageMutations"]) {
+        this.budget[key] = clamp(Math.max(this.budget[key], nextBudget[key]), 1, ABSOLUTE_EXECUTION_CAPS[key]);
+      }
+      for (const key of ["softAgentRounds", "softToolExecutions", "softPageMutations"]) {
+        this.budget[key] = clamp(Math.max(this.budget[key], nextBudget[key]), 1, this.budget[key.replace("soft", "max")]);
+      }
+      this.budget.plan = nextBudget.plan;
+      return true;
+    }
+    softLimitReached() {
+      return this.usage.agentRounds >= this.budget.softAgentRounds || this.usage.toolExecutions >= this.budget.softToolExecutions || this.usage.pageMutations >= this.budget.softPageMutations;
+    }
+    healthyProgress() {
+      return this.lastRoundProgress && this.usage.noProgressRounds === 0;
+    }
+    unlockReserve({ explicit = false } = {}) {
+      if (this.reserveUnlocked) return false;
+      if (!explicit && !this.softLimitReached()) return false;
+      const grow = (value, floor) => Math.max(floor, Math.ceil(value * 0.35));
+      this.budget.maxAgentRounds = clamp(this.budget.maxAgentRounds + grow(this.budget.maxAgentRounds, 4), 1, ABSOLUTE_EXECUTION_CAPS.maxAgentRounds);
+      this.budget.maxToolExecutions = clamp(this.budget.maxToolExecutions + grow(this.budget.maxToolExecutions, 8), 1, ABSOLUTE_EXECUTION_CAPS.maxToolExecutions);
+      this.budget.maxPageMutations = clamp(this.budget.maxPageMutations + grow(this.budget.maxPageMutations, 8), 1, ABSOLUTE_EXECUTION_CAPS.maxPageMutations);
+      this.budget.softAgentRounds = clamp(this.budget.softAgentRounds + grow(this.budget.softAgentRounds, 4), 1, this.budget.maxAgentRounds);
+      this.budget.softToolExecutions = clamp(this.budget.softToolExecutions + grow(this.budget.softToolExecutions, 8), 1, this.budget.maxToolExecutions);
+      this.budget.softPageMutations = clamp(this.budget.softPageMutations + grow(this.budget.softPageMutations, 8), 1, this.budget.maxPageMutations);
+      this.reserveUnlocked = true;
+      this.tranche += 1;
+      return true;
+    }
+    shouldPause() {
+      if (this.pauseReason) return this.pauseReason;
+      const elapsed = Math.max(0, this.now() - this.usage.startedAt);
+      const lifetimeElapsed = Math.max(0, this.now() - this.usage.lifetimeStartedAt);
+      if (elapsed >= this.budget.maxWallTimeMs || lifetimeElapsed >= ABSOLUTE_EXECUTION_CAPS.maxLifetimeWallTimeMs) return "wall_time_limit";
+      if (this.usage.agentRounds >= this.budget.maxAgentRounds) return "agent_round_limit";
+      if (this.usage.toolExecutions >= this.budget.maxToolExecutions) return "tool_execution_limit";
+      if (this.usage.pageMutations >= this.budget.maxPageMutations) return "page_mutation_limit";
+      if (this.usage.noProgressRounds >= this.budget.maxNoProgressRounds) return "no_progress";
+      if (this.softLimitReached() && !this.healthyProgress()) return "soft_limit_without_progress";
+      return "";
+    }
+    canStartAgentRound() {
+      return !this.shouldPause();
+    }
+    canExecuteTool({ isMutation = false, targetId } = {}) {
+      if (isMutation && targetId) {
+        const attempts = this.targetAttempts.get(String(targetId)) || 0;
+        if (attempts >= this.budget.maxRetriesPerTarget + 1) {
+          this.pauseReason = "target_retry_limit";
+          return false;
+        }
+      }
+      if (this.shouldPause()) return false;
+      if (this.usage.toolExecutions + 1 > this.budget.maxToolExecutions) return false;
+      if (isMutation && this.usage.pageMutations + 1 > this.budget.maxPageMutations) return false;
+      return true;
+    }
+    progressText() {
+      const p = this.progress || {};
+      const total = Number(this.budget.plan?.estimatedItems) || 0;
+      const completed = Math.max(Number(p.completedItems) || 0, Number(p.verifiedItems) || 0);
+      const itemText = total > 1 ? ` \xB7 \u8FDB\u5EA6 ${Math.min(completed, total)} / ${total}` : "";
+      const remainingMs = Math.max(0, this.budget.maxWallTimeMs - (this.now() - this.usage.startedAt));
+      const remaining = Math.ceil(remainingMs / 6e4);
+      return `\u6267\u884C\u8FDB\u5EA6${itemText} \xB7 \u5DE5\u5177 ${this.usage.toolExecutions} / ${this.budget.maxToolExecutions} \xB7 \u9875\u9762\u64CD\u4F5C ${this.usage.pageMutations} / ${this.budget.maxPageMutations} \xB7 \u9884\u8BA1\u5269\u4F59\u7EA6 ${remaining} \u5206\u949F`;
+    }
+    snapshot() {
+      const elapsed = Math.max(0, this.now() - this.usage.startedAt);
+      const reason = this.shouldPause();
+      const percent = (used, max) => max > 0 ? Math.min(100, Math.round(used / max * 100)) : 100;
+      return {
+        status: reason ? "paused" : "running",
+        reason: reason || void 0,
+        tranche: this.tranche,
+        reserveUnlocked: this.reserveUnlocked,
+        budget: { ...this.budget, plan: { ...this.budget.plan } },
+        usage: { ...this.usage },
+        progress: this.progress ? { ...this.progress } : null,
+        percent: {
+          agentRounds: percent(this.usage.agentRounds, this.budget.maxAgentRounds),
+          toolExecutions: percent(this.usage.toolExecutions, this.budget.maxToolExecutions),
+          pageMutations: percent(this.usage.pageMutations, this.budget.maxPageMutations),
+          wallTime: percent(elapsed, this.budget.maxWallTimeMs)
+        },
+        elapsedMs: elapsed,
+        text: this.progressText()
+      };
+    }
+  };
+  var createExecutionController = ({ messages, now, resume } = {}) => {
+    const clock = now || (() => Date.now());
+    const plan = estimateExecutionPlan(messages, resume?.observed ? { observedItems: resume.observed } : void 0);
+    const budget = resume?.budget || createExecutionBudget(plan);
+    const resumeUsage = resume?.usage ? {
+      ...resume.usage,
+      // A user-requested continuation starts a fresh wall-time tranche while
+      // preserving the lifetime clock and every operation counter.
+      startedAt: clock(),
+      lastProgressAt: clock(),
+      noProgressRounds: 0,
+      lifetimeStartedAt: resume.usage.lifetimeStartedAt || resume.usage.startedAt
+    } : void 0;
+    const manager = new ExecutionBudgetManager({ budget, now: clock, usage: resumeUsage, progress: resume?.progress, tranche: resume?.tranche });
+    if (resume?.usage) manager.unlockReserve({ explicit: true });
+    return { manager, plan };
+  };
+
   // src/background/nativeAgent.js
-  var MAX_TOOL_CALLS = 12;
   var TOOL_TIMEOUT_MS = 9e4;
   var SYSTEM_PROMPT = [
     "\u4F60\u662F\u7EB3\u897F\u59B2\uFF08Nahida\uFF09\uFF0C\u6765\u81EA\u300A\u539F\u795E\u300B\u7684\u8349\u4E4B\u795E\u3002\u4F60\u806A\u660E\u3001\u6E29\u67D4\u3001\u597D\u5947\u5FC3\u65FA\u76DB\uFF0C\u8BF4\u8BDD\u81EA\u7136\u3001\u7B80\u6D01\u3001\u4EB2\u5207\u3002",
@@ -465,18 +811,35 @@
     const detail = (String(error?.message || "") + "\n" + String(error?.detail || "")).toLowerCase();
     return error instanceof NativeToolApiError && error.status >= 400 && /(tool|function.?call|parallel_tool_calls|unknown parameter|unsupported)/.test(detail);
   };
-  async function runNativePageAgent(config, userMessages, port, signal, { turnId } = {}) {
+  async function runNativePageAgent(config, userMessages, port, signal, { turnId, executionId, resume, emitOverride } = {}) {
     const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
+    const execution = createExecutionController({ messages: userMessages, resume });
+    const budget = execution.manager;
+    const taskId = String(executionId || turnId || "");
     let disconnected = false;
     let successfulCalls = 0;
-    const emit = createTurnEmitter(port, turnId);
+    const emit = emitOverride || createTurnEmitter(port, turnId);
+    const emitProgress = () => emit({ type: "progress", executionId: taskId, progress: budget.snapshot() });
+    const finishIncomplete = (reason) => {
+      const snapshot = budget.snapshot();
+      emit({
+        type: "progress",
+        executionId: taskId,
+        progress: { ...snapshot, status: "paused", reason, canResume: true }
+      });
+      emit({ type: "chunk", content: executionPauseNotice(reason) });
+      emit({ type: "done", status: "incomplete", verified: false, executionId: taskId, reason });
+    };
     const onDisconnect = () => {
       disconnected = true;
     };
     port.onDisconnect.addListener(onDisconnect);
     try {
-      for (let turn = 0; turn < MAX_TOOL_CALLS; turn += 1) {
+      emitProgress();
+      while (budget.canStartAgentRound()) {
         if (disconnected || signal?.aborted) return;
+        budget.consumeAgentRound();
+        emitProgress();
         let response;
         try {
           response = await callToolCompletion(config, messages, signal);
@@ -507,9 +870,15 @@
             function: { name: call.name, arguments: call.arguments }
           }))
         });
+        let roundProgress = false;
         for (const call of toolCalls) {
           if (disconnected || signal?.aborted) return;
           const args = parseArguments(call.arguments);
+          const isMutation = isPageMutationTool(call.name);
+          if (!budget.canExecuteTool({ isMutation, targetId: args.targetId })) {
+            finishIncomplete(budget.shouldPause() || "tool_execution_limit");
+            return;
+          }
           if (!emit({ type: "tool_log", name: call.name, args })) return;
           let result;
           if (args._parseError) {
@@ -522,15 +891,35 @@
               result = { error: String(error?.message || error) };
             }
           }
+          budget.consumeTool({
+            isMutation,
+            actionExecuted: didExecutePageMutation(result),
+            retry: result?.status === "retrying",
+            targetId: args.targetId
+          });
+          budget.observePageResult(result);
+          const nextProgress = progressFromToolResult(result, budget.progress || {});
+          roundProgress = budget.recordProgress(nextProgress) || roundProgress;
+          emitProgress();
           messages.push({
             role: "tool",
             tool_call_id: call.id,
             content: safeToolResult(result)
           });
         }
+        budget.finishAgentRound({ progressChanged: roundProgress });
+        if (budget.softLimitReached()) {
+          if (budget.healthyProgress()) budget.unlockReserve();
+          const reason2 = budget.shouldPause();
+          if (reason2) {
+            finishIncomplete(reason2);
+            return;
+          }
+        }
+        emitProgress();
       }
-      emit({ type: "chunk", content: TOOL_LIMIT_NOTICE });
-      emit({ type: "done", status: "incomplete", verified: false });
+      const reason = budget.shouldPause() || "agent_round_limit";
+      finishIncomplete(reason);
     } finally {
       port.onDisconnect.removeListener(onDisconnect);
     }
@@ -580,7 +969,7 @@
 - \u4E0D\u8981\u5BF9\u540C\u4E00\u4E2A targetId \u91CD\u590D\u6D3E\u53D1\u9009\u4E2D\u52A8\u4F5C\uFF1B\u5DF2\u9009\u4E2D\u7684\u76EE\u6807\u76F4\u63A5\u8BA4\u4E3A already_checked\u3002
 - \u82E5\u5DE5\u5177\u7ED3\u679C\u8868\u793A\u5168\u5C40\u9875\u9762\u64CD\u4F5C\u5DF2\u5173\u95ED\uFF0C\u544A\u8BC9\u7528\u6237\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\uFF0C\u4E0D\u8981\u91CD\u590D\u8BF7\u6C42\u540C\u4E00\u64CD\u4F5C\u3002
 - \u7528\u6237\u672A\u660E\u786E\u8981\u6C42\u65F6\uFF0C\u4E0D\u586B\u5199\u6216\u53D1\u9001\u5BC6\u7801\u3001\u9A8C\u8BC1\u7801\u3001\u652F\u4ED8\u4FE1\u606F\u3001API Key \u7B49\u79D8\u5BC6\uFF0C\u4E0D\u6267\u884C\u5220\u9664\u3001\u8D2D\u4E70\u3001\u53D1\u5E03\u7B49\u9AD8\u98CE\u9669\u64CD\u4F5C\u3002
-- \u6700\u591A\u8FDE\u7EED\u8C03\u7528 12 \u6B21\u5DE5\u5177\u3002\u6700\u7EC8\u56DE\u7B54\u65F6\u76F4\u63A5\u7528\u81EA\u7136\u8BED\u8A00\uFF0C\u4E0D\u8981\u8F93\u51FA JSON\u3002`;
+- \u5DE5\u5177\u8C03\u7528\u6B21\u6570\u7531\u8FD0\u884C\u65F6\u6839\u636E\u4EFB\u52A1\u89C4\u6A21\u3001\u9875\u9762\u8FDB\u5C55\u3001\u9875\u9762\u53D8\u66F4\u3001\u603B\u8017\u65F6\u548C\u65E0\u8FDB\u5C55\u72B6\u6001\u52A8\u6001\u63A7\u5236\u3002\u4E0D\u8981\u81EA\u884C\u5047\u8BBE\u8FD8\u6709\u591A\u5C11\u9884\u7B97\u3002\u6700\u7EC8\u56DE\u7B54\u65F6\u76F4\u63A5\u7528\u81EA\u7136\u8BED\u8A00\uFF0C\u4E0D\u8981\u8F93\u51FA JSON\u3002`;
   var STICKER_DECIDER_PROMPT = `\u4F60\u662F\u4E00\u4E2A\u201C\u8868\u60C5\u5305\u9009\u62E9\u5668\u201D\u3002
 
 \u4F60\u4F1A\u6536\u5230\u4E24\u6BB5\u6587\u672C\uFF1A\u7528\u6237\u521A\u521A\u53D1\u7684\u8BDD\uFF08user\uFF09\u548C\u7EB3\u897F\u59B2\u521A\u521A\u7684\u5B8C\u6574\u56DE\u590D\uFF08assistant\uFF09\u3002
@@ -882,21 +1271,37 @@ ${String(assistantText || "").slice(0, 4e3)}` }
     const name = e?.name;
     return name === "AbortError" || typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError";
   }
-  async function runAgent(config, userMessages, port, signal, { turnId } = {}) {
+  async function runAgent(config, userMessages, port, signal, { turnId, executionId, resume, emitOverride } = {}) {
     const messages = [{ role: "system", content: LEGACY_SYSTEM_PROMPT }, ...userMessages];
+    const execution = createExecutionController({ messages: userMessages, resume });
+    const budget = execution.manager;
+    const taskId = String(executionId || turnId || "");
     let disconnected = false;
-    const emit = createTurnEmitter2(port, turnId);
+    const emit = emitOverride || createTurnEmitter2(port, turnId);
+    const emitProgress = () => emit({ type: "progress", executionId: taskId, progress: budget.snapshot() });
+    const finishIncomplete = (reason2) => {
+      const snapshot = budget.snapshot();
+      emit({
+        type: "progress",
+        executionId: taskId,
+        progress: { ...snapshot, status: "paused", reason: reason2, canResume: true }
+      });
+      emit({ type: "chunk", content: executionPauseNotice(reason2) });
+      emit({ type: "done", status: "incomplete", verified: false, executionId: taskId, reason: reason2 });
+    };
     const onDisconnect = () => {
       disconnected = true;
     };
     port.onDisconnect.addListener(onDisconnect);
-    let toolCalls = 0;
-    while (toolCalls < 12) {
+    emitProgress();
+    while (budget.canStartAgentRound()) {
       if (disconnected) return;
       if (signal?.aborted) {
         emit({ type: "done" });
         return;
       }
+      budget.consumeAgentRound();
+      emitProgress();
       let fullResponse = "";
       let phase = "detecting";
       let streamedAny = false;
@@ -947,7 +1352,12 @@ ${String(assistantText || "").slice(0, 4e3)}` }
       }
       const parsedAtEnd = parseAgentJson(fullResponse);
       if (parsedAtEnd?.type === "tool") {
-        toolCalls += 1;
+        const toolName = String(parsedAtEnd.name || "");
+        const toolArgs = parsedAtEnd.args || {};
+        if (!budget.canExecuteTool({ isMutation: isPageMutationTool(toolName), targetId: toolArgs.targetId })) {
+          finishIncomplete(budget.shouldPause() || "tool_execution_limit");
+          return;
+        }
         if (!emit({ type: "tool_log", name: parsedAtEnd.name, args: parsedAtEnd.args || {} })) return;
         let result;
         try {
@@ -960,6 +1370,25 @@ ${String(assistantText || "").slice(0, 4e3)}` }
           }
           emit({ type: "error", error: String(err?.message || err) });
           return;
+        }
+        budget.consumeTool({
+          isMutation: isPageMutationTool(toolName),
+          actionExecuted: didExecutePageMutation(result),
+          retry: result?.status === "retrying",
+          targetId: toolArgs.targetId
+        });
+        budget.observePageResult(result);
+        const progress = progressFromToolResult(result, budget.progress || {});
+        const roundProgress = budget.recordProgress(progress);
+        budget.finishAgentRound({ progressChanged: roundProgress });
+        emitProgress();
+        if (budget.softLimitReached()) {
+          if (budget.healthyProgress()) budget.unlockReserve();
+          const reason2 = budget.shouldPause();
+          if (reason2) {
+            finishIncomplete(reason2);
+            return;
+          }
         }
         messages.push({ role: "assistant", content: JSON.stringify(parsedAtEnd) });
         messages.push({ role: "user", content: `\u5DE5\u5177\u7ED3\u679C(${parsedAtEnd.name}):
@@ -978,8 +1407,8 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
       emit({ type: "done" });
       return;
     }
-    emit({ type: "chunk", content: TOOL_LIMIT_NOTICE });
-    emit({ type: "done", status: "incomplete", verified: false });
+    const reason = budget.shouldPause() || "agent_round_limit";
+    finishIncomplete(reason);
   }
   function nahidaInjectReadFrame(maxPerFrame) {
     const max = Math.min(12e3, Math.max(200, Number(maxPerFrame) || 2e3));
@@ -1128,16 +1557,27 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
           activeController?.abort();
           const controller = new AbortController();
           activeController = controller;
+          const emit = createTurnEmitter2(port, msg.turnId);
           try {
-            await runNativePageAgent(config, msg.messages, port, controller.signal, { turnId: msg.turnId });
+            await runNativePageAgent(config, msg.messages, port, controller.signal, {
+              turnId: msg.turnId,
+              executionId: msg.executionId,
+              resume: msg.resume,
+              emitOverride: emit
+            });
           } catch (error) {
             if (isNativeToolsUnsupported(error) && Number(error?.nativeSuccessfulCalls || 0) === 0) {
-              safePost2(port, {
+              emit({
                 type: "tool_log",
                 name: "compatibility",
                 args: { message: "\u5F53\u524D\u63A5\u53E3\u672A\u542F\u7528\u539F\u751F\u5DE5\u5177\u8C03\u7528\uFF0C\u5DF2\u5207\u6362\u517C\u5BB9\u6A21\u5F0F\u3002" }
               });
-              await runAgent(config, msg.messages, port, controller.signal, { turnId: msg.turnId });
+              await runAgent(config, msg.messages, port, controller.signal, {
+                turnId: msg.turnId,
+                executionId: msg.executionId,
+                resume: msg.resume,
+                emitOverride: emit
+              });
             } else {
               throw error;
             }

@@ -1,6 +1,11 @@
-import { drainSseBuffer, TOOL_LIMIT_NOTICE } from "../common/streamProtocol.js";
-
-const MAX_TOOL_CALLS = 12;
+import { drainSseBuffer } from "../common/streamProtocol.js";
+import {
+  createExecutionController,
+  didExecutePageMutation,
+  executionPauseNotice,
+  isPageMutationTool,
+  progressFromToolResult
+} from "./executionBudget.js";
 const TOOL_TIMEOUT_MS = 90_000;
 
 const SYSTEM_PROMPT = [
@@ -459,17 +464,34 @@ export const isNativeToolsUnsupported = (error) => {
     /(tool|function.?call|parallel_tool_calls|unknown parameter|unsupported)/.test(detail);
 };
 
-export async function runNativePageAgent(config, userMessages, port, signal, { turnId } = {}) {
+export async function runNativePageAgent(config, userMessages, port, signal, { turnId, executionId, resume, emitOverride } = {}) {
   const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
+  const execution = createExecutionController({ messages: userMessages, resume });
+  const budget = execution.manager;
+  const taskId = String(executionId || turnId || "");
   let disconnected = false;
   let successfulCalls = 0;
-  const emit = createTurnEmitter(port, turnId);
+  const emit = emitOverride || createTurnEmitter(port, turnId);
+  const emitProgress = () => emit({ type: "progress", executionId: taskId, progress: budget.snapshot() });
+  const finishIncomplete = (reason) => {
+    const snapshot = budget.snapshot();
+    emit({
+      type: "progress",
+      executionId: taskId,
+      progress: { ...snapshot, status: "paused", reason, canResume: true }
+    });
+    emit({ type: "chunk", content: executionPauseNotice(reason) });
+    emit({ type: "done", status: "incomplete", verified: false, executionId: taskId, reason });
+  };
   const onDisconnect = () => { disconnected = true; };
   port.onDisconnect.addListener(onDisconnect);
 
   try {
-    for (let turn = 0; turn < MAX_TOOL_CALLS; turn += 1) {
+    emitProgress();
+    while (budget.canStartAgentRound()) {
       if (disconnected || signal?.aborted) return;
+      budget.consumeAgentRound();
+      emitProgress();
       let response;
       try {
         response = await callToolCompletion(config, messages, signal);
@@ -503,9 +525,15 @@ export async function runNativePageAgent(config, userMessages, port, signal, { t
         }))
       });
 
+      let roundProgress = false;
       for (const call of toolCalls) {
         if (disconnected || signal?.aborted) return;
         const args = parseArguments(call.arguments);
+        const isMutation = isPageMutationTool(call.name);
+        if (!budget.canExecuteTool({ isMutation, targetId: args.targetId })) {
+          finishIncomplete(budget.shouldPause() || "tool_execution_limit");
+          return;
+        }
         if (!emit({ type: "tool_log", name: call.name, args })) return;
         let result;
         if (args._parseError) {
@@ -518,16 +546,37 @@ export async function runNativePageAgent(config, userMessages, port, signal, { t
             result = { error: String(error?.message || error) };
           }
         }
+        budget.consumeTool({
+          isMutation,
+          actionExecuted: didExecutePageMutation(result),
+          retry: result?.status === "retrying",
+          targetId: args.targetId
+        });
+        budget.observePageResult(result);
+        const nextProgress = progressFromToolResult(result, budget.progress || {});
+        roundProgress = budget.recordProgress(nextProgress) || roundProgress;
+        emitProgress();
         messages.push({
           role: "tool",
           tool_call_id: call.id,
           content: safeToolResult(result)
         });
       }
+
+      budget.finishAgentRound({ progressChanged: roundProgress });
+      if (budget.softLimitReached()) {
+        if (budget.healthyProgress()) budget.unlockReserve();
+        const reason = budget.shouldPause();
+        if (reason) {
+          finishIncomplete(reason);
+          return;
+        }
+      }
+      emitProgress();
     }
 
-    emit({ type: "chunk", content: TOOL_LIMIT_NOTICE });
-    emit({ type: "done", status: "incomplete", verified: false });
+    const reason = budget.shouldPause() || "agent_round_limit";
+    finishIncomplete(reason);
   } finally {
     port.onDisconnect.removeListener(onDisconnect);
   }
