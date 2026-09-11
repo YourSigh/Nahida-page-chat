@@ -1,4 +1,4 @@
-import { clickTarget, pressKeyOnTarget, scrollTarget, selectOptionInTarget, typeIntoTarget } from "./actions/interaction.js";
+import { clickTarget, pressKeyOnTarget, scrollTarget, selectOptionInTarget, setCheckedTarget, typeIntoTarget } from "./actions/interaction.js";
 import { collectSemanticTargets } from "./perception/collectTargets.js";
 import {
   accessibleNameFor,
@@ -7,6 +7,8 @@ import {
   groupFor,
   inputTypeFor,
   kindFor,
+  questionContextFor,
+  optionKeyFor,
   roleFor
 } from "./perception/semantic.js";
 import { isDisabled, isInViewport, isVisible, rectFor } from "./perception/visibility.js";
@@ -49,12 +51,17 @@ const targetSnapshot = (id, candidate) => {
   const inferredKind = kindFor(clickElement, stateElement);
   const kind = inferredKind === "custom" ? (candidate.kind || inferredKind) : inferredKind;
   const checked = checkedStateFor(clickElement, stateElement, kind);
+  const question = questionContextFor(clickElement, stateElement);
   const record = {
     id,
     kind,
     role: roleFor(clickElement) || candidate.role || undefined,
     name: accessibleNameFor(clickElement, stateElement) || candidate.name || "",
     text: clip(clickElement?.innerText || clickElement?.textContent || stateElement?.innerText || stateElement?.textContent || candidate.text || "", 220),
+    optionKey: optionKeyFor(clickElement, candidate.text || "") || candidate.optionKey || undefined,
+    questionId: candidate.questionId || question.id || undefined,
+    questionText: candidate.questionText || question.stem || undefined,
+    questionType: candidate.questionType || question.type || undefined,
     group: groupFor(clickElement, stateElement) || candidate.group || undefined,
     disabled: isDisabled(clickElement) || isDisabled(stateElement),
     confidence: Math.round(Math.max(0, Math.min(1, Number(candidate.confidence || 0))) * 100),
@@ -252,7 +259,7 @@ export function createPageController({ extensionHost } = {}) {
     return finalizeAction(await clickTarget(resolved.candidate), resolved, beforeTarget, beforeState);
   };
 
-  const check = async ({ targetId } = {}) => {
+  const setChecked = async ({ targetId, checked = true } = {}) => {
     const resolved = resolveTarget(targetId);
     if (resolved.error) return resolved;
     const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
@@ -260,8 +267,10 @@ export function createPageController({ extensionHost } = {}) {
       return { error: "目标不是单选、多选或开关控件。", target: beforeTarget };
     }
     const beforeState = snapshotTargetState(resolved.candidate);
-    return finalizeAction(await clickTarget(resolved.candidate, { check: true }), resolved, beforeTarget, beforeState);
+    return finalizeAction(await setCheckedTarget(resolved.candidate, { checked }), resolved, beforeTarget, beforeState);
   };
+
+  const check = async ({ targetId } = {}) => setChecked({ targetId, checked: true });
 
   const type = async ({ targetId, text = "", clear = true } = {}) => {
     const resolved = resolveTarget(targetId);
@@ -308,6 +317,7 @@ export function createPageController({ extensionHost } = {}) {
     getTargetState,
     describeTarget,
     click,
+    setChecked,
     check,
     type,
     selectOption,

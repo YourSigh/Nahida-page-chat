@@ -1,3 +1,4 @@
+import { drainSseBuffer, TOOL_LIMIT_NOTICE } from "../common/streamProtocol.js";
 import { isNativeToolsUnsupported, runNativePageAgent } from "./nativeAgent.js";
 
 const DEFAULT_CONFIG = {
@@ -33,7 +34,7 @@ const LEGACY_SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原�
 {"type":"tool","name":"read_page","args":{"maxChars":4000}}
 {"type":"tool","name":"get_visible_text","args":{"maxChars":2000}}
 {"type":"tool","name":"click","args":{"targetId":"t1-1"}}
-{"type":"tool","name":"check","args":{"targetId":"t1-2"}}
+{"type":"tool","name":"set_checked","args":{"targetId":"t1-2","checked":true}}
 {"type":"tool","name":"type","args":{"targetId":"t1-2","text":"示例","clear":true}}
 {"type":"tool","name":"select_option","args":{"targetId":"t1-3","value":"value"}}
 {"type":"tool","name":"press_key","args":{"targetId":"t1-2","key":"Enter"}}
@@ -43,7 +44,8 @@ const LEGACY_SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原�
 规则：
 - 用户要求操作页面时，先用 get_page_state 找到目标，并只使用返回的 targetId；它既可能对应原生控件，也可能对应自定义 radio、checkbox、switch 或按钮。找不到目标不代表页面是 canvas。
 - 初始列表没有目标时，用 list_targets 的 region=below、above 或 all 翻页查找；每次只操作一个目标，不猜 selector，不批量操作。
-- radio、checkbox、switch 优先使用 check。工具返回 verified:false 或 status:unverified 时，先 get_target_state 或重新 get_page_state 确认，不能把未验证结果说成成功。
+- radio、checkbox、switch 只能使用幂等的 set_checked，不能使用 click；工具返回 verified:false 或 status:unverified 时，先 get_target_state 或重新 get_page_state 确认，不能把未验证结果说成成功。
+- 不要对同一个 targetId 重复派发选中动作；已选中的目标直接认为 already_checked。
 - 若工具结果表示全局页面操作已关闭，告诉用户在插件设置中开启“启用页面操作（全局）”，不要重复请求同一操作。
 - 用户未明确要求时，不填写或发送密码、验证码、支付信息、API Key 等秘密，不执行删除、购买、发布等高风险操作。
 - 最多连续调用 12 次工具。最终回答时直接用自然语言，不要输出 JSON。`;
@@ -76,23 +78,18 @@ async function* streamChatCompletion(config, messages, signal) {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith("data:")) continue;
-        let data = trimmed.slice(5);
-        if (data.startsWith(" ")) data = data.slice(1);
-        if (data === "[DONE]") return;
-        try {
-          const json = JSON.parse(data);
-          const content = json?.choices?.[0]?.delta?.content;
-          if (content) yield content;
-        } catch {}
+      const drained = drainSseBuffer(buffer, decoder.decode(value, { stream: true }));
+      buffer = drained.remainder;
+      for (const event of drained.events) {
+        if (event.done) return;
+        if (event.content) yield event.content;
       }
+    }
+
+    const drained = drainSseBuffer(buffer, decoder.decode(), true);
+    for (const event of drained.events) {
+      if (event.done) return;
+      if (event.content) yield event.content;
     }
   } finally {
     try {
@@ -343,14 +340,24 @@ function safePost(port, msg) {
   }
 }
 
+const createTurnEmitter = (port, turnId) => {
+  let seq = 0;
+  return (message) => safePost(port, {
+    ...message,
+    turnId: String(turnId || ""),
+    seq: ++seq
+  });
+};
+
 function isAbortError(e) {
   const name = e?.name;
   return name === "AbortError" || (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError");
 }
 
-async function runAgent(config, userMessages, port, signal) {
+async function runAgent(config, userMessages, port, signal, { turnId } = {}) {
   const messages = [{ role: "system", content: LEGACY_SYSTEM_PROMPT }, ...userMessages];
   let disconnected = false;
+  const emit = createTurnEmitter(port, turnId);
   const onDisconnect = () => { disconnected = true; };
   port.onDisconnect.addListener(onDisconnect);
 
@@ -358,7 +365,7 @@ async function runAgent(config, userMessages, port, signal) {
   while (toolCalls < 12) {
     if (disconnected) return;
     if (signal?.aborted) {
-      safePost(port, { type: "done" });
+      emit({ type: "done" });
       return;
     }
     let fullResponse = "";
@@ -370,7 +377,7 @@ async function runAgent(config, userMessages, port, signal) {
       for await (const chunk of streamChatCompletion(config, messages, signal)) {
         if (disconnected) return;
         if (signal?.aborted) {
-          safePost(port, { type: "done" });
+          emit({ type: "done" });
           return;
         }
         fullResponse += chunk;
@@ -382,10 +389,10 @@ async function runAgent(config, userMessages, port, signal) {
         if (phase === "streaming") {
           const safe = uiSafeAssistantStreamText(fullResponse);
           if (safe.length > uiSentLen) {
-            if (!safePost(port, { type: "chunk", content: safe.slice(uiSentLen) })) return;
+            if (!emit({ type: "chunk", content: safe.slice(uiSentLen) })) return;
             uiSentLen = safe.length;
           } else if (safe.length < uiSentLen) {
-            if (!safePost(port, { type: "chunk_reset", content: safe })) return;
+            if (!emit({ type: "chunk_reset", content: safe })) return;
             uiSentLen = safe.length;
           }
           streamedAny = true;
@@ -403,7 +410,7 @@ async function runAgent(config, userMessages, port, signal) {
         } else {
           phase = "streaming";
           const safe = uiSafeAssistantStreamText(fullResponse);
-          if (!safePost(port, { type: "chunk", content: safe })) return;
+          if (!emit({ type: "chunk", content: safe })) return;
           uiSentLen = safe.length;
           streamedAny = true;
         }
@@ -411,7 +418,7 @@ async function runAgent(config, userMessages, port, signal) {
     } catch (e) {
       if (signal?.aborted || isAbortError(e)) {
         // 始终发 done，避免前端输入框一直禁用（即使尚未产生任何可见 chunk）
-        safePost(port, { type: "done" });
+        emit({ type: "done" });
         return;
       }
       throw e;
@@ -421,17 +428,17 @@ async function runAgent(config, userMessages, port, signal) {
     const parsedAtEnd = parseAgentJson(fullResponse);
     if (parsedAtEnd?.type === "tool") {
       toolCalls += 1;
-      if (!safePost(port, { type: "tool_log", name: parsedAtEnd.name, args: parsedAtEnd.args || {} })) return;
+      if (!emit({ type: "tool_log", name: parsedAtEnd.name, args: parsedAtEnd.args || {} })) return;
       let result;
       try {
         result = await requestTool(port, parsedAtEnd.name, parsedAtEnd.args || {});
       } catch (err) {
         if (disconnected) return;
         if (signal?.aborted) {
-          safePost(port, { type: "done" });
+          emit({ type: "done" });
           return;
         }
-        safePost(port, { type: "error", error: String(err?.message || err) });
+        emit({ type: "error", error: String(err?.message || err) });
         return;
       }
       messages.push({ role: "assistant", content: JSON.stringify(parsedAtEnd) });
@@ -441,47 +448,22 @@ async function runAgent(config, userMessages, port, signal) {
 
     // If we already streamed, finish normally.
     if (streamedAny) {
-      safePost(port, { type: "done" });
+      emit({ type: "done" });
       return;
     }
 
     // No streaming happened and it's not a tool call: just send what we have.
     if (parsedAtEnd?.type === "final") {
-      if (!safePost(port, { type: "chunk", content: parsedAtEnd.content || "" })) return;
+      if (!emit({ type: "chunk", content: parsedAtEnd.content || "" })) return;
     } else {
-      if (!safePost(port, { type: "chunk", content: fullResponse })) return;
+      if (!emit({ type: "chunk", content: fullResponse })) return;
     }
-    safePost(port, { type: "done" });
+    emit({ type: "done" });
     return;
   }
 
-  let fullTail = "";
-  let uiSentLenTail = 0;
-  try {
-    for await (const chunk of streamChatCompletion(config, messages, signal)) {
-      if (disconnected) return;
-      if (signal?.aborted) {
-        safePost(port, { type: "done" });
-        return;
-      }
-      fullTail += chunk;
-      const safe = uiSafeAssistantStreamText(fullTail);
-      if (safe.length > uiSentLenTail) {
-        if (!safePost(port, { type: "chunk", content: safe.slice(uiSentLenTail) })) return;
-        uiSentLenTail = safe.length;
-      } else if (safe.length < uiSentLenTail) {
-        if (!safePost(port, { type: "chunk_reset", content: safe })) return;
-        uiSentLenTail = safe.length;
-      }
-    }
-  } catch (e) {
-    if (signal?.aborted || isAbortError(e)) {
-      safePost(port, { type: "done" });
-      return;
-    }
-    throw e;
-  }
-  safePost(port, { type: "done" });
+  emit({ type: "chunk", content: TOOL_LIMIT_NOTICE });
+  emit({ type: "done", status: "incomplete", verified: false });
 }
 
 function nahidaInjectReadFrame(maxPerFrame) {
@@ -657,7 +639,7 @@ chrome.runtime.onConnect.addListener((port) => {
         const controller = new AbortController();
         activeController = controller;
         try {
-          await runNativePageAgent(config, msg.messages, port, controller.signal);
+          await runNativePageAgent(config, msg.messages, port, controller.signal, { turnId: msg.turnId });
         } catch (error) {
           if (isNativeToolsUnsupported(error) && Number(error?.nativeSuccessfulCalls || 0) === 0) {
             safePost(port, {
@@ -665,7 +647,7 @@ chrome.runtime.onConnect.addListener((port) => {
               name: "compatibility",
               args: { message: "当前接口未启用原生工具调用，已切换兼容模式。" }
             });
-            await runAgent(config, msg.messages, port, controller.signal);
+            await runAgent(config, msg.messages, port, controller.signal, { turnId: msg.turnId });
           } else {
             throw error;
           }

@@ -38,6 +38,12 @@ test("does not rebind a radio to a different option in the same group", () => {
   assert.equal(canRebindFingerprint(before, after, score), false);
 });
 
+test("does not rebind a target across explicit question or option metadata", () => {
+  const before = radioFingerprint({ questionId: "q4", optionKey: "C" });
+  const after = radioFingerprint({ questionId: "q4", optionKey: "A" });
+  assert.equal(canRebindFingerprint(before, after), false);
+});
+
 test("uses a stable DOM identity when one is available", () => {
   const before = radioFingerprint({ stableId: "id:plan-basic", name: "基础套餐", text: "基础套餐" });
   const after = radioFingerprint({ stableId: "id:plan-basic", name: "基础套餐", text: "基础套餐", rect: { x: 10, y: 800 } });

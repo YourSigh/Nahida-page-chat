@@ -7,6 +7,25 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const actionTarget = (target) => target?.clickElement || target?.element || target?.stateElement;
 const stateTarget = (target) => target?.stateElement || actionTarget(target);
+const checkableKinds = new Set(["radio", "checkbox", "switch"]);
+
+export const checkedActionPlan = ({ kind, current, desired }) => {
+  const expectedChecked = Boolean(desired);
+  if (!checkableKinds.has(kind)) return { execute: false, error: "目标不是 radio、checkbox 或 switch。" };
+  if (kind === "radio" && !expectedChecked) {
+    return { execute: false, error: "radio 不能直接取消选中，请选择同组中的其他选项。" };
+  }
+  if (current === expectedChecked) {
+    return {
+      execute: false,
+      already: true,
+      status: expectedChecked ? "already_checked" : "already_unchecked",
+      actionExecuted: false,
+      expectedChecked
+    };
+  }
+  return { execute: true, expectedChecked };
+};
 
 const invalidTarget = (target, action) => {
   const clickElement = actionTarget(target);
@@ -23,37 +42,10 @@ const revealAndFocus = (element) => {
   } catch {}
 };
 
-const pointerInitFor = (element) => {
-  const rect = element.getBoundingClientRect?.();
-  return {
-    bubbles: true,
-    composed: true,
-    cancelable: true,
-    view: window,
-    clientX: rect ? rect.left + rect.width / 2 : 0,
-    clientY: rect ? rect.top + rect.height / 2 : 0,
-    button: 0,
-    buttons: 1
-  };
-};
-
-const dispatchPointerPrelude = (element) => {
-  const init = pointerInitFor(element);
-  try {
-    if (typeof PointerEvent === "function") {
-      element.dispatchEvent(new PointerEvent("pointerdown", { ...init, pointerId: 1, pointerType: "mouse", isPrimary: true }));
-      element.dispatchEvent(new PointerEvent("pointerup", { ...init, pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 0 }));
-    }
-    element.dispatchEvent(new MouseEvent("mousedown", init));
-    element.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0 }));
-  } catch {}
-};
-
 const activate = (element) => {
   if (!element?.isConnected) return false;
   try {
     revealAndFocus(element);
-    dispatchPointerPrelude(element);
     element.click();
     return true;
   } catch {
@@ -99,6 +91,16 @@ export const clickTarget = async (target, { check = false } = {}) => {
   const invalid = invalidTarget(target, action);
   if (invalid) return invalid;
 
+  if (!check && checkableKinds.has(target.kind)) {
+    return {
+      ok: false,
+      action,
+      blocked: true,
+      verified: false,
+      error: "radio、checkbox 和 switch 不能使用 click，请使用 set_checked。"
+    };
+  }
+
   const before = snapshotTargetState(target);
   if (check && before.checked === true) {
     return {
@@ -133,6 +135,46 @@ export const clickTarget = async (target, { check = false } = {}) => {
   return {
     action,
     ...verifyActivation({ action, target, before, observation, expectedChecked: check ? true : undefined })
+  };
+};
+
+export const setCheckedTarget = async (target, { checked = true } = {}) => {
+  const action = "set_checked";
+  const invalid = invalidTarget(target, action);
+  if (invalid) return invalid;
+
+  const before = snapshotTargetState(target);
+  const plan = checkedActionPlan({ kind: target.kind, current: before.checked, desired: checked });
+  if (plan.error) return { action, error: plan.error };
+  const expectedChecked = plan.expectedChecked;
+  if (plan.already) {
+    return {
+      action,
+      ...verifyActivation({
+        action,
+        target,
+        before,
+        observation: { after: before, changes: [], mutated: false },
+        expectedChecked
+      })
+    };
+  }
+
+  const primary = actionTarget(target);
+  if (!activate(primary)) return { action, error: "无法向目标派发设置状态事件。" };
+  let observation = await observeAfterAction(target, before, { timeout: 520 });
+  const needsFallback = target.stateElement &&
+    target.stateElement !== primary &&
+    observation.after.checked !== expectedChecked &&
+    before.checked === observation.after.checked;
+  if (needsFallback && activate(target.stateElement)) {
+    const followUp = await observeAfterAction(target, before, { timeout: 360 });
+    observation = combineObservation(observation, followUp);
+  }
+
+  return {
+    action,
+    ...verifyActivation({ action, target, before, observation, expectedChecked })
   };
 };
 

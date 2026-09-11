@@ -33,8 +33,8 @@
 - `get_page_state`：读取可见文本与排序后的语义目标，支持 `region`（`viewport` / `nearby` / `above` / `below` / `all`）和分页
 - `list_targets`：不读取正文、仅按区域/页码继续列出目标
 - `get_target_state`：读取单个目标当前的选中、展开、输入等状态
-- `click`：按 `targetId` 点击一个元素，并验证可观察的变化
-- `check`：将 radio、checkbox 或 switch 设置为已选中/开启，并验证最终状态
+- `click`：按 `targetId` 点击一个元素，并验证可观察的变化；radio、checkbox、switch 会被拒绝，避免误触发
+- `set_checked`：幂等地将 radio、checkbox 或 switch 设置为选中/未选中，并验证最终状态
 - `type`：填写 `input`、`textarea` 或 `contenteditable`，可清空或追加内容
 - `select_option`：设置原生 `select` 的 value 或 label
 - `press_key`：向目标元素派发键盘事件；部分网站会拒绝非真实用户事件
@@ -42,6 +42,8 @@
 - `wait`：等待页面异步更新
 
 受浏览器安全限制，Chrome/Edge 内置页面、扩展管理页、部分 PDF 页面通常不能注入；跨域沙箱 iframe、封闭 Shadow DOM、canvas/WebGL，以及依赖“真实用户手势”的网站行为也可能无法操作。页面跳转会结束当前页面的对话，新页面加载后可继续使用悬浮窗。插件会把实际结果交给模型，不会假装操作成功。
+
+为避免误把选项映射成自动答题器，运行时不提供按“题号/答案字母”批量答题或提交整卷的专用接口；模型必须基于当前页面明确返回的语义目标逐项操作，且每个选中目标在同一轮对话中最多物理激活一次。
 
 ## Demo
 

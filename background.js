@@ -1,4 +1,35 @@
 (() => {
+  // src/common/streamProtocol.js
+  var TOOL_LIMIT_NOTICE = "\u64CD\u4F5C\u672A\u5B8C\u6210\uFF1A\u5DF2\u8FBE\u5230\u5DE5\u5177\u8C03\u7528\u4E0A\u9650\uFF0C\u5C1A\u672A\u5B8C\u6210\u6700\u7EC8\u9A8C\u8BC1\u3002";
+  var parseSseLine = (line) => {
+    const trimmed = String(line || "").trim();
+    if (!trimmed || !trimmed.startsWith("data:")) return null;
+    const data = trimmed.slice(5).trimStart();
+    if (data === "[DONE]") return { done: true, content: "" };
+    try {
+      const json = JSON.parse(data);
+      const content = json?.choices?.[0]?.delta?.content;
+      return { done: false, content: content == null ? "" : String(content) };
+    } catch {
+      return null;
+    }
+  };
+  var drainSseBuffer = (buffer, incoming = "", flush = false) => {
+    const combined = `${String(buffer || "")}${String(incoming || "")}`;
+    const lines = combined.split("\n");
+    const remainder = flush ? "" : lines.pop() || "";
+    const events = [];
+    for (const line of lines) {
+      const event = parseSseLine(line);
+      if (event) events.push(event);
+    }
+    if (flush && remainder) {
+      const event = parseSseLine(remainder);
+      if (event) events.push(event);
+    }
+    return { remainder, events };
+  };
+
   // src/background/nativeAgent.js
   var MAX_TOOL_CALLS = 12;
   var TOOL_TIMEOUT_MS = 9e4;
@@ -10,7 +41,7 @@
     "\u5DE5\u4F5C\u65B9\u5F0F\uFF1A",
     "- \u7528\u6237\u8981\u4F60\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u5148\u8C03\u7528 get_page_state\uFF0C\u8BFB\u53D6\u53EF\u89C1\u6587\u672C\u548C\u53EF\u64CD\u4F5C\u8BED\u4E49\u76EE\u6807\u3002\u76EE\u6807\u53EF\u80FD\u662F\u539F\u751F\u63A7\u4EF6\uFF0C\u4E5F\u53EF\u80FD\u662F Vue/React \u7684\u81EA\u5B9A\u4E49 radio\u3001checkbox\u3001switch \u6216\u6309\u94AE\uFF1B\u4E0D\u80FD\u56E0\u4E3A\u5217\u8868\u91CC\u6682\u65F6\u6CA1\u6709\u76EE\u6807\u5C31\u65AD\u8A00\u9875\u9762\u662F canvas\u3002",
     "- \u521D\u59CB\u5217\u8868\u6309\u89C6\u53E3\u548C\u8868\u5355\u4E0A\u4E0B\u6587\u6392\u5E8F\u3002\u76EE\u6807\u4E0D\u5728\u5217\u8868\u4E2D\u65F6\uFF0C\u8C03\u7528 list_targets\uFF0C\u4F7F\u7528 region=below\u3001above \u6216 all \u5E76\u7FFB\u9875\uFF1B\u4E0D\u80FD\u731C\u6D4B\u9875\u9762\u5143\u7D20\uFF0C\u4E5F\u4E0D\u80FD\u51ED CSS selector \u64CD\u4F5C\u3002",
-    "- \u70B9\u51FB\u3001\u8F93\u5165\u3001\u9009\u62E9\u548C\u6309\u952E\u90FD\u53EA\u80FD\u4F7F\u7528\u5DE5\u5177\u8FD4\u56DE\u7684 targetId\u3002radio\u3001checkbox\u3001switch \u4F18\u5148\u4F7F\u7528 check\uFF1B\u52A8\u4F5C\u7ED3\u679C\u4F1A\u5305\u542B verified/status/evidence\u3002\u82E5\u672A\u9A8C\u8BC1\uFF0C\u5148 get_target_state \u6216\u91CD\u65B0 get_page_state\uFF0C\u518D\u51B3\u5B9A\u4E0B\u4E00\u6B65\uFF0C\u7EDD\u4E0D\u628A\u672A\u9A8C\u8BC1\u7ED3\u679C\u8BF4\u6210\u6210\u529F\u3002",
+    "- \u70B9\u51FB\u3001\u8F93\u5165\u3001\u9009\u62E9\u548C\u6309\u952E\u90FD\u53EA\u80FD\u4F7F\u7528\u5DE5\u5177\u8FD4\u56DE\u7684 targetId\u3002radio\u3001checkbox\u3001switch \u53EA\u80FD\u4F7F\u7528\u5E42\u7B49\u7684 set_checked\uFF0C\u4E0D\u80FD\u7528 click\uFF1B\u52A8\u4F5C\u7ED3\u679C\u4F1A\u5305\u542B verified/status/evidence\u3002\u82E5\u672A\u9A8C\u8BC1\uFF0C\u5148 get_target_state \u6216\u91CD\u65B0 get_page_state\uFF0C\u518D\u51B3\u5B9A\u4E0B\u4E00\u6B65\uFF0C\u7EDD\u4E0D\u628A\u672A\u9A8C\u8BC1\u7ED3\u679C\u8BF4\u6210\u6210\u529F\u3002",
     "- \u9875\u9762\u91CD\u7ED8\u65F6\u8FD0\u884C\u65F6\u4F1A\u5C1D\u8BD5\u6309\u8BED\u4E49\u6307\u7EB9\u91CD\u7ED1\u540C\u4E00\u4E2A\u76EE\u6807\uFF0C\u4F46\u53D1\u751F\u660E\u663E\u9875\u9762\u53D8\u5316\u540E\u4ECD\u5E94\u91CD\u65B0\u8BFB\u53D6\u72B6\u6001\u3002\u5BF9\u70B9\u51FB\u540E\u7684\u52A8\u6001\u9875\u9762\uFF0C\u8C03\u7528 wait\uFF08\u901A\u5E38 500-1200ms\uFF09\u540E\u518D\u89C2\u5BDF\u3002",
     "- \u5DE5\u5177\u4F1A\u5728\u524D\u7AEF\u663E\u793A\u64CD\u4F5C\u72B6\u6001\u3002\u82E5\u5DE5\u5177\u7ED3\u679C\u663E\u793A\u5168\u5C40\u9875\u9762\u64CD\u4F5C\u5DF2\u5173\u95ED\uFF0C\u544A\u8BC9\u7528\u6237\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\uFF1B\u4E0D\u8981\u53CD\u590D\u8BF7\u6C42\u540C\u4E00\u64CD\u4F5C\u3002",
     "- \u8F93\u5165\u3001\u63D0\u4EA4\u3001\u53D1\u9001\u3001\u5220\u9664\u3001\u8D2D\u4E70\u3001\u53D1\u5E03\u3001\u767B\u5F55\u3001\u6743\u9650\u4FEE\u6539\u7B49\u6709\u5F71\u54CD\u7684\u52A8\u4F5C\u5FC5\u987B\u6765\u81EA\u7528\u6237\u5F53\u524D\u5BF9\u8BDD\u7684\u660E\u786E\u8BF7\u6C42\u3002\u4E0D\u8981\u4E3B\u52A8\u586B\u5199\u5BC6\u7801\u3001\u9A8C\u8BC1\u7801\u3001\u652F\u4ED8\u4FE1\u606F\u3001API Key \u6216\u5176\u4ED6\u79D8\u5BC6\u3002",
@@ -94,7 +125,7 @@
       type: "function",
       function: {
         name: "click",
-        description: "\u70B9\u51FB\u4E00\u4E2A\u5DE5\u5177\u8FD4\u56DE\u7684 targetId\u3002\u8FD0\u884C\u65F6\u4F1A\u9A8C\u8BC1\u53EF\u89C2\u5BDF\u5230\u7684\u72B6\u6001\u53D8\u5316\uFF1B\u53EF\u80FD\u8DF3\u8F6C\u7684\u94FE\u63A5\u6216\u63D0\u4EA4\u6309\u94AE\u4F1A\u5148\u786E\u8BA4\u8C03\u5EA6\u3002",
+        description: "\u70B9\u51FB\u4E00\u4E2A\u5DE5\u5177\u8FD4\u56DE\u7684 targetId\u3002radio\u3001checkbox\u3001switch \u4E0D\u80FD\u7528\u6B64\u5DE5\u5177\uFF1B\u8FD0\u884C\u65F6\u4F1A\u9A8C\u8BC1\u53EF\u89C2\u5BDF\u5230\u7684\u72B6\u6001\u53D8\u5316\uFF0C\u53EF\u80FD\u8DF3\u8F6C\u7684\u94FE\u63A5\u6216\u63D0\u4EA4\u6309\u94AE\u4F1A\u5148\u786E\u8BA4\u8C03\u5EA6\u3002",
         parameters: {
           type: "object",
           properties: { targetId: { type: "string", description: "get_page_state \u8FD4\u56DE\u7684\u76EE\u6807 ID" } },
@@ -106,12 +137,15 @@
     {
       type: "function",
       function: {
-        name: "check",
-        description: "\u5C06 radio\u3001checkbox \u6216 switch \u76EE\u6807\u8BBE\u7F6E\u4E3A\u5DF2\u9009\u4E2D/\u5F00\u542F\uFF0C\u5E76\u9A8C\u8BC1\u6700\u7EC8\u72B6\u6001\u3002",
+        name: "set_checked",
+        description: "\u5E42\u7B49\u5730\u5C06 radio\u3001checkbox \u6216 switch \u8BBE\u7F6E\u4E3A\u9009\u4E2D/\u5F00\u542F\u6216\u672A\u9009\u4E2D/\u5173\u95ED\uFF1B\u540C\u4E00\u76EE\u6807\u4E0D\u8981\u91CD\u590D\u8C03\u7528\u3002",
         parameters: {
           type: "object",
-          properties: { targetId: { type: "string" } },
-          required: ["targetId"],
+          properties: {
+            targetId: { type: "string" },
+            checked: { type: "boolean" }
+          },
+          required: ["targetId", "checked"],
           additionalProperties: false
         }
       }
@@ -261,6 +295,51 @@
       toolCalls: Array.isArray(message.tool_calls) ? message.tool_calls : []
     };
   }
+  async function* streamFinalCompletion(config, messages, signal) {
+    const response = await fetch(endpoint(config), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + config.apiKey
+      },
+      body: JSON.stringify({ model: config.model, messages, stream: true }),
+      signal
+    });
+    if (!response.ok) {
+      let detail = "";
+      try {
+        detail = await response.text();
+      } catch {
+      }
+      throw new NativeToolApiError(response.status, detail);
+    }
+    const reader = response.body?.getReader?.();
+    if (!reader) throw new Error("\u6A21\u578B\u6CA1\u6709\u8FD4\u56DE\u53EF\u8BFB\u53D6\u7684\u6D41\u5F0F\u54CD\u5E94");
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const drained2 = drainSseBuffer(buffer, decoder.decode(value, { stream: true }));
+        buffer = drained2.remainder;
+        for (const event of drained2.events) {
+          if (event.done) return;
+          if (event.content) yield event.content;
+        }
+      }
+      const drained = drainSseBuffer(buffer, decoder.decode(), true);
+      for (const event of drained.events) {
+        if (event.done) return;
+        if (event.content) yield event.content;
+      }
+    } finally {
+      try {
+        reader.releaseLock();
+      } catch {
+      }
+    }
+  }
   async function requestTool(port, name, args) {
     const id = Date.now() + "-" + Math.random().toString(16).slice(2);
     return await new Promise((resolve, reject) => {
@@ -292,12 +371,35 @@
       }
     });
   }
+  var createTurnEmitter = (port, turnId) => {
+    let seq = 0;
+    return (message) => safePost(port, {
+      ...message,
+      turnId: String(turnId || ""),
+      seq: ++seq
+    });
+  };
+  async function streamFinalResponse(config, messages, port, signal, turnId, fallbackText = "", emitOverride) {
+    const emit = emitOverride || createTurnEmitter(port, turnId);
+    let streamed = false;
+    for await (const chunk of streamFinalCompletion(config, messages, signal)) {
+      if (!chunk) continue;
+      streamed = true;
+      if (!emit({ type: "chunk", content: chunk })) return false;
+    }
+    if (!streamed && fallbackText) emit({ type: "chunk", content: fallbackText });
+    emit({ type: "done" });
+    return true;
+  }
   function safeToolResult(result) {
     const value = result || {};
     const json = JSON.stringify(value);
     if (json.length <= 14e3) return json;
     const compact = {
       ok: value.ok,
+      action: value.action,
+      actionExecuted: value.actionExecuted,
+      blocked: value.blocked,
       error: value.error,
       status: value.status,
       verified: value.verified,
@@ -310,6 +412,7 @@
       pageSize: value.pageSize,
       pageCount: value.pageCount,
       totalTargets: value.totalTargets,
+      registeredCount: value.registeredCount,
       hasMore: value.hasMore,
       text: typeof value.text === "string" ? value.text.slice(0, 2400) : void 0,
       targets: Array.isArray(value.targets) ? value.targets.slice(0, 28).map((target) => ({
@@ -318,6 +421,10 @@
         role: target.role,
         name: target.name,
         text: target.text,
+        optionKey: target.optionKey,
+        questionId: target.questionId,
+        questionText: target.questionText,
+        questionType: target.questionType,
         group: target.group,
         checked: target.checked,
         inputType: target.inputType,
@@ -358,10 +465,11 @@
     const detail = (String(error?.message || "") + "\n" + String(error?.detail || "")).toLowerCase();
     return error instanceof NativeToolApiError && error.status >= 400 && /(tool|function.?call|parallel_tool_calls|unknown parameter|unsupported)/.test(detail);
   };
-  async function runNativePageAgent(config, userMessages, port, signal) {
+  async function runNativePageAgent(config, userMessages, port, signal, { turnId } = {}) {
     const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
     let disconnected = false;
     let successfulCalls = 0;
+    const emit = createTurnEmitter(port, turnId);
     const onDisconnect = () => {
       disconnected = true;
     };
@@ -379,11 +487,15 @@
         }
         const toolCalls = normalizeToolCalls(response.toolCalls);
         if (!toolCalls.length) {
-          safePost(port, {
-            type: "chunk",
-            content: response.content || "\uFF08\u7EB3\u897F\u59B2\u6682\u65F6\u6CA1\u6709\u66F4\u591A\u8981\u8BF4\u7684\u4E86\u3002\uFF09"
-          });
-          safePost(port, { type: "done" });
+          await streamFinalResponse(
+            config,
+            messages,
+            port,
+            signal,
+            turnId,
+            response.content || "\uFF08\u7EB3\u897F\u59B2\u6682\u65F6\u6CA1\u6709\u66F4\u591A\u8981\u8BF4\u7684\u4E86\u3002\uFF09",
+            emit
+          );
           return;
         }
         messages.push({
@@ -398,7 +510,7 @@
         for (const call of toolCalls) {
           if (disconnected || signal?.aborted) return;
           const args = parseArguments(call.arguments);
-          safePost(port, { type: "tool_log", name: call.name, args });
+          if (!emit({ type: "tool_log", name: call.name, args })) return;
           let result;
           if (args._parseError) {
             result = { error: args._parseError };
@@ -417,11 +529,8 @@
           });
         }
       }
-      safePost(port, {
-        type: "chunk",
-        content: "\u6211\u5DF2\u7ECF\u5B8C\u6210\u4E86\u53EF\u5B89\u5168\u6267\u884C\u7684\u9875\u9762\u6B65\u9AA4\u3002\u8FD8\u9700\u8981\u6211\u7EE7\u7EED\u67E5\u770B\u9875\u9762\u72B6\u6001\u5417\uFF1F"
-      });
-      safePost(port, { type: "done" });
+      emit({ type: "chunk", content: TOOL_LIMIT_NOTICE });
+      emit({ type: "done", status: "incomplete", verified: false });
     } finally {
       port.onDisconnect.removeListener(onDisconnect);
     }
@@ -457,7 +566,7 @@
 {"type":"tool","name":"read_page","args":{"maxChars":4000}}
 {"type":"tool","name":"get_visible_text","args":{"maxChars":2000}}
 {"type":"tool","name":"click","args":{"targetId":"t1-1"}}
-{"type":"tool","name":"check","args":{"targetId":"t1-2"}}
+{"type":"tool","name":"set_checked","args":{"targetId":"t1-2","checked":true}}
 {"type":"tool","name":"type","args":{"targetId":"t1-2","text":"\u793A\u4F8B","clear":true}}
 {"type":"tool","name":"select_option","args":{"targetId":"t1-3","value":"value"}}
 {"type":"tool","name":"press_key","args":{"targetId":"t1-2","key":"Enter"}}
@@ -467,7 +576,8 @@
 \u89C4\u5219\uFF1A
 - \u7528\u6237\u8981\u6C42\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u5148\u7528 get_page_state \u627E\u5230\u76EE\u6807\uFF0C\u5E76\u53EA\u4F7F\u7528\u8FD4\u56DE\u7684 targetId\uFF1B\u5B83\u65E2\u53EF\u80FD\u5BF9\u5E94\u539F\u751F\u63A7\u4EF6\uFF0C\u4E5F\u53EF\u80FD\u5BF9\u5E94\u81EA\u5B9A\u4E49 radio\u3001checkbox\u3001switch \u6216\u6309\u94AE\u3002\u627E\u4E0D\u5230\u76EE\u6807\u4E0D\u4EE3\u8868\u9875\u9762\u662F canvas\u3002
 - \u521D\u59CB\u5217\u8868\u6CA1\u6709\u76EE\u6807\u65F6\uFF0C\u7528 list_targets \u7684 region=below\u3001above \u6216 all \u7FFB\u9875\u67E5\u627E\uFF1B\u6BCF\u6B21\u53EA\u64CD\u4F5C\u4E00\u4E2A\u76EE\u6807\uFF0C\u4E0D\u731C selector\uFF0C\u4E0D\u6279\u91CF\u64CD\u4F5C\u3002
-- radio\u3001checkbox\u3001switch \u4F18\u5148\u4F7F\u7528 check\u3002\u5DE5\u5177\u8FD4\u56DE verified:false \u6216 status:unverified \u65F6\uFF0C\u5148 get_target_state \u6216\u91CD\u65B0 get_page_state \u786E\u8BA4\uFF0C\u4E0D\u80FD\u628A\u672A\u9A8C\u8BC1\u7ED3\u679C\u8BF4\u6210\u6210\u529F\u3002
+- radio\u3001checkbox\u3001switch \u53EA\u80FD\u4F7F\u7528\u5E42\u7B49\u7684 set_checked\uFF0C\u4E0D\u80FD\u4F7F\u7528 click\uFF1B\u5DE5\u5177\u8FD4\u56DE verified:false \u6216 status:unverified \u65F6\uFF0C\u5148 get_target_state \u6216\u91CD\u65B0 get_page_state \u786E\u8BA4\uFF0C\u4E0D\u80FD\u628A\u672A\u9A8C\u8BC1\u7ED3\u679C\u8BF4\u6210\u6210\u529F\u3002
+- \u4E0D\u8981\u5BF9\u540C\u4E00\u4E2A targetId \u91CD\u590D\u6D3E\u53D1\u9009\u4E2D\u52A8\u4F5C\uFF1B\u5DF2\u9009\u4E2D\u7684\u76EE\u6807\u76F4\u63A5\u8BA4\u4E3A already_checked\u3002
 - \u82E5\u5DE5\u5177\u7ED3\u679C\u8868\u793A\u5168\u5C40\u9875\u9762\u64CD\u4F5C\u5DF2\u5173\u95ED\uFF0C\u544A\u8BC9\u7528\u6237\u5728\u63D2\u4EF6\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\uFF0C\u4E0D\u8981\u91CD\u590D\u8BF7\u6C42\u540C\u4E00\u64CD\u4F5C\u3002
 - \u7528\u6237\u672A\u660E\u786E\u8981\u6C42\u65F6\uFF0C\u4E0D\u586B\u5199\u6216\u53D1\u9001\u5BC6\u7801\u3001\u9A8C\u8BC1\u7801\u3001\u652F\u4ED8\u4FE1\u606F\u3001API Key \u7B49\u79D8\u5BC6\uFF0C\u4E0D\u6267\u884C\u5220\u9664\u3001\u8D2D\u4E70\u3001\u53D1\u5E03\u7B49\u9AD8\u98CE\u9669\u64CD\u4F5C\u3002
 - \u6700\u591A\u8FDE\u7EED\u8C03\u7528 12 \u6B21\u5DE5\u5177\u3002\u6700\u7EC8\u56DE\u7B54\u65F6\u76F4\u63A5\u7528\u81EA\u7136\u8BED\u8A00\uFF0C\u4E0D\u8981\u8F93\u51FA JSON\u3002`;
@@ -517,22 +627,17 @@
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || !trimmed.startsWith("data:")) continue;
-          let data = trimmed.slice(5);
-          if (data.startsWith(" ")) data = data.slice(1);
-          if (data === "[DONE]") return;
-          try {
-            const json = JSON.parse(data);
-            const content = json?.choices?.[0]?.delta?.content;
-            if (content) yield content;
-          } catch {
-          }
+        const drained2 = drainSseBuffer(buffer, decoder.decode(value, { stream: true }));
+        buffer = drained2.remainder;
+        for (const event of drained2.events) {
+          if (event.done) return;
+          if (event.content) yield event.content;
         }
+      }
+      const drained = drainSseBuffer(buffer, decoder.decode(), true);
+      for (const event of drained.events) {
+        if (event.done) return;
+        if (event.content) yield event.content;
       }
     } finally {
       try {
@@ -765,13 +870,22 @@ ${String(assistantText || "").slice(0, 4e3)}` }
       return false;
     }
   }
+  var createTurnEmitter2 = (port, turnId) => {
+    let seq = 0;
+    return (message) => safePost2(port, {
+      ...message,
+      turnId: String(turnId || ""),
+      seq: ++seq
+    });
+  };
   function isAbortError(e) {
     const name = e?.name;
     return name === "AbortError" || typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError";
   }
-  async function runAgent(config, userMessages, port, signal) {
+  async function runAgent(config, userMessages, port, signal, { turnId } = {}) {
     const messages = [{ role: "system", content: LEGACY_SYSTEM_PROMPT }, ...userMessages];
     let disconnected = false;
+    const emit = createTurnEmitter2(port, turnId);
     const onDisconnect = () => {
       disconnected = true;
     };
@@ -780,7 +894,7 @@ ${String(assistantText || "").slice(0, 4e3)}` }
     while (toolCalls < 12) {
       if (disconnected) return;
       if (signal?.aborted) {
-        safePost2(port, { type: "done" });
+        emit({ type: "done" });
         return;
       }
       let fullResponse = "";
@@ -791,7 +905,7 @@ ${String(assistantText || "").slice(0, 4e3)}` }
         for await (const chunk of streamChatCompletion(config, messages, signal)) {
           if (disconnected) return;
           if (signal?.aborted) {
-            safePost2(port, { type: "done" });
+            emit({ type: "done" });
             return;
           }
           fullResponse += chunk;
@@ -801,10 +915,10 @@ ${String(assistantText || "").slice(0, 4e3)}` }
           if (phase === "streaming") {
             const safe = uiSafeAssistantStreamText(fullResponse);
             if (safe.length > uiSentLen) {
-              if (!safePost2(port, { type: "chunk", content: safe.slice(uiSentLen) })) return;
+              if (!emit({ type: "chunk", content: safe.slice(uiSentLen) })) return;
               uiSentLen = safe.length;
             } else if (safe.length < uiSentLen) {
-              if (!safePost2(port, { type: "chunk_reset", content: safe })) return;
+              if (!emit({ type: "chunk_reset", content: safe })) return;
               uiSentLen = safe.length;
             }
             streamedAny = true;
@@ -819,14 +933,14 @@ ${String(assistantText || "").slice(0, 4e3)}` }
           } else {
             phase = "streaming";
             const safe = uiSafeAssistantStreamText(fullResponse);
-            if (!safePost2(port, { type: "chunk", content: safe })) return;
+            if (!emit({ type: "chunk", content: safe })) return;
             uiSentLen = safe.length;
             streamedAny = true;
           }
         }
       } catch (e) {
         if (signal?.aborted || isAbortError(e)) {
-          safePost2(port, { type: "done" });
+          emit({ type: "done" });
           return;
         }
         throw e;
@@ -834,17 +948,17 @@ ${String(assistantText || "").slice(0, 4e3)}` }
       const parsedAtEnd = parseAgentJson(fullResponse);
       if (parsedAtEnd?.type === "tool") {
         toolCalls += 1;
-        if (!safePost2(port, { type: "tool_log", name: parsedAtEnd.name, args: parsedAtEnd.args || {} })) return;
+        if (!emit({ type: "tool_log", name: parsedAtEnd.name, args: parsedAtEnd.args || {} })) return;
         let result;
         try {
           result = await requestTool2(port, parsedAtEnd.name, parsedAtEnd.args || {});
         } catch (err) {
           if (disconnected) return;
           if (signal?.aborted) {
-            safePost2(port, { type: "done" });
+            emit({ type: "done" });
             return;
           }
-          safePost2(port, { type: "error", error: String(err?.message || err) });
+          emit({ type: "error", error: String(err?.message || err) });
           return;
         }
         messages.push({ role: "assistant", content: JSON.stringify(parsedAtEnd) });
@@ -853,44 +967,19 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
         continue;
       }
       if (streamedAny) {
-        safePost2(port, { type: "done" });
+        emit({ type: "done" });
         return;
       }
       if (parsedAtEnd?.type === "final") {
-        if (!safePost2(port, { type: "chunk", content: parsedAtEnd.content || "" })) return;
+        if (!emit({ type: "chunk", content: parsedAtEnd.content || "" })) return;
       } else {
-        if (!safePost2(port, { type: "chunk", content: fullResponse })) return;
+        if (!emit({ type: "chunk", content: fullResponse })) return;
       }
-      safePost2(port, { type: "done" });
+      emit({ type: "done" });
       return;
     }
-    let fullTail = "";
-    let uiSentLenTail = 0;
-    try {
-      for await (const chunk of streamChatCompletion(config, messages, signal)) {
-        if (disconnected) return;
-        if (signal?.aborted) {
-          safePost2(port, { type: "done" });
-          return;
-        }
-        fullTail += chunk;
-        const safe = uiSafeAssistantStreamText(fullTail);
-        if (safe.length > uiSentLenTail) {
-          if (!safePost2(port, { type: "chunk", content: safe.slice(uiSentLenTail) })) return;
-          uiSentLenTail = safe.length;
-        } else if (safe.length < uiSentLenTail) {
-          if (!safePost2(port, { type: "chunk_reset", content: safe })) return;
-          uiSentLenTail = safe.length;
-        }
-      }
-    } catch (e) {
-      if (signal?.aborted || isAbortError(e)) {
-        safePost2(port, { type: "done" });
-        return;
-      }
-      throw e;
-    }
-    safePost2(port, { type: "done" });
+    emit({ type: "chunk", content: TOOL_LIMIT_NOTICE });
+    emit({ type: "done", status: "incomplete", verified: false });
   }
   function nahidaInjectReadFrame(maxPerFrame) {
     const max = Math.min(12e3, Math.max(200, Number(maxPerFrame) || 2e3));
@@ -1040,7 +1129,7 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
           const controller = new AbortController();
           activeController = controller;
           try {
-            await runNativePageAgent(config, msg.messages, port, controller.signal);
+            await runNativePageAgent(config, msg.messages, port, controller.signal, { turnId: msg.turnId });
           } catch (error) {
             if (isNativeToolsUnsupported(error) && Number(error?.nativeSuccessfulCalls || 0) === 0) {
               safePost2(port, {
@@ -1048,7 +1137,7 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
                 name: "compatibility",
                 args: { message: "\u5F53\u524D\u63A5\u53E3\u672A\u542F\u7528\u539F\u751F\u5DE5\u5177\u8C03\u7528\uFF0C\u5DF2\u5207\u6362\u517C\u5BB9\u6A21\u5F0F\u3002" }
               });
-              await runAgent(config, msg.messages, port, controller.signal);
+              await runAgent(config, msg.messages, port, controller.signal, { turnId: msg.turnId });
             } else {
               throw error;
             }

@@ -1,5 +1,6 @@
 import stylesText from "../ui/styles.css";
 import MarkdownIt from "markdown-it";
+import { acceptTurnMessage, createSendGate } from "../common/streamProtocol.js";
 import { createPageController } from "../page/pageController.js";
 import {
   anchorIconPosition,
@@ -714,6 +715,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   let composerHintTimer = 0;
 
   let isStreaming = false;
+  const sendGate = createSendGate();
   let activePort = null;
   /** 当前一轮对话的 port，用于「停止」发 abort / disconnect */
   let chatStreamPort = null;
@@ -1006,12 +1008,14 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     attachSlot.classList.toggle("attach-disabled", !enabled);
     isStreaming = !enabled;
     if (enabled) {
+      sendGate.release();
       clearStreamWatchdog();
       sendButton.setAttribute("aria-label", "发送");
       sendImg.src = sendIconUrl;
       sendImg.className = "send-icon";
       sendButton.disabled = false;
     } else {
+      sendGate.markStreaming();
       armStreamWatchdog();
       sendButton.setAttribute("aria-label", "停止生成");
       sendImg.src = stopIconUrl;
@@ -1200,7 +1204,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
   };
 
-  const PAGE_ACTION_TOOLS = new Set(["click", "check", "type", "select_option", "press_key", "scroll"]);
+  const PAGE_ACTION_TOOLS = new Set(["click", "set_checked", "check", "type", "select_option", "press_key", "scroll"]);
 
   const targetLabel = (targetId) => {
     if (!targetId) return "当前页面";
@@ -1210,7 +1214,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const actionSummary = (name, args = {}) => {
     if (name === "click") return `点击 ${targetLabel(args.targetId)}`;
-    if (name === "check") return `选中 ${targetLabel(args.targetId)}`;
+    if (name === "set_checked" || name === "check") return `${args.checked === false ? "取消选中" : "选中"} ${targetLabel(args.targetId)}`;
     if (name === "type") {
       const target = pageController.describeTarget(args.targetId);
       const text = String(args.text ?? "");
@@ -1235,6 +1239,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         item.classList.toggle("error", Boolean(result?.error));
         item.textContent = result?.error
           ? `${result?.actionExecuted ? "待确认" : "未完成"}：${result.error}`
+          : result?.status === "already_attempted"
+            ? `已跳过重复操作：${actionSummary(name, args)}`
           : result?.queued
             ? `已安排：${actionSummary(name, args)}`
             : result?.verified === false
@@ -1244,7 +1250,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     };
   };
 
-  const runPageAction = async (name, args = {}) => {
+  const runPageAction = async (name, args = {}, actionLedger) => {
     if (!pageActionSettingLoaded) {
       await loadGlobalPageActionSetting();
     }
@@ -1257,20 +1263,42 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       appendToolLog(name, args, "未执行").done(result);
       return result;
     }
+    const normalizedName = name === "check" ? "set_checked" : name;
+    const isCheckedAction = normalizedName === "set_checked";
+    const ledgerKey = isCheckedAction && args.targetId ? String(args.targetId) : "";
+    if (ledgerKey && actionLedger?.has(ledgerKey)) {
+      const previous = actionLedger.get(ledgerKey);
+      return {
+        ok: Boolean(previous?.ok),
+        verified: Boolean(previous?.verified),
+        status: "already_attempted",
+        actionExecuted: false,
+        target: previous?.target,
+        evidence: previous?.evidence,
+        error: previous?.verified
+          ? undefined
+          : "同一次操作中已尝试过这个目标，未再重复激活；请重新读取页面状态确认。"
+      };
+    }
+    if (ledgerKey) actionLedger.set(ledgerKey, { pending: true });
     const log = appendToolLog(name, args, "正在执行");
     let result;
     if (name === "click") result = await pageController.click(args);
-    else if (name === "check") result = await pageController.check(args);
+    else if (isCheckedAction) result = await pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
     else if (name === "type") result = await pageController.type(args);
     else if (name === "select_option") result = await pageController.selectOption(args);
     else if (name === "press_key") result = await pageController.pressKey(args);
     else if (name === "scroll") result = await pageController.scroll(args);
     else result = { error: `未知页面操作: ${name}` };
     log.done(result);
+    if (ledgerKey) {
+      if (result?.actionExecuted || result?.status === "already_checked" || result?.status === "already_unchecked") actionLedger.set(ledgerKey, result);
+      else actionLedger.delete(ledgerKey);
+    }
     return result;
   };
 
-  const runTool = async (name, args = {}) => {
+  const runTool = async (name, args = {}, actionLedger) => {
     if (name === "get_page_state") return pageController.getPageState(args);
     if (name === "list_targets") return pageController.listTargets(args);
     if (name === "get_target_state") return pageController.getTargetState(args);
@@ -1280,31 +1308,45 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     if (name === "get_api_endpoints") return tool_get_api_endpoints(args);
     if (name === "get_api_responses") return tool_get_api_responses(args);
     if (name === "wait") return pageController.wait(args);
-    if (PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args);
+    if (PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args, actionLedger);
     return { error: `未知工具: ${name}` };
   };
 
   const sendChat = () => {
     const text = input.value.trim();
     const hasImages = pendingImages.length > 0;
-    if ((!text && !hasImages) || isStreaming) return;
+    if ((!text && !hasImages) || isStreaming || !sendGate.tryAcquire()) return;
     ensureApiKeyOrOpenSettings().then(async (ok) => {
-      if (!ok) return;
-      const snapshotFiles = pendingImages.map((p) => p.file);
-      revokeAllPendingPreviewUrls();
-      pendingImages = [];
-      refreshImagePreviewRow();
-      input.value = "";
-      const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
-      const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
-      doSendChat(text, urls);
+      if (!ok) {
+        sendGate.release();
+        return;
+      }
+      try {
+        const snapshotFiles = pendingImages.map((p) => p.file);
+        revokeAllPendingPreviewUrls();
+        pendingImages = [];
+        refreshImagePreviewRow();
+        input.value = "";
+        const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
+        const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
+        doSendChat(text, urls);
+      } catch (error) {
+        sendGate.release();
+        showComposerHint(String(error?.message || "发送前读取内容失败，请重试。"));
+      }
+    }).catch((error) => {
+      sendGate.release();
+      showComposerHint(String(error?.message || "发送前检查配置失败，请重试。"));
     });
   };
 
   const doSendChat = (text, imageDataUrls = [], streamOptions = {}) => {
     const trimmed = String(text || "").trim();
     const urls = Array.isArray(imageDataUrls) ? imageDataUrls.filter(Boolean) : [];
-    if (!trimmed && !urls.length) return;
+    if (!trimmed && !urls.length) {
+      sendGate.release();
+      return;
+    }
 
     const includePageContext = streamOptions.includePageContext !== false;
     let bubbleText =
@@ -1346,6 +1388,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         ? String(streamOptions.turnUserText || "")
         : trimmed || (urls.length ? "[用户上传了图片]" : "");
     let turnHandled = false;
+    const turnId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    let lastStreamSeq = 0;
+    const streamMessageTypes = new Set(["chunk", "chunk_reset", "done", "error"]);
+    const actionLedger = new Map();
 
     const parseThinkAndReply = (raw) => {
       const OPEN = "\x00THINK_O\x00";
@@ -1461,9 +1507,15 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     const turnPort = activePort;
 
     turnPort.onMessage.addListener((msg) => {
+      if (streamMessageTypes.has(msg?.type)) {
+        const accepted = acceptTurnMessage(turnId, lastStreamSeq, msg);
+        if (!accepted.accepted) return;
+        lastStreamSeq = accepted.lastSeq;
+      }
+
       if (msg?.type === "tool") {
         if (typingIndicator.parentNode) typingIndicator.remove();
-        runTool(msg.name, msg.args)
+        runTool(msg.name, msg.args, actionLedger)
           .then((result) => {
             turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           })
@@ -1588,7 +1640,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
     });
 
-    turnPort.postMessage({ type: "chat", messages: chatHistory });
+    turnPort.postMessage({ type: "chat", messages: chatHistory, turnId });
   };
 
   const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];

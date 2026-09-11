@@ -233,6 +233,49 @@ const rawNameFor = (element) => {
 
 export const accessibleNameFor = (element, fallbackElement) => rawNameFor(element) || rawNameFor(fallbackElement);
 
+export const optionKeyFor = (element, text = "") => {
+  const explicit = ["data-option-key", "data-option", "data-choice", "data-key"]
+    .map((name) => String(element?.getAttribute?.(name) || "").trim())
+    .find((value) => /^[A-Za-z]$/.test(value));
+  if (explicit) return explicit.toUpperCase();
+
+  const inputValue = String(element?.value || "").trim();
+  if (/^[A-Za-z]$/.test(inputValue)) return inputValue.toUpperCase();
+
+  const match = String(text || rawNameFor(element) || "").match(/^\s*[（(]?\s*([A-Za-z])\s*[)）.、:：\-]\s*/);
+  return match ? match[1].toUpperCase() : "";
+};
+
+const questionContainerFor = (element) => closestComposed(
+  element,
+  "[data-question-id], [data-question], [data-questionid], fieldset, [role='radiogroup'], [role='group']"
+);
+
+export const questionContextFor = (element, stateElement) => {
+  const container = questionContainerFor(element) || questionContainerFor(stateElement);
+  if (!container) return { id: "", stem: "", type: "" };
+
+  const id = ["data-question-id", "data-question", "data-questionid", "id"]
+    .map((name) => String(container.getAttribute?.(name) || (name === "id" ? container.id : "")).trim())
+    .find(Boolean) || "";
+  let stem = String(container.getAttribute?.("data-question-stem") || "").trim();
+  if (!stem) {
+    try {
+      const stemNode = container.querySelector("[data-question-stem], legend, h1, h2, h3, h4, h5, h6");
+      stem = String(stemNode?.innerText || stemNode?.textContent || "").trim();
+    } catch {}
+  }
+  if (!stem && roleFor(container) === "radiogroup") stem = labelledByText(container);
+
+  let type = "";
+  try {
+    const controls = Array.from(container.querySelectorAll("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], [role='switch'], [class*='radio'], [class*='checkbox'], [class*='switch'], [class*='toggle']"));
+    if (controls.some((node) => inputTypeFor(node) === "checkbox" || ["checkbox", "switch"].includes(roleFor(node)) || ["checkbox", "switch"].includes(classControlKind(node)))) type = "multiple";
+    else if (controls.some((node) => inputTypeFor(node) === "radio" || roleFor(node) === "radio" || classControlKind(node) === "radio")) type = "single";
+  } catch {}
+  return { id: clipText(id, 160), stem: clipText(stem, 500), type };
+};
+
 export const groupFor = (element, stateElement) => {
   const inputName = String(stateElement?.name || "").trim();
   if (inputName) return clipText(inputName, 160);

@@ -22,6 +22,18 @@ const unverified = (observation, error, extra = {}) => ({
 
 export const verifyActivation = ({ action, target, before, observation, expectedChecked }) => {
   const { after, changes } = observation;
+  if (action === "set_checked") {
+    if (before.checked === expectedChecked) {
+      return success(expectedChecked ? "already_checked" : "already_unchecked", observation, { actionExecuted: false });
+    }
+    if (after.checked === expectedChecked) return success("verified", observation, { actionExecuted: true });
+    return unverified(
+      observation,
+      `已尝试设置${expectedChecked ? "选中" : "未选中"}，但目标最终状态不符合预期。请重新读取状态确认。`,
+      { expectedChecked }
+    );
+  }
+
   if (action === "check") {
     if (before.checked === true) return success("already_checked", observation);
     if (after.checked === true) return success("verified", observation);
