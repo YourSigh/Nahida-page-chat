@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { acceptTurnMessage, createSendGate, drainSseBuffer, TOOL_LIMIT_NOTICE } from "../src/common/streamProtocol.js";
-import { streamFinalResponse } from "../src/background/nativeAgent.js";
+import { runNativePageAgent, streamFinalResponse } from "../src/background/nativeAgent.js";
 import { checkedActionPlan } from "../src/page/actions/interaction.js";
 import {
   createExecutionBudget,
@@ -210,7 +210,7 @@ test("already satisfied targets advance task progress once without a page mutati
     status: "already_checked",
     verified: true,
     actionExecuted: false,
-    target: { id: "t-q2-a", questionId: "q2", optionKey: "A" }
+    target: { id: "t-q2-a", questionId: "q2", questionType: "single", optionKey: "A" }
   };
   const first = progressFromToolResult(alreadySelected, {});
   assert.equal(first.completedItems, 1);
@@ -227,4 +227,136 @@ test("already satisfied targets advance task progress once without a page mutati
   manager.consumeTool({ isMutation: true, targetId: "t-q2-a", status: "already_checked", actionExecuted: false });
   manager.consumeTool({ isMutation: true, targetId: "t-q2-a", status: "already_checked", actionExecuted: false });
   assert.equal(manager.canExecuteTool({ isMutation: true, targetId: "t-q2-a" }), true);
+});
+
+test("multiple selected options only complete one question after full verification", () => {
+  const base = {
+    action: "set_checked",
+    verified: true,
+    actionExecuted: true,
+    target: { id: "t-q5-a", questionId: "q5", questionKey: "question-q5", questionType: "multiple", optionKey: "A" }
+  };
+  const first = progressFromToolResult(base, {});
+  assert.equal(first.completedItems, 0);
+  assert.equal(first.questionVerified, false);
+  assert.equal(first.actualMutation, true);
+
+  const second = progressFromToolResult({
+    ...base,
+    target: { ...base.target, id: "t-q5-b", optionKey: "B" }
+  }, first);
+  assert.equal(second.completedItems, 0);
+
+  const verified = progressFromToolResult({
+    ...base,
+    target: { ...base.target, id: "t-q5-c", optionKey: "C" },
+    questionVerified: true,
+    selectedOptions: ["A", "B", "C"],
+    expectedOptions: ["A", "B", "C"]
+  }, second);
+  assert.equal(verified.completedItems, 1);
+  assert.deepEqual(verified.completedQuestionIds, ["q5"]);
+});
+
+test("page observation uses questionCount instead of target count", () => {
+  const manager = new ExecutionBudgetManager({
+    budget: createExecutionBudget({ estimatedItems: 1, expectedWrites: 1 })
+  });
+  assert.equal(manager.observePageResult({ questionCount: 8, totalTargets: 32 }), true);
+  assert.equal(manager.budget.plan.estimatedItems, 8);
+
+  const empty = new ExecutionBudgetManager({
+    budget: createExecutionBudget({ estimatedItems: 1, expectedWrites: 1 })
+  });
+  assert.equal(empty.observePageResult({ questionCount: 0, totalTargets: 32 }), false);
+  assert.equal(empty.budget.plan.estimatedItems, 1);
+});
+
+test("stale targets do not consume no-progress rounds or retry attempts", () => {
+  const manager = new ExecutionBudgetManager({
+    budget: createExecutionBudget({ maxRetriesPerTarget: 0, maxNoProgressRounds: 1 })
+  });
+  const stale = progressFromToolResult({ action: "set_checked", status: "target_stale", target: { id: "old-target" } }, {});
+  assert.equal(manager.recordProgress(stale), false);
+  manager.consumeTool({ isMutation: true, targetId: "old-target", status: "target_stale", failed: true });
+  manager.finishAgentRound({ progressChanged: false });
+  assert.equal(manager.usage.noProgressRounds, 0);
+  assert.equal(manager.canExecuteTool({ isMutation: true, targetId: "old-target" }), true);
+});
+
+const eventChannel = () => {
+  const listeners = new Set();
+  return {
+    addListener(listener) { listeners.add(listener); },
+    removeListener(listener) { listeners.delete(listener); },
+    emit(value) { for (const listener of [...listeners]) listener(value); }
+  };
+};
+
+test("resume refreshes the page before the first model decision", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    requests.push(body);
+    if (body.stream === true) {
+      const encoder = new TextEncoder();
+      return {
+        ok: true,
+        body: new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"恢复完成"}}]}\n'));
+            controller.enqueue(encoder.encode("data: [DONE]\n"));
+            controller.close();
+          }
+        })
+      };
+    }
+    return { ok: true, async json() {
+      return { choices: [{ message: { content: "", tool_calls: [] } }] };
+    } };
+  };
+
+  const onMessage = eventChannel();
+  const onDisconnect = eventChannel();
+  const sent = [];
+  const port = {
+    onMessage,
+    onDisconnect,
+    postMessage(message) {
+      sent.push(message);
+      if (message.type === "tool" && message.name === "get_page_state") {
+        setTimeout(() => onMessage.emit({
+          type: "tool_result",
+          id: message.id,
+          result: { ok: true, url: "https://example.test/exam", page: 1, questionCount: 8, questions: [] }
+        }), 0);
+      }
+    }
+  };
+  const resumeStartedAt = Date.now();
+  const resume = new ExecutionBudgetManager({
+    budget: createExecutionBudget({ estimatedItems: 8, expectedWrites: 8 }),
+    usage: { startedAt: resumeStartedAt, lifetimeStartedAt: resumeStartedAt, agentRounds: 1, toolExecutions: 1, pageMutations: 1 },
+    progress: { completedItems: 1, verifiedItems: 1 }
+  }).snapshot();
+
+  try {
+    await runNativePageAgent(
+      { apiBaseUrl: "https://example.test/v1", apiKey: "test", model: "test-model" },
+      [{ role: "user", content: "继续执行" }],
+      port,
+      new AbortController().signal,
+      { turnId: "turn-resume", executionId: "execution-resume", resume }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  const refreshMessage = sent.find((message) => message.type === "tool");
+  assert.equal(refreshMessage?.name, "get_page_state");
+  assert.equal(requests[0].stream, false);
+  assert.match(requests[0].messages.at(-1).content, /恢复任务后的最新页面状态/);
+  assert.equal(requests[1].stream, true);
+  assert.equal(sent.at(-1).type, "done");
 });

@@ -17,6 +17,7 @@ const SYSTEM_PROMPT = [
   "- 用户要你操作页面时，先调用 get_page_state，读取可见文本和可操作语义目标。目标可能是原生控件，也可能是 Vue/React 的自定义 radio、checkbox、switch 或按钮；不能因为列表里暂时没有目标就断言页面是 canvas。",
   "- 初始列表按视口和表单上下文排序。目标不在列表中时，调用 list_targets，使用 region=below、above 或 all 并翻页；不能猜测页面元素，也不能凭 CSS selector 操作。",
   "- 点击、输入、选择和按键都只能使用工具返回的 targetId。radio、checkbox、switch 只能使用幂等的 set_checked，不能用 click；动作结果会包含 verified/status/evidence。若未验证，先 get_target_state 或重新 get_page_state，再决定下一步，绝不把未验证结果说成成功。",
+  "- targetId 只是当前页面快照中的临时句柄，不是永久身份。页面重绘或恢复任务后，旧 targetId 可能失效；如果工具结果表示目标已失效，禁止重复调用同一个旧 ID，必须先调用 get_page_state 或 list_targets，再使用新状态返回的 targetId。恢复任务消息中的最新页面状态优先于之前对话中的旧目标。",
   "- 页面重绘时运行时会尝试按语义指纹重绑同一个目标，但发生明显页面变化后仍应重新读取状态。对点击后的动态页面，调用 wait（通常 500-1200ms）后再观察。",
   "- 工具会在前端显示操作状态。若工具结果显示全局页面操作已关闭，告诉用户在插件设置中开启“启用页面操作（全局）”；不要反复请求同一操作。",
   "- 输入、提交、发送、删除、购买、发布、登录、权限修改等有影响的动作必须来自用户当前对话的明确请求。不要主动填写密码、验证码、支付信息、API Key 或其他秘密。",
@@ -396,6 +397,21 @@ function safeToolResult(result) {
     page: value.page,
     pageSize: value.pageSize,
     pageCount: value.pageCount,
+    questionCount: value.questionCount,
+    questionIds: value.questionIds,
+    questionTypes: value.questionTypes,
+    questions: Array.isArray(value.questions)
+      ? value.questions.slice(0, 80).map((question) => ({
+        questionId: question.questionId,
+        questionKey: question.questionKey,
+        questionType: question.questionType,
+        stem: question.stem,
+        selectedOptions: question.selectedOptions,
+        options: Array.isArray(question.options)
+          ? question.options.slice(0, 12).map((option) => ({ key: option.key, text: option.text, targetId: option.targetId, checked: option.checked }))
+          : undefined
+      }))
+      : undefined,
     totalTargets: value.totalTargets,
     registeredCount: value.registeredCount,
     hasMore: value.hasMore,
@@ -409,6 +425,8 @@ function safeToolResult(result) {
         text: target.text,
         optionKey: target.optionKey,
         questionId: target.questionId,
+        questionKey: target.questionKey,
+        logicalKey: target.logicalKey,
         questionText: target.questionText,
         questionType: target.questionType,
         group: target.group,
@@ -483,11 +501,41 @@ export async function runNativePageAgent(config, userMessages, port, signal, { t
     emit({ type: "chunk", content: executionPauseNotice(reason) });
     emit({ type: "done", status: "incomplete", verified: false, executionId: taskId, reason });
   };
+  const forceRefreshOnResume = async () => {
+    if (!resume) return true;
+    const args = { region: "all", page: 1, maxElements: 60, maxText: 3_000 };
+    if (!budget.canExecuteTool()) {
+      finishIncomplete(budget.shouldPause() || "target_stale");
+      return false;
+    }
+    emit({ type: "tool_log", name: "resume_refresh", args: { message: "恢复任务前正在刷新页面状态…" } });
+    let freshState;
+    try {
+      freshState = await requestTool(port, "get_page_state", args);
+    } catch (error) {
+      freshState = { error: String(error?.message || error) };
+    }
+    budget.consumeTool({ failed: Boolean(freshState?.error), status: freshState?.status });
+    budget.observePageResult(freshState);
+    const refreshedProgress = progressFromToolResult(freshState, budget.progress || {});
+    budget.recordProgress(refreshedProgress);
+    emitProgress();
+    if (freshState?.error) {
+      finishIncomplete("target_stale");
+      return false;
+    }
+    messages.push({
+      role: "user",
+      content: `[恢复任务后的最新页面状态]\n${safeToolResult(freshState)}\n\n这是恢复任务后重新读取的页面状态。之前对话中的 targetId 可能已经失效，后续只能使用这次状态返回的最新 targetId。`
+    });
+    return true;
+  };
   const onDisconnect = () => { disconnected = true; };
   port.onDisconnect.addListener(onDisconnect);
 
   try {
     emitProgress();
+    if (!(await forceRefreshOnResume())) return;
     while (budget.canStartAgentRound()) {
       if (disconnected || signal?.aborted) return;
       budget.consumeAgentRound();
@@ -526,6 +574,7 @@ export async function runNativePageAgent(config, userMessages, port, signal, { t
       });
 
       let roundProgress = false;
+      let targetRebindFailed = false;
       for (const call of toolCalls) {
         if (disconnected || signal?.aborted) return;
         const args = parseArguments(call.arguments);
@@ -563,9 +612,17 @@ export async function runNativePageAgent(config, userMessages, port, signal, { t
           tool_call_id: call.id,
           content: safeToolResult(result)
         });
+        if (result?.status === "target_rebind_failed") {
+          targetRebindFailed = true;
+          break;
+        }
       }
 
       budget.finishAgentRound({ progressChanged: roundProgress });
+      if (targetRebindFailed) {
+        finishIncomplete("target_rebind_failed");
+        return;
+      }
       if (budget.softLimitReached()) {
         if (budget.healthyProgress()) budget.unlockReserve();
         const reason = budget.shouldPause();

@@ -5651,7 +5651,7 @@
   );
   var questionContextFor = (element, stateElement) => {
     const container = questionContainerFor(element) || questionContainerFor(stateElement);
-    if (!container) return { id: "", stem: "", type: "" };
+    if (!container) return { id: "", stem: "", type: "", optionTexts: [] };
     const id = ["data-question-id", "data-question", "data-questionid", "id"].map((name) => String(container.getAttribute?.(name) || (name === "id" ? container.id : "")).trim()).find(Boolean) || "";
     let stem = String(container.getAttribute?.("data-question-stem") || "").trim();
     if (!stem) {
@@ -5663,13 +5663,15 @@
     }
     if (!stem && roleFor(container) === "radiogroup") stem = labelledByText(container);
     let type = "";
+    let controls = [];
     try {
-      const controls = Array.from(container.querySelectorAll("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], [role='switch'], [class*='radio'], [class*='checkbox'], [class*='switch'], [class*='toggle']"));
+      controls = Array.from(container.querySelectorAll("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], [role='switch'], [class*='radio'], [class*='checkbox'], [class*='switch'], [class*='toggle']"));
       if (controls.some((node) => inputTypeFor(node) === "checkbox" || ["checkbox", "switch"].includes(roleFor(node)) || ["checkbox", "switch"].includes(classControlKind(node)))) type = "multiple";
       else if (controls.some((node) => inputTypeFor(node) === "radio" || roleFor(node) === "radio" || classControlKind(node) === "radio")) type = "single";
     } catch {
     }
-    return { id: clipText(id, 160), stem: clipText(stem, 500), type };
+    const optionTexts = controls.map((node) => clipText(accessibleNameFor(node) || node.innerText || node.textContent || "", 220)).filter(Boolean).slice(0, 24);
+    return { id: clipText(id, 160), stem: clipText(stem, 500), type, optionTexts };
   };
   var groupFor = (element, stateElement) => {
     const inputName = String(stateElement?.name || "").trim();
@@ -6274,6 +6276,135 @@
     }
   };
 
+  // src/page/registry/fingerprint.js
+  var semanticClassSignature = (element) => String(element?.className || "").split(/\s+/).map((token) => token.trim().toLowerCase()).filter((token) => /radio|checkbox|switch|toggle|button|select|option|tab|input|field|form/.test(token)).slice(0, 4).join(".");
+  var pathSignatureFor = (element) => {
+    const parts = [];
+    let current = element;
+    let guard = 0;
+    while (current && guard < 5) {
+      guard += 1;
+      const tag = String(current.tagName || "").toLowerCase();
+      if (!tag) break;
+      const role = String(current.getAttribute?.("role") || "").toLowerCase();
+      const id = String(current.id || "").trim();
+      const name = String(current.getAttribute?.("name") || "").trim();
+      const classSignature = semanticClassSignature(current);
+      parts.unshift(`${tag}${role ? `[${role}]` : ""}${id ? `#${id}` : ""}${name ? `@${name}` : ""}${classSignature ? `.${classSignature}` : ""}`);
+      current = current.parentElement || current.getRootNode?.()?.host || null;
+    }
+    return parts.join(">");
+  };
+  var stableIdFor = (candidate) => {
+    const node = candidate.stateElement || candidate.clickElement || candidate.element;
+    const id = String(node?.id || "").trim();
+    if (id) return `id:${id}`;
+    const testId = String(node?.getAttribute?.("data-testid") || node?.getAttribute?.("data-test") || "").trim();
+    if (testId) return `test:${testId}`;
+    return "";
+  };
+  var stableHash = (value) => {
+    let hash = 2166136261;
+    for (const char of String(value || "")) {
+      hash ^= char.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
+  };
+  var questionKeyFor = (candidate) => {
+    const explicit = normalizeText(candidate?.questionKey);
+    if (explicit) return explicit;
+    const stem = normalizeText(candidate?.questionText);
+    const optionTexts = Array.isArray(candidate?.questionOptionTexts) ? candidate.questionOptionTexts.map((text2) => normalizeText(text2)).filter(Boolean).sort().join("|") : "";
+    const semanticQuestion = [stem, optionTexts].filter(Boolean).join("");
+    if (semanticQuestion) return `question_${stableHash(semanticQuestion)}`;
+    const questionId = normalizeText(candidate?.questionId);
+    if (questionId) return `question_${stableHash(questionId)}`;
+    const group = normalizeText(candidate?.group);
+    return group ? `question_${stableHash(group)}` : "";
+  };
+  var logicalKeyFor = (candidate) => {
+    const questionKey = questionKeyFor(candidate);
+    const optionKey = String(candidate?.optionKey || "").trim().toUpperCase();
+    if (questionKey && optionKey) return `${questionKey}:${optionKey}`;
+    const stableId = stableIdFor(candidate);
+    if (stableId) return `target:${stableId}`;
+    const kind = String(candidate?.kind || "custom");
+    const name = normalizeText(candidate?.name);
+    const text2 = normalizeText(candidate?.text);
+    return name || text2 ? `target:${kind}:${name}:${text2}` : "";
+  };
+  var fingerprintFor = (candidate) => ({
+    kind: String(candidate?.kind || "custom"),
+    role: String(candidate?.role || ""),
+    name: normalizeText(candidate?.name),
+    text: normalizeText(candidate?.text),
+    group: normalizeText(candidate?.group),
+    questionId: normalizeText(candidate?.questionId),
+    questionKey: questionKeyFor(candidate),
+    optionKey: String(candidate?.optionKey || "").toUpperCase(),
+    logicalKey: logicalKeyFor(candidate),
+    inputType: String(candidate?.inputType || ""),
+    inputName: String(candidate?.stateElement?.name || ""),
+    stableId: stableIdFor(candidate),
+    path: pathSignatureFor(candidate?.clickElement || candidate?.element),
+    rect: {
+      x: Math.round(Number(candidate?.rect?.x || candidate?.rect?.left || 0)),
+      y: Math.round(Number(candidate?.rect?.y || candidate?.rect?.top || 0))
+    }
+  });
+  var sameText = (left, right) => Boolean(left && right && left === right);
+  var partialText = (left, right) => Boolean(left && right && (left.includes(right) || right.includes(left)));
+  var kindFamily = (kind) => {
+    if (["radio", "checkbox", "switch"].includes(kind)) return "checkable";
+    if (["textbox", "select"].includes(kind)) return "input";
+    if (["button", "link", "menuitem", "option", "tab"].includes(kind)) return "activate";
+    return kind || "custom";
+  };
+  var fingerprintScore = (before, after) => {
+    if (!before || !after) return 0;
+    let score = 0;
+    if (before.stableId && before.stableId === after.stableId) score += 150;
+    if (before.kind === after.kind) score += 34;
+    else if (kindFamily(before.kind) === kindFamily(after.kind)) score += 12;
+    if (sameText(before.name, after.name)) score += 72;
+    else if (partialText(before.name, after.name)) score += 22;
+    if (sameText(before.text, after.text)) score += 34;
+    else if (partialText(before.text, after.text)) score += 10;
+    if (sameText(before.group, after.group)) score += 28;
+    if (sameText(before.questionId, after.questionId)) score += 18;
+    if (sameText(before.questionKey, after.questionKey)) score += 34;
+    if (before.optionKey && before.optionKey === after.optionKey) score += 18;
+    if (before.logicalKey && before.logicalKey === after.logicalKey) score += 36;
+    if (before.inputType && before.inputType === after.inputType) score += 12;
+    if (before.inputName && before.inputName === after.inputName) score += 30;
+    if (before.role && before.role === after.role) score += 10;
+    if (before.path && before.path === after.path) score += 24;
+    else if (before.path && after.path && before.path.split(">").slice(-2).join(">").includes(after.path.split(">").slice(-1)[0])) score += 6;
+    const distance = Math.hypot(before.rect.x - after.rect.x, before.rect.y - after.rect.y);
+    if (distance < 28) score += 14;
+    else if (distance < 180) score += 5;
+    return score;
+  };
+  var canRebindFingerprint = (before, after, score = fingerprintScore(before, after)) => {
+    if (!before || !after) return false;
+    const sameLogicalKey = Boolean(before.logicalKey && after.logicalKey && before.logicalKey === after.logicalKey);
+    if (!sameLogicalKey && before.questionId && after.questionId && before.questionId !== after.questionId) return false;
+    if (before.questionKey && after.questionKey && before.questionKey !== after.questionKey) return false;
+    if (before.optionKey && after.optionKey && before.optionKey !== after.optionKey) return false;
+    if (before.logicalKey && after.logicalKey && before.logicalKey !== after.logicalKey) return false;
+    if (before.stableId && before.stableId === after.stableId) return score >= 165;
+    if (before.kind !== after.kind && kindFamily(before.kind) !== kindFamily(after.kind)) return false;
+    const sameName = sameText(before.name, after.name);
+    const sameGroup = sameText(before.group, after.group);
+    const sameInputName = Boolean(before.inputName && before.inputName === after.inputName);
+    const samePath = Boolean(before.path && before.path === after.path);
+    const nearby = Math.hypot(before.rect.x - after.rect.x, before.rect.y - after.rect.y) < 180;
+    const isCheckable2 = kindFamily(before.kind) === "checkable";
+    if (isCheckable2) return score >= 130 && sameName && (sameGroup || sameInputName || samePath);
+    return score >= 145 && sameName && (samePath || sameGroup || nearby);
+  };
+
   // src/page/perception/collectTargets.js
   var MAX_SCAN_NODES = 12e3;
   var MAX_DISCOVERED_TARGETS = 12e3;
@@ -6415,7 +6546,7 @@
     const effectiveKind = kind === "custom" && stateKind === "custom" && scrollable ? "scroll-container" : kind === "custom" ? stateKind : kind;
     const checked = checkedStateFor(clickElement, stateElement, effectiveKind);
     const question = questionContextFor(clickElement, stateElement);
-    return {
+    const candidate = {
       element: clickElement,
       clickElement,
       stateElement: stateElement || clickElement,
@@ -6427,6 +6558,7 @@
       optionKey: optionKeyFor(clickElement, text2) || optionKeyFor(stateElement, text2),
       questionId: question.id,
       questionText: question.stem,
+      questionOptionTexts: question.optionTexts,
       questionType: question.type,
       group: groupFor(clickElement, stateElement),
       checked,
@@ -6439,6 +6571,9 @@
       hitTestable: isHitTestable(clickElement),
       confidence: candidateConfidence({ element, stateElement, kind: effectiveKind, clickElement })
     };
+    candidate.questionKey = questionKeyFor(candidate);
+    candidate.logicalKey = logicalKeyFor(candidate);
+    return candidate;
   };
   var candidateQuality = (candidate) => candidate.confidence * 100 + (candidate.hitTestable ? 8 : 0) + (candidate.inViewport ? 4 : 0) + (candidate.kind !== "custom" ? 2 : 0);
   var collectSemanticTargets = ({ extensionHost, maxCandidates } = {}) => {
@@ -6522,104 +6657,33 @@
     return { targets: ranked, region: normalizedRegion2, didFallback };
   };
 
-  // src/page/registry/fingerprint.js
-  var semanticClassSignature = (element) => String(element?.className || "").split(/\s+/).map((token) => token.trim().toLowerCase()).filter((token) => /radio|checkbox|switch|toggle|button|select|option|tab|input|field|form/.test(token)).slice(0, 4).join(".");
-  var pathSignatureFor = (element) => {
-    const parts = [];
-    let current = element;
-    let guard = 0;
-    while (current && guard < 5) {
-      guard += 1;
-      const tag = String(current.tagName || "").toLowerCase();
-      if (!tag) break;
-      const role = String(current.getAttribute?.("role") || "").toLowerCase();
-      const id = String(current.id || "").trim();
-      const name = String(current.getAttribute?.("name") || "").trim();
-      const classSignature = semanticClassSignature(current);
-      parts.unshift(`${tag}${role ? `[${role}]` : ""}${id ? `#${id}` : ""}${name ? `@${name}` : ""}${classSignature ? `.${classSignature}` : ""}`);
-      current = current.parentElement || current.getRootNode?.()?.host || null;
-    }
-    return parts.join(">");
-  };
-  var stableIdFor = (candidate) => {
-    const node = candidate.stateElement || candidate.clickElement || candidate.element;
-    const id = String(node?.id || "").trim();
-    if (id) return `id:${id}`;
-    const testId = String(node?.getAttribute?.("data-testid") || node?.getAttribute?.("data-test") || "").trim();
-    if (testId) return `test:${testId}`;
-    return "";
-  };
-  var fingerprintFor = (candidate) => ({
-    kind: String(candidate?.kind || "custom"),
-    role: String(candidate?.role || ""),
-    name: normalizeText(candidate?.name),
-    text: normalizeText(candidate?.text),
-    group: normalizeText(candidate?.group),
-    questionId: normalizeText(candidate?.questionId),
-    optionKey: String(candidate?.optionKey || "").toUpperCase(),
-    inputType: String(candidate?.inputType || ""),
-    inputName: String(candidate?.stateElement?.name || ""),
-    stableId: stableIdFor(candidate),
-    path: pathSignatureFor(candidate?.clickElement || candidate?.element),
-    rect: {
-      x: Math.round(Number(candidate?.rect?.x || candidate?.rect?.left || 0)),
-      y: Math.round(Number(candidate?.rect?.y || candidate?.rect?.top || 0))
-    }
-  });
-  var sameText = (left, right) => Boolean(left && right && left === right);
-  var partialText = (left, right) => Boolean(left && right && (left.includes(right) || right.includes(left)));
-  var kindFamily = (kind) => {
-    if (["radio", "checkbox", "switch"].includes(kind)) return "checkable";
-    if (["textbox", "select"].includes(kind)) return "input";
-    if (["button", "link", "menuitem", "option", "tab"].includes(kind)) return "activate";
-    return kind || "custom";
-  };
-  var fingerprintScore = (before, after) => {
-    if (!before || !after) return 0;
-    let score = 0;
-    if (before.stableId && before.stableId === after.stableId) score += 150;
-    if (before.kind === after.kind) score += 34;
-    else if (kindFamily(before.kind) === kindFamily(after.kind)) score += 12;
-    if (sameText(before.name, after.name)) score += 72;
-    else if (partialText(before.name, after.name)) score += 22;
-    if (sameText(before.text, after.text)) score += 34;
-    else if (partialText(before.text, after.text)) score += 10;
-    if (sameText(before.group, after.group)) score += 28;
-    if (sameText(before.questionId, after.questionId)) score += 18;
-    if (before.optionKey && before.optionKey === after.optionKey) score += 18;
-    if (before.inputType && before.inputType === after.inputType) score += 12;
-    if (before.inputName && before.inputName === after.inputName) score += 30;
-    if (before.role && before.role === after.role) score += 10;
-    if (before.path && before.path === after.path) score += 24;
-    else if (before.path && after.path && before.path.split(">").slice(-2).join(">").includes(after.path.split(">").slice(-1)[0])) score += 6;
-    const distance = Math.hypot(before.rect.x - after.rect.x, before.rect.y - after.rect.y);
-    if (distance < 28) score += 14;
-    else if (distance < 180) score += 5;
-    return score;
-  };
-  var canRebindFingerprint = (before, after, score = fingerprintScore(before, after)) => {
-    if (!before || !after) return false;
-    if (before.questionId && after.questionId && before.questionId !== after.questionId) return false;
-    if (before.optionKey && after.optionKey && before.optionKey !== after.optionKey) return false;
-    if (before.stableId && before.stableId === after.stableId) return score >= 165;
-    if (before.kind !== after.kind && kindFamily(before.kind) !== kindFamily(after.kind)) return false;
-    const sameName = sameText(before.name, after.name);
-    const sameGroup = sameText(before.group, after.group);
-    const sameInputName = Boolean(before.inputName && before.inputName === after.inputName);
-    const samePath = Boolean(before.path && before.path === after.path);
-    const nearby = Math.hypot(before.rect.x - after.rect.x, before.rect.y - after.rect.y) < 180;
-    const isCheckable2 = kindFamily(before.kind) === "checkable";
-    if (isCheckable2) return score >= 130 && sameName && (sameGroup || sameInputName || samePath);
-    return score >= 145 && sameName && (samePath || sameGroup || nearby);
-  };
-
   // src/page/registry/targetRegistry.js
   var isCurrentCandidate = (candidate) => Boolean(candidate?.clickElement?.isConnected) && Boolean(candidate?.stateElement?.isConnected);
+  var metadataFor = (id, snapshotVersion, candidate, fingerprint) => ({
+    id,
+    snapshotVersion,
+    fingerprint,
+    logicalKey: candidate.logicalKey || fingerprint.logicalKey || "",
+    questionId: candidate.questionId || "",
+    questionKey: candidate.questionKey || fingerprint.questionKey || "",
+    optionKey: candidate.optionKey || "",
+    kind: candidate.kind || fingerprint.kind || "",
+    name: candidate.name || "",
+    text: candidate.text || "",
+    lastSeenVersion: snapshotVersion
+  });
+  var staleResult = (targetId, message = "\u76EE\u6807\u5DF2\u5931\u6548\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u72B6\u6001\u540E\u91CD\u8BD5\u3002") => ({
+    error: message,
+    status: "target_stale",
+    targetId: String(targetId || "")
+  });
   var TargetRegistry = class {
     constructor({ discover }) {
       this.discover = discover;
       this.snapshotVersion = 0;
       this.entries = /* @__PURE__ */ new Map();
+      this.history = /* @__PURE__ */ new Map();
+      this.logicalTargets = /* @__PURE__ */ new Map();
       this.current = [];
     }
     registerSnapshot(candidates) {
@@ -6627,44 +6691,106 @@
       const version = this.snapshotVersion;
       this.current = candidates.map((candidate, index) => {
         const id = `t${version}-${index + 1}`;
+        const fingerprint = fingerprintFor(candidate);
+        const metadata = metadataFor(id, version, candidate, fingerprint);
         const entry = {
-          id,
-          snapshotVersion: version,
           candidate,
-          fingerprint: fingerprintFor(candidate)
+          ...metadata
         };
         this.entries.set(id, entry);
+        this.history.set(id, metadata);
+        if (metadata.logicalKey) {
+          this.logicalTargets.set(metadata.logicalKey, {
+            ...metadata,
+            latestTargetId: id,
+            latestCandidate: candidate
+          });
+        }
         return entry;
       });
-      const oldestVersion = Math.max(1, version - 3);
       for (const [id, entry] of this.entries) {
-        if (entry.snapshotVersion < oldestVersion) this.entries.delete(id);
+        if (entry.snapshotVersion < version) {
+          this.entries.delete(id);
+        }
       }
       return this.current;
+    }
+    refresh() {
+      const discovered = this.discover?.();
+      return this.registerSnapshot(Array.isArray(discovered) ? discovered : []);
     }
     currentEntries() {
       return this.current.slice();
     }
+    metadataForTarget(targetId) {
+      const id = String(targetId || "");
+      const entry = this.entries.get(id);
+      if (entry) return { ...entry, candidate: void 0 };
+      const metadata = this.history.get(id);
+      return metadata ? { ...metadata } : null;
+    }
+    findLogicalMatches(logicalKey, candidates) {
+      if (!logicalKey) return [];
+      return (Array.isArray(candidates) ? candidates : []).map((candidate) => ({ candidate, fingerprint: fingerprintFor(candidate), logicalKey: logicalKeyFor(candidate) })).filter((item) => item.logicalKey === logicalKey);
+    }
+    updateReboundEntry(id, metadata, match2) {
+      const nextEntry = {
+        ...metadata,
+        snapshotVersion: this.snapshotVersion,
+        candidate: match2.candidate,
+        fingerprint: match2.fingerprint
+      };
+      this.entries.set(id, nextEntry);
+      this.history.set(id, {
+        ...metadata,
+        snapshotVersion: this.snapshotVersion,
+        fingerprint: match2.fingerprint,
+        lastSeenVersion: this.snapshotVersion
+      });
+      if (metadata.logicalKey) {
+        this.logicalTargets.set(metadata.logicalKey, {
+          ...metadata,
+          fingerprint: match2.fingerprint,
+          latestTargetId: id,
+          latestCandidate: match2.candidate,
+          lastSeenVersion: this.snapshotVersion
+        });
+      }
+      return { id, candidate: match2.candidate, rebound: true, rebindScore: match2.score };
+    }
     resolve(targetId) {
       const id = String(targetId || "");
       const entry = this.entries.get(id);
-      if (!entry) return { error: "\u76EE\u6807\u5DF2\u5931\u6548\u6216\u4ECE\u672A\u88AB\u8BC6\u522B\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
-      if (isCurrentCandidate(entry.candidate)) return { id, candidate: entry.candidate, rebound: false };
+      const metadata = entry || this.history.get(id);
+      if (!metadata) return staleResult(id, "\u76EE\u6807\u5DF2\u5931\u6548\u6216\u4ECE\u672A\u88AB\u8BC6\u522B\uFF0C\u8BF7\u5148\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002");
+      if (entry && isCurrentCandidate(entry.candidate)) return { id, candidate: entry.candidate, rebound: false };
       const discovered = this.discover?.();
       const candidates = Array.isArray(discovered) ? discovered : [];
+      const logicalMatches = this.findLogicalMatches(metadata.logicalKey, candidates).filter((match2) => canRebindFingerprint(metadata.fingerprint, match2.fingerprint, fingerprintScore(metadata.fingerprint, match2.fingerprint)));
+      if (logicalMatches.length === 1) {
+        const match2 = { ...logicalMatches[0], score: fingerprintScore(metadata.fingerprint, logicalMatches[0].fingerprint) };
+        return this.updateReboundEntry(id, metadata, match2);
+      }
+      if (logicalMatches.length > 1) {
+        return {
+          error: "\u627E\u5230\u591A\u4E2A\u53EF\u80FD\u7684\u540C\u540D\u76EE\u6807\uFF0C\u65E0\u6CD5\u5B89\u5168\u91CD\u65B0\u7ED1\u5B9A\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002",
+          status: "target_rebind_failed",
+          reason: "ambiguous",
+          targetId: id,
+          logicalKey: metadata.logicalKey
+        };
+      }
       let best = null;
       for (const candidate of candidates) {
         const fingerprint = fingerprintFor(candidate);
-        const score = fingerprintScore(entry.fingerprint, fingerprint);
-        if (!canRebindFingerprint(entry.fingerprint, fingerprint, score)) continue;
+        const score = fingerprintScore(metadata.fingerprint, fingerprint);
+        if (!canRebindFingerprint(metadata.fingerprint, fingerprint, score)) continue;
         if (!best || score > best.score) best = { candidate, fingerprint, score };
       }
       if (!best) {
-        return { error: "\u76EE\u6807\u5DF2\u7ECF\u88AB\u9875\u9762\u91CD\u7ED8\u4E14\u65E0\u6CD5\u5B89\u5168\u91CD\u65B0\u5339\u914D\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002" };
+        return staleResult(id, "\u76EE\u6807\u5DF2\u7ECF\u88AB\u9875\u9762\u91CD\u7ED8\u4E14\u65E0\u6CD5\u5B89\u5168\u91CD\u65B0\u5339\u914D\uFF0C\u8BF7\u5237\u65B0\u9875\u9762\u72B6\u6001\u540E\u91CD\u8BD5\u3002");
       }
-      entry.candidate = best.candidate;
-      entry.fingerprint = best.fingerprint;
-      return { id, candidate: best.candidate, rebound: true, rebindScore: best.score };
+      return this.updateReboundEntry(id, metadata, best);
     }
   };
 
@@ -6691,6 +6817,43 @@
       height: Math.round(rect.height || 0)
     };
   };
+  var questionSummariesFor = (entries) => {
+    const byKey = /* @__PURE__ */ new Map();
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      const candidate = entry?.candidate || {};
+      const questionKey = String(candidate.questionKey || candidate.questionId || "").trim();
+      const optionKey = String(candidate.optionKey || "").trim().toUpperCase();
+      if (!questionKey) continue;
+      const key = questionKey;
+      let question = byKey.get(key);
+      if (!question) {
+        question = {
+          questionId: String(candidate.questionId || key),
+          questionKey,
+          questionType: candidate.questionType || "",
+          stem: clip(candidate.questionText || "", 500),
+          options: [],
+          selectedOptions: []
+        };
+        byKey.set(key, question);
+      }
+      if (!question.questionType && candidate.kind === "radio") question.questionType = "single";
+      if (!question.questionType && ["checkbox", "switch"].includes(candidate.kind)) question.questionType = "multiple";
+      if (optionKey && !question.options.some((option) => option.key === optionKey)) {
+        question.options.push({
+          key: optionKey,
+          text: clip(candidate.text || candidate.name || "", 220),
+          targetId: entry.id,
+          checked: candidate.checked === true
+        });
+      }
+      if (optionKey && candidate.checked === true && !question.selectedOptions.includes(optionKey)) question.selectedOptions.push(optionKey);
+    }
+    return Array.from(byKey.values()).map((question) => ({
+      ...question,
+      questionType: question.questionType || "unknown"
+    }));
+  };
   var targetSnapshot = (id, candidate) => {
     const clickElement = candidate.clickElement || candidate.element;
     const stateElement = candidate.stateElement || clickElement;
@@ -6706,6 +6869,8 @@
       text: clip(clickElement?.innerText || clickElement?.textContent || stateElement?.innerText || stateElement?.textContent || candidate.text || "", 220),
       optionKey: optionKeyFor(clickElement, candidate.text || "") || candidate.optionKey || void 0,
       questionId: candidate.questionId || question.id || void 0,
+      questionKey: candidate.questionKey || question.id || void 0,
+      logicalKey: candidate.logicalKey || void 0,
       questionText: candidate.questionText || question.stem || void 0,
       questionType: candidate.questionType || question.type || void 0,
       group: groupFor(clickElement, stateElement) || candidate.group || void 0,
@@ -6754,13 +6919,17 @@
     const buildSnapshot = ({ region = "nearby" } = {}) => {
       const discovered = discover();
       const ranked = rankTargets(discovered, { region: normalizedRegion(region) });
+      const allQuestions = questionSummariesFor(discovered.map((candidate) => ({ candidate })));
       const entries = registry.registerSnapshot(ranked.targets.slice(0, MAX_REGISTERED_TARGETS));
       return {
         entries,
         region: ranked.region,
         didFallback: ranked.didFallback,
         discoveredCount: discovered.length,
-        registeredCount: entries.length
+        registeredCount: entries.length,
+        questionCount: allQuestions.length,
+        questionIds: allQuestions.map((question) => question.questionId),
+        questionTypes: Object.fromEntries(allQuestions.map((question) => [question.questionId, question.questionType]))
       };
     };
     const paginatedTargets = ({ region, page = 1, pageSize = 35 } = {}) => {
@@ -6771,6 +6940,8 @@
       const requestedPage = clampNumber(page, 1, 1, pageCount);
       const start = (requestedPage - 1) * size;
       const targets = snapshot.entries.slice(start, start + size).map((entry) => targetSnapshot(entry.id, entry.candidate));
+      const questions = questionSummariesFor(snapshot.entries);
+      const questionTypes = Object.fromEntries(questions.map((question) => [question.questionId, question.questionType]));
       return {
         snapshotVersion: registry.snapshotVersion,
         region: snapshot.region,
@@ -6782,6 +6953,10 @@
         pageSize: size,
         pageCount,
         hasMore: requestedPage < pageCount,
+        questionCount: snapshot.questionCount || questions.length,
+        questionIds: snapshot.questionIds?.length ? snapshot.questionIds : questions.map((question) => question.questionId),
+        questionTypes: Object.keys(snapshot.questionTypes || {}).length ? snapshot.questionTypes : questionTypes,
+        questions,
         targets,
         note: snapshot.discoveredCount > snapshot.registeredCount ? `\u9875\u9762\u53D1\u73B0 ${snapshot.discoveredCount} \u4E2A\u8BED\u4E49\u76EE\u6807\uFF0C\u5F53\u524D\u6309\u6392\u5E8F\u4FDD\u7559\u6700\u9AD8\u7684 ${snapshot.registeredCount} \u4E2A\uFF1B\u53EF\u7528 region \u5207\u6362\u5230 above\u3001below \u6216 all \u7F29\u5C0F\u8303\u56F4\u3002` : "\u76EE\u6807\u6309\u53EF\u89C1\u6027\u3001\u8BED\u4E49\u7F6E\u4FE1\u5EA6\u3001\u8868\u5355/\u5BF9\u8BDD\u6846\u4E0A\u4E0B\u6587\u548C\u8DDD\u79BB\u6392\u5E8F\u3002"
       };
@@ -6928,6 +7103,7 @@
       return { ok: true, action: "wait", status: "completed", ms: duration, url: String(location.href || "") };
     };
     return {
+      refresh: ({ maxElements = 60, maxText = 3e3, region = "all" } = {}) => getPageState({ maxElements, maxText, region, page: 1 }),
       getPageState,
       listTargets,
       getTargetState,
@@ -8153,6 +8329,10 @@ ${f.text}
       messagesEl.appendChild(item);
       scrollToBottom();
       return {
+        update(status2) {
+          item.classList.remove("error");
+          item.textContent = `${status2}\uFF1A${actionSummary(name, args)}`;
+        },
         done(result) {
           item.classList.toggle("error", Boolean(result?.error));
           item.textContent = result?.error ? `${result?.actionExecuted ? "\u5F85\u786E\u8BA4" : "\u672A\u5B8C\u6210"}\uFF1A${result.error}` : result?.status === "already_checked" ? `\u5DF2\u786E\u8BA4\uFF1A${actionSummary(name, args)}\uFF08\u539F\u672C\u5DF2\u7ECF\u9009\u4E2D\uFF09` : result?.status === "already_unchecked" ? `\u5DF2\u786E\u8BA4\uFF1A${actionSummary(name, args)}\uFF08\u539F\u672C\u5DF2\u7ECF\u5173\u95ED\uFF09` : result?.status === "already_attempted" ? `\u5DF2\u8DF3\u8FC7\u91CD\u590D\u64CD\u4F5C\uFF1A${actionSummary(name, args)}` : result?.queued ? `\u5DF2\u5B89\u6392\uFF1A${actionSummary(name, args)}` : result?.verified === false ? `\u5DF2\u6D3E\u53D1\uFF0C\u5F85\u786E\u8BA4\uFF1A${actionSummary(name, args)}` : `\u5DF2\u6267\u884C\uFF1A${actionSummary(name, args)}`;
@@ -8189,14 +8369,39 @@ ${f.text}
       }
       if (ledgerKey) actionLedger.set(ledgerKey, { pending: true });
       const log = appendToolLog(name, args, "\u6B63\u5728\u6267\u884C");
-      let result;
-      if (name === "click") result = await pageController.click(args);
-      else if (isCheckedAction) result = await pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
-      else if (name === "type") result = await pageController.type(args);
-      else if (name === "select_option") result = await pageController.selectOption(args);
-      else if (name === "press_key") result = await pageController.pressKey(args);
-      else if (name === "scroll") result = await pageController.scroll(args);
-      else result = { error: `\u672A\u77E5\u9875\u9762\u64CD\u4F5C: ${name}` };
+      const executeAction = async () => {
+        if (name === "click") return pageController.click(args);
+        if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
+        if (name === "type") return pageController.type(args);
+        if (name === "select_option") return pageController.selectOption(args);
+        if (name === "press_key") return pageController.pressKey(args);
+        if (name === "scroll") return pageController.scroll(args);
+        return { error: `\u672A\u77E5\u9875\u9762\u64CD\u4F5C: ${name}` };
+      };
+      let result = await executeAction();
+      const looksStale = (value) => value?.status === "target_stale" || /目标已失效|目标已经被页面重绘/.test(String(value?.error || ""));
+      if (looksStale(result)) {
+        log.update("\u76EE\u6807\u5DF2\u5931\u6548\uFF0C\u6B63\u5728\u5237\u65B0\u9875\u9762\u72B6\u6001\u5E76\u91CD\u65B0\u7ED1\u5B9A");
+        const freshState = await pageController.refresh({ region: "all", page: 1, maxElements: 60 });
+        if (freshState?.error) {
+          result = {
+            ...result,
+            status: "target_rebind_failed",
+            reason: "refresh_failed",
+            error: `\u5237\u65B0\u9875\u9762\u72B6\u6001\u5931\u8D25\uFF1A${freshState.error}`
+          };
+        } else {
+          result = await executeAction();
+          if (looksStale(result)) {
+            result = {
+              ...result,
+              status: "target_rebind_failed",
+              reason: "not_found",
+              error: "\u5237\u65B0\u540E\u4ECD\u65E0\u6CD5\u5B89\u5168\u91CD\u65B0\u7ED1\u5B9A\u8BE5\u76EE\u6807\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002"
+            };
+          }
+        }
+      }
       log.done(result);
       if (ledgerKey) {
         if (result?.actionExecuted || result?.status === "already_checked" || result?.status === "already_unchecked") actionLedger.set(ledgerKey, result);
@@ -8433,10 +8638,10 @@ ${replyText.slice(after2, c2)}`;
           return;
         }
         if (msg?.type === "tool_log") {
-          if (msg.name === "compatibility") {
+          if (msg.name === "compatibility" || msg.name === "resume_refresh") {
             const item = document.createElement("div");
             item.className = "tool-log";
-            item.textContent = String(msg.args?.message || "\u5DF2\u5207\u6362\u5230\u517C\u5BB9\u5DE5\u5177\u6A21\u5F0F\u3002");
+            item.textContent = String(msg.args?.message || (msg.name === "compatibility" ? "\u5DF2\u5207\u6362\u5230\u517C\u5BB9\u5DE5\u5177\u6A21\u5F0F\u3002" : "\u6062\u590D\u4EFB\u52A1\u524D\u6B63\u5728\u5237\u65B0\u9875\u9762\u72B6\u6001\u2026"));
             messagesEl.appendChild(item);
             scrollToBottom();
           }

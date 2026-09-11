@@ -14,6 +14,7 @@ import {
   roleFor,
   stateElementFor
 } from "./semantic.js";
+import { logicalKeyFor, questionKeyFor } from "../registry/fingerprint.js";
 import {
   canReceivePointer,
   isDisabled,
@@ -169,7 +170,7 @@ const candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
   const effectiveKind = kind === "custom" && stateKind === "custom" && scrollable ? "scroll-container" : (kind === "custom" ? stateKind : kind);
   const checked = checkedStateFor(clickElement, stateElement, effectiveKind);
   const question = questionContextFor(clickElement, stateElement);
-  return {
+  const candidate = {
     element: clickElement,
     clickElement,
     stateElement: stateElement || clickElement,
@@ -181,6 +182,7 @@ const candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
     optionKey: optionKeyFor(clickElement, text) || optionKeyFor(stateElement, text),
     questionId: question.id,
     questionText: question.stem,
+    questionOptionTexts: question.optionTexts,
     questionType: question.type,
     group: groupFor(clickElement, stateElement),
     checked,
@@ -193,6 +195,9 @@ const candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
     hitTestable: isHitTestable(clickElement),
     confidence: candidateConfidence({ element, stateElement, kind: effectiveKind, clickElement })
   };
+  candidate.questionKey = questionKeyFor(candidate);
+  candidate.logicalKey = logicalKeyFor(candidate);
+  return candidate;
 };
 
 const candidateQuality = (candidate) =>

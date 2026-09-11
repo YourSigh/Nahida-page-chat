@@ -23,6 +23,7 @@ export const executionPauseNotice = (reason) => ({
   tool_execution_limit: "操作未完成：已达到工具调用上限，尚未完成最终验证。",
   page_mutation_limit: "操作未完成：已达到页面变更上限，尚未完成最终验证。",
   target_retry_limit: "操作已暂停：同一页面目标的重试次数已达到上限，请检查页面状态后再继续。",
+  target_rebind_failed: "操作已暂停：目标刷新后仍无法安全重新绑定，请重新读取页面状态。",
   no_progress: "操作已暂停：连续多轮没有观察到页面进展，请检查页面或点击“继续执行”。",
   soft_limit_without_progress: "操作已暂停：接近执行预算且页面没有继续进展，请检查页面或点击“继续执行”。"
 }[reason] || "操作未完成：执行已暂停，尚未完成最终验证。" );
@@ -185,10 +186,15 @@ const progressSignature = (progress) => JSON.stringify({
 
 const completionKeyFor = (result) => {
   const target = result?.target || {};
-  const questionId = String(target.questionId || "").trim();
+  const questionId = String(target.questionKey || target.questionId || "").trim();
   const optionKey = String(target.optionKey || "").trim();
   if (questionId && optionKey) return `${questionId}:${optionKey}`;
   return String(target.id || result?.targetId || "").trim();
+};
+
+const questionIdFor = (result) => {
+  const target = result?.target || {};
+  return String(target.questionId || target.questionKey || target.id || result?.targetId || "").trim();
 };
 
 export const progressFromToolResult = (result, previous = {}) => {
@@ -197,19 +203,40 @@ export const progressFromToolResult = (result, previous = {}) => {
   const alreadySatisfied = ["already_checked", "already_unchecked"].includes(String(result?.status || ""));
   const verifiedTaskItem = mutation && result?.verified === true && (result?.actionExecuted === true || alreadySatisfied);
   const actualMutation = mutation && result?.actionExecuted === true;
+  const target = result?.target || {};
+  const selectedOptions = Array.isArray(result?.selectedOptions)
+    ? result.selectedOptions.map((option) => String(option).toUpperCase()).sort()
+    : Array.isArray(result?.question?.selectedOptions)
+      ? result.question.selectedOptions.map((option) => String(option).toUpperCase()).sort()
+      : null;
+  const expectedOptions = Array.isArray(result?.expectedOptions)
+    ? result.expectedOptions.map((option) => String(option).toUpperCase()).sort()
+    : Array.isArray(result?.question?.expectedOptions)
+      ? result.question.expectedOptions.map((option) => String(option).toUpperCase()).sort()
+      : null;
+  const fullQuestionMatch = selectedOptions && expectedOptions &&
+    JSON.stringify(selectedOptions) === JSON.stringify(expectedOptions);
+  const questionVerified = Boolean(result?.questionVerified === true || fullQuestionMatch ||
+    (verifiedTaskItem && (!target.questionId && !target.questionKey || target.questionType === "single")));
   const scrollOrPageChange = result?.action === "scroll" && result?.verified === true;
   const resultUrl = result?.url || "";
   const resultScroll = result?.scroll || result?.after || result?.evidence?.after || {};
   const priorVerified = Math.max(0, Number(previous?.verifiedItems) || 0);
   const priorCompleted = Math.max(0, Number(previous?.completedItems) || 0);
   const completedItemKeys = new Set(Array.isArray(previous?.completedItemKeys) ? previous.completedItemKeys.map((key) => String(key)) : []);
+  const completedQuestionIds = new Set(Array.isArray(previous?.completedQuestionIds) ? previous.completedQuestionIds.map((key) => String(key)) : []);
   const completionKey = verifiedTaskItem ? completionKeyFor(result) : "";
   const isNewCompletedItem = Boolean(completionKey && !completedItemKeys.has(completionKey));
   if (isNewCompletedItem) completedItemKeys.add(completionKey);
+  const questionId = questionVerified ? questionIdFor(result) : "";
+  const isNewCompletedQuestion = Boolean(questionId && !completedQuestionIds.has(questionId));
+  if (isNewCompletedQuestion) completedQuestionIds.add(questionId);
   const next = {
-    verifiedItems: priorVerified + (isNewCompletedItem ? 1 : 0),
-    completedItems: priorCompleted + (isNewCompletedItem ? 1 : 0),
+    verifiedItems: Math.max(priorVerified, completedQuestionIds.size),
+    completedItems: Math.max(priorCompleted, completedQuestionIds.size),
     completedItemKeys: Array.from(completedItemKeys),
+    completedQuestionIds: Array.from(completedQuestionIds),
+    questionVerified,
     actualMutation,
     currentPage: result?.page ?? previous?.currentPage ?? null,
     pageFingerprint: resultUrl || resultScroll?.x != null || resultScroll?.y != null || result?.page != null
@@ -217,12 +244,15 @@ export const progressFromToolResult = (result, previous = {}) => {
       : String(previous?.pageFingerprint || ""),
     unresolvedErrors: result?.error ? Math.max(1, Number(previous?.unresolvedErrors) || 0) : Math.max(0, Number(previous?.unresolvedErrors) || 0)
   };
-  const changed = isNewCompletedItem || actualMutation || scrollOrPageChange ||
+  const changed = isNewCompletedQuestion || actualMutation || scrollOrPageChange ||
     (String(next.currentPage ?? "") !== String(previous.currentPage ?? "")) ||
     (String(next.pageFingerprint || "") !== String(previous.pageFingerprint || "")) ||
     ((Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0));
   return {
     ...next,
+    issue: String(result?.status || "").startsWith("target_")
+      ? (result.status === "target_rebind_failed" ? "target_rebind_failed" : "target_stale")
+      : undefined,
     changed
   };
 };
@@ -239,6 +269,7 @@ export class ExecutionBudgetManager {
     this.reserveUnlocked = false;
     this.pauseReason = "";
     this.targetAttempts = new Map();
+    this.lastIssue = "";
   }
 
   consumeAgentRound() {
@@ -250,7 +281,8 @@ export class ExecutionBudgetManager {
     this.usage.toolExecutions += 1;
     if (isMutation && actionExecuted) this.usage.pageMutations += 1;
     const alreadySatisfied = String(status || "").startsWith("already_");
-    const countsAsTargetAttempt = isMutation && targetId && !alreadySatisfied && (actionExecuted || failed || retry);
+    const staleStatus = String(status || "").startsWith("target_");
+    const countsAsTargetAttempt = isMutation && targetId && !alreadySatisfied && !staleStatus && (actionExecuted || failed || retry);
     if (countsAsTargetAttempt) {
       const id = String(targetId);
       const attempts = (this.targetAttempts.get(id) || 0) + 1;
@@ -273,14 +305,23 @@ export class ExecutionBudgetManager {
     const errorsResolved = (Number(next.unresolvedErrors) || 0) < (Number(previous.unresolvedErrors) || 0);
     // The first observation is a baseline, not progress by itself.  In
     // particular, a failed click must not reset the no-progress watchdog.
-    const changed = verifiedIncreased || completedIncreased || pageChanged || errorsResolved;
+    const observedMutation = next.actualMutation === true;
+    const changed = verifiedIncreased || completedIncreased || pageChanged || errorsResolved || observedMutation || next.changed === true;
     this.progress = next;
     this.lastProgressSignature = signature;
+    this.lastIssue = String(next.issue || "");
     if (changed) this.usage.lastProgressAt = this.now();
     return changed;
   }
 
   finishAgentRound({ progressChanged = false } = {}) {
+    if (this.lastIssue === "target_rebind_failed") this.pauseReason = "target_rebind_failed";
+    if (this.lastIssue === "target_stale" || this.lastIssue === "target_rebind_failed") {
+      // A stale handle is a synchronization issue, not evidence that the
+      // page made no progress. The recovery result decides whether to pause.
+      this.lastRoundProgress = false;
+      return this.snapshot();
+    }
     this.lastRoundProgress = Boolean(progressChanged);
     if (progressChanged) this.usage.noProgressRounds = 0;
     else this.usage.noProgressRounds += 1;
@@ -289,7 +330,15 @@ export class ExecutionBudgetManager {
 
   observePageResult(result) {
     const observedPages = Math.max(0, Number(result?.pageCount) || 0);
-    const observedItems = Math.max(0, Number(result?.totalItems || result?.progress?.totalItems) || 0);
+    const hasQuestionSignal = result?.questionCount != null || Array.isArray(result?.questions) || result?.totalQuestionCount != null;
+    const observedQuestionCount = result?.questionCount != null
+      ? Number(result.questionCount)
+      : Array.isArray(result?.questions)
+        ? result.questions.length
+        : Number(result?.totalQuestionCount || 0);
+    const observedItems = Math.max(0, hasQuestionSignal && Number.isFinite(observedQuestionCount)
+      ? observedQuestionCount
+      : Number(result?.totalItems || result?.progress?.totalItems) || 0);
     const currentPages = Math.max(0, Number(this.budget.plan?.discoveryCalls) || 0);
     const currentItems = Math.max(1, Number(this.budget.plan?.estimatedItems) || 1);
     const nextItems = Math.max(currentItems, observedItems);
