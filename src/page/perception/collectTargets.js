@@ -9,6 +9,8 @@ import {
   hasClickHint,
   inputTypeFor,
   kindFor,
+  optionKeyFor,
+  questionContextFor,
   roleFor,
   stateElementFor
 } from "./semantic.js";
@@ -166,6 +168,7 @@ const candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
   const stateKind = kindFor(clickElement, stateElement);
   const effectiveKind = kind === "custom" && stateKind === "custom" && scrollable ? "scroll-container" : (kind === "custom" ? stateKind : kind);
   const checked = checkedStateFor(clickElement, stateElement, effectiveKind);
+  const question = questionContextFor(clickElement, stateElement);
   return {
     element: clickElement,
     clickElement,
@@ -175,6 +178,10 @@ const candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
     role: roleFor(clickElement) || roleFor(element),
     name,
     text,
+    optionKey: optionKeyFor(clickElement, text) || optionKeyFor(stateElement, text),
+    questionId: question.id,
+    questionText: question.stem,
+    questionType: question.type,
     group: groupFor(clickElement, stateElement),
     checked,
     disabled: isDisabled(clickElement) || isDisabled(stateElement),

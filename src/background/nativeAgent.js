@@ -1,3 +1,5 @@
+import { drainSseBuffer, TOOL_LIMIT_NOTICE } from "../common/streamProtocol.js";
+
 const MAX_TOOL_CALLS = 12;
 const TOOL_TIMEOUT_MS = 90_000;
 
@@ -9,7 +11,7 @@ const SYSTEM_PROMPT = [
   "工作方式：",
   "- 用户要你操作页面时，先调用 get_page_state，读取可见文本和可操作语义目标。目标可能是原生控件，也可能是 Vue/React 的自定义 radio、checkbox、switch 或按钮；不能因为列表里暂时没有目标就断言页面是 canvas。",
   "- 初始列表按视口和表单上下文排序。目标不在列表中时，调用 list_targets，使用 region=below、above 或 all 并翻页；不能猜测页面元素，也不能凭 CSS selector 操作。",
-  "- 点击、输入、选择和按键都只能使用工具返回的 targetId。radio、checkbox、switch 优先使用 check；动作结果会包含 verified/status/evidence。若未验证，先 get_target_state 或重新 get_page_state，再决定下一步，绝不把未验证结果说成成功。",
+  "- 点击、输入、选择和按键都只能使用工具返回的 targetId。radio、checkbox、switch 只能使用幂等的 set_checked，不能用 click；动作结果会包含 verified/status/evidence。若未验证，先 get_target_state 或重新 get_page_state，再决定下一步，绝不把未验证结果说成成功。",
   "- 页面重绘时运行时会尝试按语义指纹重绑同一个目标，但发生明显页面变化后仍应重新读取状态。对点击后的动态页面，调用 wait（通常 500-1200ms）后再观察。",
   "- 工具会在前端显示操作状态。若工具结果显示全局页面操作已关闭，告诉用户在插件设置中开启“启用页面操作（全局）”；不要反复请求同一操作。",
   "- 输入、提交、发送、删除、购买、发布、登录、权限修改等有影响的动作必须来自用户当前对话的明确请求。不要主动填写密码、验证码、支付信息、API Key 或其他秘密。",
@@ -94,7 +96,7 @@ const PAGE_TOOLS = [
     type: "function",
     function: {
       name: "click",
-      description: "点击一个工具返回的 targetId。运行时会验证可观察到的状态变化；可能跳转的链接或提交按钮会先确认调度。",
+      description: "点击一个工具返回的 targetId。radio、checkbox、switch 不能用此工具；运行时会验证可观察到的状态变化，可能跳转的链接或提交按钮会先确认调度。",
       parameters: {
         type: "object",
         properties: { targetId: { type: "string", description: "get_page_state 返回的目标 ID" } },
@@ -106,12 +108,15 @@ const PAGE_TOOLS = [
   {
     type: "function",
     function: {
-      name: "check",
-      description: "将 radio、checkbox 或 switch 目标设置为已选中/开启，并验证最终状态。",
+      name: "set_checked",
+      description: "幂等地将 radio、checkbox 或 switch 设置为选中/开启或未选中/关闭；同一目标不要重复调用。",
       parameters: {
         type: "object",
-        properties: { targetId: { type: "string" } },
-        required: ["targetId"],
+        properties: {
+          targetId: { type: "string" },
+          checked: { type: "boolean" }
+        },
+        required: ["targetId", "checked"],
         additionalProperties: false
       }
     }
@@ -269,6 +274,49 @@ async function callToolCompletion(config, messages, signal) {
   };
 }
 
+async function* streamFinalCompletion(config, messages, signal) {
+  const response = await fetch(endpoint(config), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + config.apiKey
+    },
+    body: JSON.stringify({ model: config.model, messages, stream: true }),
+    signal
+  });
+  if (!response.ok) {
+    let detail = "";
+    try { detail = await response.text(); } catch {}
+    throw new NativeToolApiError(response.status, detail);
+  }
+
+  const reader = response.body?.getReader?.();
+  if (!reader) throw new Error("模型没有返回可读取的流式响应");
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const drained = drainSseBuffer(buffer, decoder.decode(value, { stream: true }));
+      buffer = drained.remainder;
+      for (const event of drained.events) {
+        if (event.done) return;
+        if (event.content) yield event.content;
+      }
+    }
+
+    const drained = drainSseBuffer(buffer, decoder.decode(), true);
+    for (const event of drained.events) {
+      if (event.done) return;
+      if (event.content) yield event.content;
+    }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+}
+
 async function requestTool(port, name, args) {
   const id = Date.now() + "-" + Math.random().toString(16).slice(2);
   return await new Promise((resolve, reject) => {
@@ -301,12 +349,37 @@ async function requestTool(port, name, args) {
   });
 }
 
+const createTurnEmitter = (port, turnId) => {
+  let seq = 0;
+  return (message) => safePost(port, {
+    ...message,
+    turnId: String(turnId || ""),
+    seq: ++seq
+  });
+};
+
+export async function streamFinalResponse(config, messages, port, signal, turnId, fallbackText = "", emitOverride) {
+  const emit = emitOverride || createTurnEmitter(port, turnId);
+  let streamed = false;
+  for await (const chunk of streamFinalCompletion(config, messages, signal)) {
+    if (!chunk) continue;
+    streamed = true;
+    if (!emit({ type: "chunk", content: chunk })) return false;
+  }
+  if (!streamed && fallbackText) emit({ type: "chunk", content: fallbackText });
+  emit({ type: "done" });
+  return true;
+}
+
 function safeToolResult(result) {
   const value = result || {};
   const json = JSON.stringify(value);
   if (json.length <= 14_000) return json;
   const compact = {
     ok: value.ok,
+    action: value.action,
+    actionExecuted: value.actionExecuted,
+    blocked: value.blocked,
     error: value.error,
     status: value.status,
     verified: value.verified,
@@ -319,6 +392,7 @@ function safeToolResult(result) {
     pageSize: value.pageSize,
     pageCount: value.pageCount,
     totalTargets: value.totalTargets,
+    registeredCount: value.registeredCount,
     hasMore: value.hasMore,
     text: typeof value.text === "string" ? value.text.slice(0, 2_400) : undefined,
     targets: Array.isArray(value.targets)
@@ -328,6 +402,10 @@ function safeToolResult(result) {
         role: target.role,
         name: target.name,
         text: target.text,
+        optionKey: target.optionKey,
+        questionId: target.questionId,
+        questionText: target.questionText,
+        questionType: target.questionType,
         group: target.group,
         checked: target.checked,
         inputType: target.inputType,
@@ -381,10 +459,11 @@ export const isNativeToolsUnsupported = (error) => {
     /(tool|function.?call|parallel_tool_calls|unknown parameter|unsupported)/.test(detail);
 };
 
-export async function runNativePageAgent(config, userMessages, port, signal) {
+export async function runNativePageAgent(config, userMessages, port, signal, { turnId } = {}) {
   const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
   let disconnected = false;
   let successfulCalls = 0;
+  const emit = createTurnEmitter(port, turnId);
   const onDisconnect = () => { disconnected = true; };
   port.onDisconnect.addListener(onDisconnect);
 
@@ -402,11 +481,15 @@ export async function runNativePageAgent(config, userMessages, port, signal) {
 
       const toolCalls = normalizeToolCalls(response.toolCalls);
       if (!toolCalls.length) {
-        safePost(port, {
-          type: "chunk",
-          content: response.content || "（纳西妲暂时没有更多要说的了。）"
-        });
-        safePost(port, { type: "done" });
+        await streamFinalResponse(
+          config,
+          messages,
+          port,
+          signal,
+          turnId,
+          response.content || "（纳西妲暂时没有更多要说的了。）",
+          emit
+        );
         return;
       }
 
@@ -423,7 +506,7 @@ export async function runNativePageAgent(config, userMessages, port, signal) {
       for (const call of toolCalls) {
         if (disconnected || signal?.aborted) return;
         const args = parseArguments(call.arguments);
-        safePost(port, { type: "tool_log", name: call.name, args });
+        if (!emit({ type: "tool_log", name: call.name, args })) return;
         let result;
         if (args._parseError) {
           result = { error: args._parseError };
@@ -443,11 +526,8 @@ export async function runNativePageAgent(config, userMessages, port, signal) {
       }
     }
 
-    safePost(port, {
-      type: "chunk",
-      content: "我已经完成了可安全执行的页面步骤。还需要我继续查看页面状态吗？"
-    });
-    safePost(port, { type: "done" });
+    emit({ type: "chunk", content: TOOL_LIMIT_NOTICE });
+    emit({ type: "done", status: "incomplete", verified: false });
   } finally {
     port.onDisconnect.removeListener(onDisconnect);
   }

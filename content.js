@@ -5411,6 +5411,35 @@
   };
   var lib_default = MarkdownIt;
 
+  // src/common/streamProtocol.js
+  var createSendGate = () => {
+    let state = "idle";
+    return {
+      tryAcquire() {
+        if (state !== "idle") return false;
+        state = "pending";
+        return true;
+      },
+      markStreaming() {
+        state = "streaming";
+      },
+      release() {
+        state = "idle";
+      },
+      get state() {
+        return state;
+      }
+    };
+  };
+  var acceptTurnMessage = (currentTurnId, lastSeq, message) => {
+    if (!message || message.turnId && message.turnId !== currentTurnId) {
+      return { accepted: false, lastSeq };
+    }
+    const seq = Number(message.seq);
+    if (Number.isFinite(seq) && seq <= lastSeq) return { accepted: false, lastSeq };
+    return { accepted: true, lastSeq: Number.isFinite(seq) ? seq : lastSeq };
+  };
+
   // src/page/perception/semantic.js
   var clipText = (value, max = 180) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
   var clip = clipText;
@@ -5608,6 +5637,40 @@
     return clipText(element.innerText || element.textContent || element.title || "");
   };
   var accessibleNameFor = (element, fallbackElement) => rawNameFor(element) || rawNameFor(fallbackElement);
+  var optionKeyFor = (element, text2 = "") => {
+    const explicit = ["data-option-key", "data-option", "data-choice", "data-key"].map((name) => String(element?.getAttribute?.(name) || "").trim()).find((value) => /^[A-Za-z]$/.test(value));
+    if (explicit) return explicit.toUpperCase();
+    const inputValue = String(element?.value || "").trim();
+    if (/^[A-Za-z]$/.test(inputValue)) return inputValue.toUpperCase();
+    const match2 = String(text2 || rawNameFor(element) || "").match(/^\s*[（(]?\s*([A-Za-z])\s*[)）.、:：\-]\s*/);
+    return match2 ? match2[1].toUpperCase() : "";
+  };
+  var questionContainerFor = (element) => closestComposed(
+    element,
+    "[data-question-id], [data-question], [data-questionid], fieldset, [role='radiogroup'], [role='group']"
+  );
+  var questionContextFor = (element, stateElement) => {
+    const container = questionContainerFor(element) || questionContainerFor(stateElement);
+    if (!container) return { id: "", stem: "", type: "" };
+    const id = ["data-question-id", "data-question", "data-questionid", "id"].map((name) => String(container.getAttribute?.(name) || (name === "id" ? container.id : "")).trim()).find(Boolean) || "";
+    let stem = String(container.getAttribute?.("data-question-stem") || "").trim();
+    if (!stem) {
+      try {
+        const stemNode = container.querySelector("[data-question-stem], legend, h1, h2, h3, h4, h5, h6");
+        stem = String(stemNode?.innerText || stemNode?.textContent || "").trim();
+      } catch {
+      }
+    }
+    if (!stem && roleFor(container) === "radiogroup") stem = labelledByText(container);
+    let type = "";
+    try {
+      const controls = Array.from(container.querySelectorAll("input[type='radio'], input[type='checkbox'], [role='radio'], [role='checkbox'], [role='switch'], [class*='radio'], [class*='checkbox'], [class*='switch'], [class*='toggle']"));
+      if (controls.some((node) => inputTypeFor(node) === "checkbox" || ["checkbox", "switch"].includes(roleFor(node)) || ["checkbox", "switch"].includes(classControlKind(node)))) type = "multiple";
+      else if (controls.some((node) => inputTypeFor(node) === "radio" || roleFor(node) === "radio" || classControlKind(node) === "radio")) type = "single";
+    } catch {
+    }
+    return { id: clipText(id, 160), stem: clipText(stem, 500), type };
+  };
   var groupFor = (element, stateElement) => {
     const inputName = String(stateElement?.name || "").trim();
     if (inputName) return clipText(inputName, 160);
@@ -5855,6 +5918,17 @@
   });
   var verifyActivation = ({ action, target, before, observation, expectedChecked }) => {
     const { after, changes } = observation;
+    if (action === "set_checked") {
+      if (before.checked === expectedChecked) {
+        return success(expectedChecked ? "already_checked" : "already_unchecked", observation, { actionExecuted: false });
+      }
+      if (after.checked === expectedChecked) return success("verified", observation, { actionExecuted: true });
+      return unverified(
+        observation,
+        `\u5DF2\u5C1D\u8BD5\u8BBE\u7F6E${expectedChecked ? "\u9009\u4E2D" : "\u672A\u9009\u4E2D"}\uFF0C\u4F46\u76EE\u6807\u6700\u7EC8\u72B6\u6001\u4E0D\u7B26\u5408\u9884\u671F\u3002\u8BF7\u91CD\u65B0\u8BFB\u53D6\u72B6\u6001\u786E\u8BA4\u3002`,
+        { expectedChecked }
+      );
+    }
     if (action === "check") {
       if (before.checked === true) return success("already_checked", observation);
       if (after.checked === true) return success("verified", observation);
@@ -5897,6 +5971,24 @@
   var delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   var actionTarget = (target) => target?.clickElement || target?.element || target?.stateElement;
   var stateTarget = (target) => target?.stateElement || actionTarget(target);
+  var checkableKinds = /* @__PURE__ */ new Set(["radio", "checkbox", "switch"]);
+  var checkedActionPlan = ({ kind, current, desired }) => {
+    const expectedChecked = Boolean(desired);
+    if (!checkableKinds.has(kind)) return { execute: false, error: "\u76EE\u6807\u4E0D\u662F radio\u3001checkbox \u6216 switch\u3002" };
+    if (kind === "radio" && !expectedChecked) {
+      return { execute: false, error: "radio \u4E0D\u80FD\u76F4\u63A5\u53D6\u6D88\u9009\u4E2D\uFF0C\u8BF7\u9009\u62E9\u540C\u7EC4\u4E2D\u7684\u5176\u4ED6\u9009\u9879\u3002" };
+    }
+    if (current === expectedChecked) {
+      return {
+        execute: false,
+        already: true,
+        status: expectedChecked ? "already_checked" : "already_unchecked",
+        actionExecuted: false,
+        expectedChecked
+      };
+    }
+    return { execute: true, expectedChecked };
+  };
   var invalidTarget = (target, action) => {
     const clickElement = actionTarget(target);
     if (!clickElement?.isConnected) return { error: "\u76EE\u6807\u5DF2\u7ECF\u4ECE\u9875\u9762\u4E2D\u79FB\u9664\uFF0C\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u3002", action };
@@ -5911,36 +6003,10 @@
     } catch {
     }
   };
-  var pointerInitFor = (element) => {
-    const rect = element.getBoundingClientRect?.();
-    return {
-      bubbles: true,
-      composed: true,
-      cancelable: true,
-      view: window,
-      clientX: rect ? rect.left + rect.width / 2 : 0,
-      clientY: rect ? rect.top + rect.height / 2 : 0,
-      button: 0,
-      buttons: 1
-    };
-  };
-  var dispatchPointerPrelude = (element) => {
-    const init = pointerInitFor(element);
-    try {
-      if (typeof PointerEvent === "function") {
-        element.dispatchEvent(new PointerEvent("pointerdown", { ...init, pointerId: 1, pointerType: "mouse", isPrimary: true }));
-        element.dispatchEvent(new PointerEvent("pointerup", { ...init, pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 0 }));
-      }
-      element.dispatchEvent(new MouseEvent("mousedown", init));
-      element.dispatchEvent(new MouseEvent("mouseup", { ...init, buttons: 0 }));
-    } catch {
-    }
-  };
   var activate = (element) => {
     if (!element?.isConnected) return false;
     try {
       revealAndFocus(element);
-      dispatchPointerPrelude(element);
       element.click();
       return true;
     } catch {
@@ -5981,6 +6047,15 @@
     const action = check ? "check" : "click";
     const invalid = invalidTarget(target, action);
     if (invalid) return invalid;
+    if (!check && checkableKinds.has(target.kind)) {
+      return {
+        ok: false,
+        action,
+        blocked: true,
+        verified: false,
+        error: "radio\u3001checkbox \u548C switch \u4E0D\u80FD\u4F7F\u7528 click\uFF0C\u8BF7\u4F7F\u7528 set_checked\u3002"
+      };
+    }
     const before = snapshotTargetState(target);
     if (check && before.checked === true) {
       return {
@@ -6008,6 +6083,39 @@
     return {
       action,
       ...verifyActivation({ action, target, before, observation, expectedChecked: check ? true : void 0 })
+    };
+  };
+  var setCheckedTarget = async (target, { checked = true } = {}) => {
+    const action = "set_checked";
+    const invalid = invalidTarget(target, action);
+    if (invalid) return invalid;
+    const before = snapshotTargetState(target);
+    const plan = checkedActionPlan({ kind: target.kind, current: before.checked, desired: checked });
+    if (plan.error) return { action, error: plan.error };
+    const expectedChecked = plan.expectedChecked;
+    if (plan.already) {
+      return {
+        action,
+        ...verifyActivation({
+          action,
+          target,
+          before,
+          observation: { after: before, changes: [], mutated: false },
+          expectedChecked
+        })
+      };
+    }
+    const primary = actionTarget(target);
+    if (!activate(primary)) return { action, error: "\u65E0\u6CD5\u5411\u76EE\u6807\u6D3E\u53D1\u8BBE\u7F6E\u72B6\u6001\u4E8B\u4EF6\u3002" };
+    let observation = await observeAfterAction(target, before, { timeout: 520 });
+    const needsFallback = target.stateElement && target.stateElement !== primary && observation.after.checked !== expectedChecked && before.checked === observation.after.checked;
+    if (needsFallback && activate(target.stateElement)) {
+      const followUp = await observeAfterAction(target, before, { timeout: 360 });
+      observation = combineObservation(observation, followUp);
+    }
+    return {
+      action,
+      ...verifyActivation({ action, target, before, observation, expectedChecked })
     };
   };
   var setNativeValue = (element, value) => {
@@ -6305,6 +6413,7 @@
     const stateKind = kindFor(clickElement, stateElement);
     const effectiveKind = kind === "custom" && stateKind === "custom" && scrollable ? "scroll-container" : kind === "custom" ? stateKind : kind;
     const checked = checkedStateFor(clickElement, stateElement, effectiveKind);
+    const question = questionContextFor(clickElement, stateElement);
     return {
       element: clickElement,
       clickElement,
@@ -6314,6 +6423,10 @@
       role: roleFor(clickElement) || roleFor(element),
       name,
       text: text2,
+      optionKey: optionKeyFor(clickElement, text2) || optionKeyFor(stateElement, text2),
+      questionId: question.id,
+      questionText: question.stem,
+      questionType: question.type,
       group: groupFor(clickElement, stateElement),
       checked,
       disabled: isDisabled(clickElement) || isDisabled(stateElement),
@@ -6441,6 +6554,8 @@
     name: normalizeText(candidate?.name),
     text: normalizeText(candidate?.text),
     group: normalizeText(candidate?.group),
+    questionId: normalizeText(candidate?.questionId),
+    optionKey: String(candidate?.optionKey || "").toUpperCase(),
     inputType: String(candidate?.inputType || ""),
     inputName: String(candidate?.stateElement?.name || ""),
     stableId: stableIdFor(candidate),
@@ -6469,6 +6584,8 @@
     if (sameText(before.text, after.text)) score += 34;
     else if (partialText(before.text, after.text)) score += 10;
     if (sameText(before.group, after.group)) score += 28;
+    if (sameText(before.questionId, after.questionId)) score += 18;
+    if (before.optionKey && before.optionKey === after.optionKey) score += 18;
     if (before.inputType && before.inputType === after.inputType) score += 12;
     if (before.inputName && before.inputName === after.inputName) score += 30;
     if (before.role && before.role === after.role) score += 10;
@@ -6481,6 +6598,8 @@
   };
   var canRebindFingerprint = (before, after, score = fingerprintScore(before, after)) => {
     if (!before || !after) return false;
+    if (before.questionId && after.questionId && before.questionId !== after.questionId) return false;
+    if (before.optionKey && after.optionKey && before.optionKey !== after.optionKey) return false;
     if (before.stableId && before.stableId === after.stableId) return score >= 165;
     if (before.kind !== after.kind && kindFamily(before.kind) !== kindFamily(after.kind)) return false;
     const sameName = sameText(before.name, after.name);
@@ -6577,12 +6696,17 @@
     const inferredKind = kindFor(clickElement, stateElement);
     const kind = inferredKind === "custom" ? candidate.kind || inferredKind : inferredKind;
     const checked = checkedStateFor(clickElement, stateElement, kind);
+    const question = questionContextFor(clickElement, stateElement);
     const record = {
       id,
       kind,
       role: roleFor(clickElement) || candidate.role || void 0,
       name: accessibleNameFor(clickElement, stateElement) || candidate.name || "",
       text: clip(clickElement?.innerText || clickElement?.textContent || stateElement?.innerText || stateElement?.textContent || candidate.text || "", 220),
+      optionKey: optionKeyFor(clickElement, candidate.text || "") || candidate.optionKey || void 0,
+      questionId: candidate.questionId || question.id || void 0,
+      questionText: candidate.questionText || question.stem || void 0,
+      questionType: candidate.questionType || question.type || void 0,
       group: groupFor(clickElement, stateElement) || candidate.group || void 0,
       disabled: isDisabled(clickElement) || isDisabled(stateElement),
       confidence: Math.round(Math.max(0, Math.min(1, Number(candidate.confidence || 0))) * 100),
@@ -6757,7 +6881,7 @@
       const beforeState = snapshotTargetState(resolved.candidate);
       return finalizeAction(await clickTarget(resolved.candidate), resolved, beforeTarget, beforeState);
     };
-    const check = async ({ targetId } = {}) => {
+    const setChecked = async ({ targetId, checked = true } = {}) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
       const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
@@ -6765,8 +6889,9 @@
         return { error: "\u76EE\u6807\u4E0D\u662F\u5355\u9009\u3001\u591A\u9009\u6216\u5F00\u5173\u63A7\u4EF6\u3002", target: beforeTarget };
       }
       const beforeState = snapshotTargetState(resolved.candidate);
-      return finalizeAction(await clickTarget(resolved.candidate, { check: true }), resolved, beforeTarget, beforeState);
+      return finalizeAction(await setCheckedTarget(resolved.candidate, { checked }), resolved, beforeTarget, beforeState);
     };
+    const check = async ({ targetId } = {}) => setChecked({ targetId, checked: true });
     const type = async ({ targetId, text: text2 = "", clear = true } = {}) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
@@ -6807,6 +6932,7 @@
       getTargetState,
       describeTarget,
       click,
+      setChecked,
       check,
       type,
       selectOption,
@@ -7523,6 +7649,7 @@
     let pendingImageId = 0;
     let composerHintTimer = 0;
     let isStreaming = false;
+    const sendGate = createSendGate();
     let activePort = null;
     let chatStreamPort = null;
     let streamWatchdogId = 0;
@@ -7801,12 +7928,14 @@
       attachSlot.classList.toggle("attach-disabled", !enabled);
       isStreaming = !enabled;
       if (enabled) {
+        sendGate.release();
         clearStreamWatchdog();
         sendButton.setAttribute("aria-label", "\u53D1\u9001");
         sendImg.src = sendIconUrl;
         sendImg.className = "send-icon";
         sendButton.disabled = false;
       } else {
+        sendGate.markStreaming();
         armStreamWatchdog();
         sendButton.setAttribute("aria-label", "\u505C\u6B62\u751F\u6210");
         sendImg.src = stopIconUrl;
@@ -7995,7 +8124,7 @@ ${f.text}
         return tool_query_top_only({ selector, limit: lim, includeAttrs });
       }
     };
-    const PAGE_ACTION_TOOLS = /* @__PURE__ */ new Set(["click", "check", "type", "select_option", "press_key", "scroll"]);
+    const PAGE_ACTION_TOOLS = /* @__PURE__ */ new Set(["click", "set_checked", "check", "type", "select_option", "press_key", "scroll"]);
     const targetLabel = (targetId) => {
       if (!targetId) return "\u5F53\u524D\u9875\u9762";
       const target = pageController.describeTarget(targetId);
@@ -8003,7 +8132,7 @@ ${f.text}
     };
     const actionSummary = (name, args = {}) => {
       if (name === "click") return `\u70B9\u51FB ${targetLabel(args.targetId)}`;
-      if (name === "check") return `\u9009\u4E2D ${targetLabel(args.targetId)}`;
+      if (name === "set_checked" || name === "check") return `${args.checked === false ? "\u53D6\u6D88\u9009\u4E2D" : "\u9009\u4E2D"} ${targetLabel(args.targetId)}`;
       if (name === "type") {
         const target = pageController.describeTarget(args.targetId);
         const text2 = String(args.text ?? "");
@@ -8025,11 +8154,11 @@ ${f.text}
       return {
         done(result) {
           item.classList.toggle("error", Boolean(result?.error));
-          item.textContent = result?.error ? `${result?.actionExecuted ? "\u5F85\u786E\u8BA4" : "\u672A\u5B8C\u6210"}\uFF1A${result.error}` : result?.queued ? `\u5DF2\u5B89\u6392\uFF1A${actionSummary(name, args)}` : result?.verified === false ? `\u5DF2\u6D3E\u53D1\uFF0C\u5F85\u786E\u8BA4\uFF1A${actionSummary(name, args)}` : `\u5DF2\u6267\u884C\uFF1A${actionSummary(name, args)}`;
+          item.textContent = result?.error ? `${result?.actionExecuted ? "\u5F85\u786E\u8BA4" : "\u672A\u5B8C\u6210"}\uFF1A${result.error}` : result?.status === "already_attempted" ? `\u5DF2\u8DF3\u8FC7\u91CD\u590D\u64CD\u4F5C\uFF1A${actionSummary(name, args)}` : result?.queued ? `\u5DF2\u5B89\u6392\uFF1A${actionSummary(name, args)}` : result?.verified === false ? `\u5DF2\u6D3E\u53D1\uFF0C\u5F85\u786E\u8BA4\uFF1A${actionSummary(name, args)}` : `\u5DF2\u6267\u884C\uFF1A${actionSummary(name, args)}`;
         }
       };
     };
-    const runPageAction = async (name, args = {}) => {
+    const runPageAction = async (name, args = {}, actionLedger) => {
       if (!pageActionSettingLoaded) {
         await loadGlobalPageActionSetting();
       }
@@ -8042,19 +8171,39 @@ ${f.text}
         appendToolLog(name, args, "\u672A\u6267\u884C").done(result2);
         return result2;
       }
+      const normalizedName = name === "check" ? "set_checked" : name;
+      const isCheckedAction = normalizedName === "set_checked";
+      const ledgerKey = isCheckedAction && args.targetId ? String(args.targetId) : "";
+      if (ledgerKey && actionLedger?.has(ledgerKey)) {
+        const previous = actionLedger.get(ledgerKey);
+        return {
+          ok: Boolean(previous?.ok),
+          verified: Boolean(previous?.verified),
+          status: "already_attempted",
+          actionExecuted: false,
+          target: previous?.target,
+          evidence: previous?.evidence,
+          error: previous?.verified ? void 0 : "\u540C\u4E00\u6B21\u64CD\u4F5C\u4E2D\u5DF2\u5C1D\u8BD5\u8FC7\u8FD9\u4E2A\u76EE\u6807\uFF0C\u672A\u518D\u91CD\u590D\u6FC0\u6D3B\uFF1B\u8BF7\u91CD\u65B0\u8BFB\u53D6\u9875\u9762\u72B6\u6001\u786E\u8BA4\u3002"
+        };
+      }
+      if (ledgerKey) actionLedger.set(ledgerKey, { pending: true });
       const log = appendToolLog(name, args, "\u6B63\u5728\u6267\u884C");
       let result;
       if (name === "click") result = await pageController.click(args);
-      else if (name === "check") result = await pageController.check(args);
+      else if (isCheckedAction) result = await pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
       else if (name === "type") result = await pageController.type(args);
       else if (name === "select_option") result = await pageController.selectOption(args);
       else if (name === "press_key") result = await pageController.pressKey(args);
       else if (name === "scroll") result = await pageController.scroll(args);
       else result = { error: `\u672A\u77E5\u9875\u9762\u64CD\u4F5C: ${name}` };
       log.done(result);
+      if (ledgerKey) {
+        if (result?.actionExecuted || result?.status === "already_checked" || result?.status === "already_unchecked") actionLedger.set(ledgerKey, result);
+        else actionLedger.delete(ledgerKey);
+      }
       return result;
     };
-    const runTool = async (name, args = {}) => {
+    const runTool = async (name, args = {}, actionLedger) => {
       if (name === "get_page_state") return pageController.getPageState(args);
       if (name === "list_targets") return pageController.listTargets(args);
       if (name === "get_target_state") return pageController.getTargetState(args);
@@ -8064,29 +8213,43 @@ ${f.text}
       if (name === "get_api_endpoints") return tool_get_api_endpoints(args);
       if (name === "get_api_responses") return tool_get_api_responses(args);
       if (name === "wait") return pageController.wait(args);
-      if (PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args);
+      if (PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args, actionLedger);
       return { error: `\u672A\u77E5\u5DE5\u5177: ${name}` };
     };
     const sendChat = () => {
       const text2 = input.value.trim();
       const hasImages = pendingImages.length > 0;
-      if (!text2 && !hasImages || isStreaming) return;
+      if (!text2 && !hasImages || isStreaming || !sendGate.tryAcquire()) return;
       ensureApiKeyOrOpenSettings().then(async (ok) => {
-        if (!ok) return;
-        const snapshotFiles = pendingImages.map((p) => p.file);
-        revokeAllPendingPreviewUrls();
-        pendingImages = [];
-        refreshImagePreviewRow();
-        input.value = "";
-        const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
-        const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
-        doSendChat(text2, urls);
+        if (!ok) {
+          sendGate.release();
+          return;
+        }
+        try {
+          const snapshotFiles = pendingImages.map((p) => p.file);
+          revokeAllPendingPreviewUrls();
+          pendingImages = [];
+          refreshImagePreviewRow();
+          input.value = "";
+          const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
+          const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
+          doSendChat(text2, urls);
+        } catch (error2) {
+          sendGate.release();
+          showComposerHint(String(error2?.message || "\u53D1\u9001\u524D\u8BFB\u53D6\u5185\u5BB9\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002"));
+        }
+      }).catch((error2) => {
+        sendGate.release();
+        showComposerHint(String(error2?.message || "\u53D1\u9001\u524D\u68C0\u67E5\u914D\u7F6E\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002"));
       });
     };
     const doSendChat = (text2, imageDataUrls = [], streamOptions = {}) => {
       const trimmed = String(text2 || "").trim();
       const urls = Array.isArray(imageDataUrls) ? imageDataUrls.filter(Boolean) : [];
-      if (!trimmed && !urls.length) return;
+      if (!trimmed && !urls.length) {
+        sendGate.release();
+        return;
+      }
       const includePageContext = streamOptions.includePageContext !== false;
       let bubbleText = streamOptions.bubbleText != null ? String(streamOptions.bubbleText || "").trim() : "";
       if (!bubbleText) {
@@ -8116,6 +8279,10 @@ ${questionLine}` : questionLine;
       let replyContentEl = null;
       const turnUserText = streamOptions.turnUserText != null ? String(streamOptions.turnUserText || "") : trimmed || (urls.length ? "[\u7528\u6237\u4E0A\u4F20\u4E86\u56FE\u7247]" : "");
       let turnHandled = false;
+      const turnId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      let lastStreamSeq = 0;
+      const streamMessageTypes = /* @__PURE__ */ new Set(["chunk", "chunk_reset", "done", "error"]);
+      const actionLedger = /* @__PURE__ */ new Map();
       const parseThinkAndReply = (raw) => {
         const OPEN = "\0THINK_O\0";
         const CLOSE = "\0THINK_C\0";
@@ -8211,9 +8378,14 @@ ${replyText.slice(after2, c2)}`;
       }
       const turnPort = activePort;
       turnPort.onMessage.addListener((msg) => {
+        if (streamMessageTypes.has(msg?.type)) {
+          const accepted = acceptTurnMessage(turnId, lastStreamSeq, msg);
+          if (!accepted.accepted) return;
+          lastStreamSeq = accepted.lastSeq;
+        }
         if (msg?.type === "tool") {
           if (typingIndicator.parentNode) typingIndicator.remove();
-          runTool(msg.name, msg.args).then((result) => {
+          runTool(msg.name, msg.args, actionLedger).then((result) => {
             turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           }).catch((error2) => {
             turnPort.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error2?.message || error2) } });
@@ -8327,7 +8499,7 @@ ${replyText.slice(after2, c2)}`;
           if (activePort === turnPort) activePort = null;
         }
       });
-      turnPort.postMessage({ type: "chat", messages: chatHistory });
+      turnPort.postMessage({ type: "chat", messages: chatHistory, turnId });
     };
     const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
     const resizeHandles = resizeHandleDirs.map((dir) => {

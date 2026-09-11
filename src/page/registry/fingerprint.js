@@ -40,6 +40,8 @@ export const fingerprintFor = (candidate) => ({
   name: normalizeText(candidate?.name),
   text: normalizeText(candidate?.text),
   group: normalizeText(candidate?.group),
+  questionId: normalizeText(candidate?.questionId),
+  optionKey: String(candidate?.optionKey || "").toUpperCase(),
   inputType: String(candidate?.inputType || ""),
   inputName: String(candidate?.stateElement?.name || ""),
   stableId: stableIdFor(candidate),
@@ -72,6 +74,8 @@ export const fingerprintScore = (before, after) => {
   if (sameText(before.text, after.text)) score += 34;
   else if (partialText(before.text, after.text)) score += 10;
   if (sameText(before.group, after.group)) score += 28;
+  if (sameText(before.questionId, after.questionId)) score += 18;
+  if (before.optionKey && before.optionKey === after.optionKey) score += 18;
   if (before.inputType && before.inputType === after.inputType) score += 12;
   if (before.inputName && before.inputName === after.inputName) score += 30;
   if (before.role && before.role === after.role) score += 10;
@@ -85,6 +89,8 @@ export const fingerprintScore = (before, after) => {
 
 export const canRebindFingerprint = (before, after, score = fingerprintScore(before, after)) => {
   if (!before || !after) return false;
+  if (before.questionId && after.questionId && before.questionId !== after.questionId) return false;
+  if (before.optionKey && after.optionKey && before.optionKey !== after.optionKey) return false;
   if (before.stableId && before.stableId === after.stableId) return score >= 165;
   if (before.kind !== after.kind && kindFamily(before.kind) !== kindFamily(after.kind)) return false;
 
