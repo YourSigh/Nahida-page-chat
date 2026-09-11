@@ -771,6 +771,53 @@
   word-break: break-word;
 }
 
+.execution-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 7px;
+  padding: 6px 8px;
+  border: 1px solid rgba(74, 153, 96, 0.18);
+  border-radius: 9px;
+  background: rgba(109, 176, 130, 0.08);
+  color: rgba(20, 26, 22, 0.56);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.execution-progress.paused {
+  border-color: rgba(201, 143, 55, 0.34);
+  background: rgba(201, 143, 55, 0.09);
+  color: rgba(114, 73, 20, 0.82);
+}
+
+.execution-progress-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.execution-resume {
+  all: initial;
+  box-sizing: border-box;
+  flex: none;
+  padding: 4px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  background: #5aa773;
+  color: #fff;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.execution-resume:hover {
+  background: #478f60;
+}
+
+.execution-resume:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .reply-content :where(p, ul, ol) {
   margin: 0 0 8px 0;
 }

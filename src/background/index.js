@@ -1,5 +1,12 @@
-import { drainSseBuffer, TOOL_LIMIT_NOTICE } from "../common/streamProtocol.js";
+import { drainSseBuffer } from "../common/streamProtocol.js";
 import { isNativeToolsUnsupported, runNativePageAgent } from "./nativeAgent.js";
+import {
+  createExecutionController,
+  didExecutePageMutation,
+  executionPauseNotice,
+  isPageMutationTool,
+  progressFromToolResult
+} from "./executionBudget.js";
 
 const DEFAULT_CONFIG = {
   apiBaseUrl: process.env.LLM_API_BASE_URL || "https://api.openai.com/v1",
@@ -48,7 +55,7 @@ const LEGACY_SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原�
 - 不要对同一个 targetId 重复派发选中动作；已选中的目标直接认为 already_checked。
 - 若工具结果表示全局页面操作已关闭，告诉用户在插件设置中开启“启用页面操作（全局）”，不要重复请求同一操作。
 - 用户未明确要求时，不填写或发送密码、验证码、支付信息、API Key 等秘密，不执行删除、购买、发布等高风险操作。
-- 最多连续调用 12 次工具。最终回答时直接用自然语言，不要输出 JSON。`;
+- 工具调用次数由运行时根据任务规模、页面进展、页面变更、总耗时和无进展状态动态控制。不要自行假设还有多少预算。最终回答时直接用自然语言，不要输出 JSON。`;
 
 const STICKER_DECIDER_PROMPT = `你是一个“表情包选择器”。\n\n你会收到两段文本：用户刚刚发的话（user）和纳西妲刚刚的完整回复（assistant）。\n你的任务是：判断“是否应该发送一个纳西妲表情包”，以及“如果发送，发哪一个”。\n\n可用表情包只有这 6 个：happy, curious, surprised, confused, relaxed, excited。\n\n严格输出一行 JSON（不要输出任何其它文字）：\n- 不发送：{\"sticker\":null}\n- 发送：{\"sticker\":\"happy\"}\n\n规则：\n- 每次最多选择 1 个表情包\n- 只有当表情能明显提升互动氛围时才发送；偏严肃/长篇技术解释通常不发\n- 如果 assistant 回复中包含明显的错误/困惑/不确定，优先 confused\n- 如果 user 表达感谢/开心，或 assistant 语气轻松友好，可能 happy\n- 如果 user 在追问“为什么/怎么/如何”，可能 curious\n- 如果出现“意外/惊讶/太离谱”，可能 surprised\n- 如果讨论“休息/慢慢来/不急”，可能 relaxed\n- 如果表达“冲/开始/完成/太棒了”，可能 excited`;
 
@@ -354,20 +361,36 @@ function isAbortError(e) {
   return name === "AbortError" || (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError");
 }
 
-async function runAgent(config, userMessages, port, signal, { turnId } = {}) {
+async function runAgent(config, userMessages, port, signal, { turnId, executionId, resume, emitOverride } = {}) {
   const messages = [{ role: "system", content: LEGACY_SYSTEM_PROMPT }, ...userMessages];
+  const execution = createExecutionController({ messages: userMessages, resume });
+  const budget = execution.manager;
+  const taskId = String(executionId || turnId || "");
   let disconnected = false;
-  const emit = createTurnEmitter(port, turnId);
+  const emit = emitOverride || createTurnEmitter(port, turnId);
+  const emitProgress = () => emit({ type: "progress", executionId: taskId, progress: budget.snapshot() });
+  const finishIncomplete = (reason) => {
+    const snapshot = budget.snapshot();
+    emit({
+      type: "progress",
+      executionId: taskId,
+      progress: { ...snapshot, status: "paused", reason, canResume: true }
+    });
+    emit({ type: "chunk", content: executionPauseNotice(reason) });
+    emit({ type: "done", status: "incomplete", verified: false, executionId: taskId, reason });
+  };
   const onDisconnect = () => { disconnected = true; };
   port.onDisconnect.addListener(onDisconnect);
 
-  let toolCalls = 0;
-  while (toolCalls < 12) {
+  emitProgress();
+  while (budget.canStartAgentRound()) {
     if (disconnected) return;
     if (signal?.aborted) {
       emit({ type: "done" });
       return;
     }
+    budget.consumeAgentRound();
+    emitProgress();
     let fullResponse = "";
     let phase = "detecting";
     let streamedAny = false;
@@ -427,7 +450,12 @@ async function runAgent(config, userMessages, port, signal, { turnId } = {}) {
     // Stream ended: decide whether this was a tool call or a final answer.
     const parsedAtEnd = parseAgentJson(fullResponse);
     if (parsedAtEnd?.type === "tool") {
-      toolCalls += 1;
+      const toolName = String(parsedAtEnd.name || "");
+      const toolArgs = parsedAtEnd.args || {};
+      if (!budget.canExecuteTool({ isMutation: isPageMutationTool(toolName), targetId: toolArgs.targetId })) {
+        finishIncomplete(budget.shouldPause() || "tool_execution_limit");
+        return;
+      }
       if (!emit({ type: "tool_log", name: parsedAtEnd.name, args: parsedAtEnd.args || {} })) return;
       let result;
       try {
@@ -440,6 +468,25 @@ async function runAgent(config, userMessages, port, signal, { turnId } = {}) {
         }
         emit({ type: "error", error: String(err?.message || err) });
         return;
+      }
+      budget.consumeTool({
+        isMutation: isPageMutationTool(toolName),
+        actionExecuted: didExecutePageMutation(result),
+        retry: result?.status === "retrying",
+        targetId: toolArgs.targetId
+      });
+      budget.observePageResult(result);
+      const progress = progressFromToolResult(result, budget.progress || {});
+      const roundProgress = budget.recordProgress(progress);
+      budget.finishAgentRound({ progressChanged: roundProgress });
+      emitProgress();
+      if (budget.softLimitReached()) {
+        if (budget.healthyProgress()) budget.unlockReserve();
+        const reason = budget.shouldPause();
+        if (reason) {
+          finishIncomplete(reason);
+          return;
+        }
       }
       messages.push({ role: "assistant", content: JSON.stringify(parsedAtEnd) });
       messages.push({ role: "user", content: `工具结果(${parsedAtEnd.name}):\n${JSON.stringify(result).slice(0, 6000)}` });
@@ -462,8 +509,8 @@ async function runAgent(config, userMessages, port, signal, { turnId } = {}) {
     return;
   }
 
-  emit({ type: "chunk", content: TOOL_LIMIT_NOTICE });
-  emit({ type: "done", status: "incomplete", verified: false });
+  const reason = budget.shouldPause() || "agent_round_limit";
+  finishIncomplete(reason);
 }
 
 function nahidaInjectReadFrame(maxPerFrame) {
@@ -638,16 +685,27 @@ chrome.runtime.onConnect.addListener((port) => {
         activeController?.abort();
         const controller = new AbortController();
         activeController = controller;
+        const emit = createTurnEmitter(port, msg.turnId);
         try {
-          await runNativePageAgent(config, msg.messages, port, controller.signal, { turnId: msg.turnId });
+          await runNativePageAgent(config, msg.messages, port, controller.signal, {
+            turnId: msg.turnId,
+            executionId: msg.executionId,
+            resume: msg.resume,
+            emitOverride: emit
+          });
         } catch (error) {
           if (isNativeToolsUnsupported(error) && Number(error?.nativeSuccessfulCalls || 0) === 0) {
-            safePost(port, {
+            emit({
               type: "tool_log",
               name: "compatibility",
               args: { message: "当前接口未启用原生工具调用，已切换兼容模式。" }
             });
-            await runAgent(config, msg.messages, port, controller.signal, { turnId: msg.turnId });
+            await runAgent(config, msg.messages, port, controller.signal, {
+              turnId: msg.turnId,
+              executionId: msg.executionId,
+              resume: msg.resume,
+              emitOverride: emit
+            });
           } else {
             throw error;
           }
