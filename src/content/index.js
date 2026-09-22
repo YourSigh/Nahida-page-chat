@@ -495,6 +495,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   let globalPageActionEnabled = false;
   let pageActionSettingLoaded = false;
 
+  const clearContextButton = document.createElement("button");
+  clearContextButton.className = "icon-button clear-context-button";
+  clearContextButton.type = "button";
+  clearContextButton.setAttribute("aria-label", "清空上下文");
+  clearContextButton.textContent = "清空";
+
   const settingsButton = document.createElement("button");
   settingsButton.className = "icon-button settings-button";
   settingsButton.type = "button";
@@ -518,7 +524,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   closeImg.src = chrome.runtime.getURL("assets/close.png");
   closeButton.appendChild(closeImg);
 
-  headerActions.append(settingsButton, closeButton);
+  headerActions.append(clearContextButton, settingsButton, closeButton);
   header.append(title, headerActions);
 
   const settingsPanel = document.createElement("div");
@@ -614,6 +620,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const welcome = document.createElement("div");
   welcome.className = "msg-welcome";
   welcome.textContent = "你好呀～我是纳西妲！我可以理解当前页面；如需我点击、填写或滚动，请先在右上角设置中开启“启用页面操作（全局）”。";
+  messagesEl.appendChild(welcome);
  
   const composerWrap = document.createElement("div");
   composerWrap.className = "composer-wrap";
@@ -677,6 +684,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   // --- Chat state & logic ---
   const pageController = createPageController({ extensionHost: host });
   const chatHistory = [];
+  let chatContextVersion = 0;
   const MAX_CHAT_IMAGES = 8;
   const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
@@ -1005,6 +1013,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const setInputEnabled = (enabled) => {
     input.disabled = !enabled;
     fileInput.disabled = !enabled;
+    clearContextButton.disabled = !enabled;
     attachSlot.classList.toggle("attach-disabled", !enabled);
     isStreaming = !enabled;
     if (enabled) {
@@ -1349,7 +1358,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     const text = input.value.trim();
     const hasImages = pendingImages.length > 0;
     if ((!text && !hasImages) || isStreaming || !sendGate.tryAcquire()) return;
+    const requestContextVersion = chatContextVersion;
     ensureApiKeyOrOpenSettings().then(async (ok) => {
+      if (requestContextVersion !== chatContextVersion) {
+        sendGate.release();
+        return;
+      }
       if (!ok) {
         sendGate.release();
         return;
@@ -1362,6 +1376,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         input.value = "";
         const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
         const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
+        if (requestContextVersion !== chatContextVersion) {
+          sendGate.release();
+          return;
+        }
         doSendChat(text, urls);
       } catch (error) {
         sendGate.release();
@@ -2102,6 +2120,18 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   button.addEventListener("dragstart", (event) => event.preventDefault());
 
   closeButton.addEventListener("click", () => setDialogOpen(false));
+  clearContextButton.addEventListener("click", () => {
+    if (isStreaming) return;
+    chatContextVersion += 1;
+    chatHistory.length = 0;
+    revokeAllPendingPreviewUrls();
+    pendingImages = [];
+    refreshImagePreviewRow();
+    input.value = "";
+    messagesEl.replaceChildren(welcome);
+    scrollToBottom();
+    input.focus();
+  });
   pageActionToggle.addEventListener("change", () => {
     saveGlobalPageActionSetting(pageActionToggle.checked).catch(() => {});
   });
@@ -2284,6 +2314,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       return;
     }
     if (settingsButton.contains(event.target)) {
+      return;
+    }
+    if (clearContextButton.contains(event.target)) {
       return;
     }
     const rect = dialog.getBoundingClientRect();

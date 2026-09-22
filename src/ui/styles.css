@@ -341,10 +341,12 @@
 
 /* Top-right buttons: tooltip below (avoid dialog overflow clipping) */
 .settings-button[aria-label]::after,
+.clear-context-button[aria-label]::after,
 .close-button[aria-label]::after {
   top: calc(100% + 10px);
 }
 .settings-button[aria-label]::before,
+.clear-context-button[aria-label]::before,
 .close-button[aria-label]::before {
   top: calc(100% + 6px);
 }
@@ -393,6 +395,25 @@
 .icon-button[disabled]::after,
 .icon-button[disabled]::before {
   display: none;
+}
+
+.icon-button[disabled] {
+  cursor: default;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.clear-context-button {
+  padding: 7px 9px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.clear-context-button:hover {
+  background: rgba(200, 70, 70, 0.10);
+  color: rgba(150, 40, 40, 0.92);
 }
 
 .close-button {
