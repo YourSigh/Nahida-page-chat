@@ -29,6 +29,9 @@
     return { remainder, events };
   };
 
+  // src/common/chatMode.js
+  var PURE_MODE_KEY = "nahida_pure_mode";
+
   // src/background/executionBudget.js
   var PAGE_MUTATION_TOOLS = /* @__PURE__ */ new Set([
     "click",
@@ -1069,19 +1072,7 @@ ${safeToolResult(freshState)}
   };
   var STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
   var LEGACY_TOOL_TIMEOUT_MS = 9e4;
-  async function getLlmConfig() {
-    try {
-      const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
-      const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
-      return {
-        apiBaseUrl: String(cfg.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl),
-        apiKey: String(cfg.apiKey || DEFAULT_CONFIG.apiKey),
-        model: String(cfg.model || DEFAULT_CONFIG.model)
-      };
-    } catch {
-      return { ...DEFAULT_CONFIG };
-    }
-  }
+  var PURE_SYSTEM_PROMPT = "\u4F60\u662F\u7EB3\u897F\u59B2\uFF0C\u6765\u81EA\u300A\u539F\u795E\u300B\u3002\u7528\u81EA\u7136\u3001\u6E05\u6670\u7684\u8BED\u8A00\u56DE\u7B54\u7528\u6237\u3002\u4F60\u53EA\u80FD\u4F7F\u7528\u5BF9\u8BDD\u4E2D\u63D0\u4F9B\u7684\u5185\u5BB9\uFF0C\u65E0\u6CD5\u8BFB\u53D6\u5F53\u524D\u7F51\u9875\u3001\u8BBF\u95EE\u6D4F\u89C8\u5668\u6216\u8C03\u7528\u5DE5\u5177\u3002";
   var LEGACY_SYSTEM_PROMPT = `\u4F60\u662F\u7EB3\u897F\u59B2\uFF08Nahida\uFF09\uFF0C\u6765\u81EA\u6E38\u620F\u300A\u539F\u795E\u300B\u7684\u8349\u4E4B\u795E\u3002\u4F60\u6B63\u5728\u5E2E\u52A9\u7528\u6237\u7406\u89E3\u548C\u64CD\u4F5C\u5F53\u524D\u7F51\u9875\u3002
 
 \u5F53\u524D\u6A21\u578B\u63A5\u53E3\u4E0D\u652F\u6301\u539F\u751F\u5DE5\u5177\u8C03\u7528\u3002\u9700\u8981\u8BFB\u53D6\u6216\u64CD\u4F5C\u9875\u9762\u65F6\uFF0C\u4E25\u683C\u53EA\u8F93\u51FA\u4E00\u884C JSON\uFF0C\u4E0D\u8981\u8F93\u51FA\u4EFB\u4F55\u989D\u5916\u6587\u5B57\uFF1A
@@ -1318,7 +1309,7 @@ ${safeToolResult(freshState)}
     }
     return s;
   }
-  async function callChatCompletionOnce(config, messages) {
+  async function callChatCompletionOnce(config, messages, signal) {
     const url = `${config.apiBaseUrl}/chat/completions`;
     const response = await fetch(url, {
       method: "POST",
@@ -1326,7 +1317,8 @@ ${safeToolResult(freshState)}
         "Content-Type": "application/json",
         Authorization: `Bearer ${config.apiKey}`
       },
-      body: JSON.stringify({ model: config.model, messages, stream: false })
+      body: JSON.stringify({ model: config.model, messages, stream: false }),
+      signal
     });
     if (!response.ok) {
       let detail = "";
@@ -1374,7 +1366,7 @@ ${safeToolResult(freshState)}
       }
     });
   }
-  async function decideSticker(config, { userText, assistantText }) {
+  async function decideSticker(config, { userText, assistantText }, signal) {
     const messages = [
       { role: "system", content: STICKER_DECIDER_PROMPT },
       { role: "user", content: `user:
@@ -1383,7 +1375,7 @@ ${String(userText || "").slice(0, 2e3)}
 assistant:
 ${String(assistantText || "").slice(0, 4e3)}` }
     ];
-    const out = await callChatCompletionOnce(config, messages);
+    const out = await callChatCompletionOnce(config, messages, signal);
     const parsed = parseAgentJson(out);
     const sticker = parsed?.sticker;
     if (sticker == null) return null;
@@ -1663,8 +1655,7 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
     });
     return { url, results };
   }
-  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-    if (!msg || typeof msg.type !== "string") return false;
+  function handlePageMessage(msg, sender, sendResponse) {
     if (msg.type === "nahida_read_iframe_frames") {
       const tabId = sender.tab?.id;
       if (tabId == null) {
@@ -1716,12 +1707,31 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
       }).catch((e) => sendResponse({ error: String(e?.message || e), perFrame: [] }));
       return true;
     }
-    return false;
+  }
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!["nahida_read_iframe_frames", "nahida_visible_all_frames", "nahida_query_all_frames"].includes(msg?.type)) return false;
+    chrome.storage.local.get(PURE_MODE_KEY).then((settings) => {
+      if (settings[PURE_MODE_KEY] === true) {
+        sendResponse({ error: "\u7EAF\u51C0\u6A21\u5F0F\u4E0B\u65E0\u6CD5\u8BBF\u95EE\u7F51\u9875\u3002" });
+        return;
+      }
+      handlePageMessage(msg, sender, sendResponse);
+    }).catch(() => sendResponse({ error: "\u65E0\u6CD5\u8BFB\u53D6\u7EAF\u51C0\u6A21\u5F0F\u8BBE\u7F6E\u3002" }));
+    return true;
   });
   chrome.runtime.onConnect.addListener((port) => {
     if (port.name !== "nahida-chat") return;
     let activeController = null;
+    let activeMode = null;
+    const abortOnModeChange = (changes, area) => {
+      const change = changes[PURE_MODE_KEY];
+      if (area === "local" && change && activeMode !== null && activeMode !== (change.newValue === true)) {
+        activeController?.abort();
+      }
+    };
+    chrome.storage.onChanged.addListener(abortOnModeChange);
     port.onDisconnect.addListener(() => {
+      chrome.storage.onChanged.removeListener(abortOnModeChange);
       activeController?.abort();
       activeController = null;
     });
@@ -1730,17 +1740,40 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
         activeController?.abort();
         return;
       }
-      const config = await getLlmConfig();
-      if (!config.apiKey) {
-        safePost2(port, { type: "error", error: "missing_api_key" });
-        return;
-      }
+      if (msg?.type !== "chat" && msg?.type !== "sticker_decide") return;
+      activeController?.abort();
+      const controller = new AbortController();
+      activeController = controller;
+      activeMode = null;
+      const emit = createTurnEmitter2(port, msg.turnId);
       try {
+        const settings = await chrome.storage.local.get([STORAGE_KEY_LLM_CONFIG, PURE_MODE_KEY]);
+        if (controller.signal.aborted) return;
+        const saved = settings[STORAGE_KEY_LLM_CONFIG] || {};
+        const config = {
+          apiBaseUrl: String(saved.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl),
+          apiKey: String(saved.apiKey || DEFAULT_CONFIG.apiKey),
+          model: String(saved.model || DEFAULT_CONFIG.model)
+        };
+        const pureMode = settings[PURE_MODE_KEY] === true;
+        activeMode = pureMode;
+        if (msg.type === "chat" && pureMode !== (msg.pureMode === true)) {
+          emit({ type: "error", error: "\u804A\u5929\u6A21\u5F0F\u5DF2\u5207\u6362\uFF0C\u8BF7\u91CD\u65B0\u53D1\u9001\u3002" });
+          return;
+        }
+        if (!config.apiKey) {
+          emit({ type: "error", error: "missing_api_key" });
+          return;
+        }
         if (msg.type === "chat") {
-          activeController?.abort();
-          const controller = new AbortController();
-          activeController = controller;
-          const emit = createTurnEmitter2(port, msg.turnId);
+          if (pureMode) {
+            const messages = [{ role: "system", content: PURE_SYSTEM_PROMPT }, ...msg.messages];
+            for await (const content of streamChatCompletion(config, messages, controller.signal)) {
+              if (controller.signal.aborted || !emit({ type: "chunk", content })) return;
+            }
+            if (!controller.signal.aborted) emit({ type: "done" });
+            return;
+          }
           try {
             await runNativePageAgent(config, msg.messages, port, controller.signal, {
               turnId: msg.turnId,
@@ -1764,21 +1797,24 @@ ${JSON.stringify(result).slice(0, 6e3)}` });
             } else {
               throw error;
             }
-          } finally {
-            if (activeController === controller) activeController = null;
           }
           return;
         }
         if (msg.type === "sticker_decide") {
-          const sticker = await decideSticker(config, { userText: msg.userText, assistantText: msg.assistantText });
+          const sticker = pureMode ? null : await decideSticker(config, msg, controller.signal);
           safePost2(port, { type: "sticker_decision", id: msg.id, sticker });
         }
       } catch (error) {
         if (isAbortError(error)) {
-          safePost2(port, { type: "done" });
+          emit({ type: "done" });
           return;
         }
-        safePost2(port, { type: "error", error: String(error?.message || error) });
+        emit({ type: "error", error: String(error?.message || error) });
+      } finally {
+        if (activeController === controller) {
+          activeController = null;
+          activeMode = null;
+        }
       }
     });
   });

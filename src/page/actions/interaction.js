@@ -67,9 +67,11 @@ const canNavigate = (target) => {
   return false;
 };
 
-const queuedNavigationResult = (target, action) => {
+const queuedNavigationResult = (target, action, canRunQueuedAction) => {
   const clickElement = actionTarget(target);
-  setTimeout(() => activate(clickElement), 80);
+  setTimeout(() => {
+    if (!canRunQueuedAction || canRunQueuedAction()) activate(clickElement);
+  }, 80);
   return {
     ok: true,
     action,
@@ -86,7 +88,7 @@ const combineObservation = (first, second) => ({
   mutated: Boolean(first.mutated || second.mutated)
 });
 
-export const clickTarget = async (target, { check = false } = {}) => {
+export const clickTarget = async (target, { check = false, signal, canRunQueuedAction } = {}) => {
   const action = check ? "check" : "click";
   const invalid = invalidTarget(target, action);
   if (invalid) return invalid;
@@ -115,7 +117,7 @@ export const clickTarget = async (target, { check = false } = {}) => {
     };
   }
 
-  if (!check && canNavigate(target)) return queuedNavigationResult(target, action);
+  if (!check && canNavigate(target)) return queuedNavigationResult(target, action, canRunQueuedAction);
   const primary = actionTarget(target);
   if (!activate(primary)) return { action, error: "无法向目标派发点击事件。" };
 
@@ -127,7 +129,7 @@ export const clickTarget = async (target, { check = false } = {}) => {
     target.stateElement !== primary &&
     afterPrimary.checked !== true &&
     (check || before.checked === afterPrimary.checked);
-  if (needsFallback && activate(target.stateElement)) {
+  if (needsFallback && !signal?.aborted && activate(target.stateElement)) {
     const followUp = await observeAfterAction(target, before, { timeout: 360 });
     observation = combineObservation(observation, followUp);
   }
@@ -138,7 +140,7 @@ export const clickTarget = async (target, { check = false } = {}) => {
   };
 };
 
-export const setCheckedTarget = async (target, { checked = true } = {}) => {
+export const setCheckedTarget = async (target, { checked = true, signal } = {}) => {
   const action = "set_checked";
   const invalid = invalidTarget(target, action);
   if (invalid) return invalid;
@@ -167,7 +169,7 @@ export const setCheckedTarget = async (target, { checked = true } = {}) => {
     target.stateElement !== primary &&
     observation.after.checked !== expectedChecked &&
     before.checked === observation.after.checked;
-  if (needsFallback && activate(target.stateElement)) {
+  if (needsFallback && !signal?.aborted && activate(target.stateElement)) {
     const followUp = await observeAfterAction(target, before, { timeout: 360 });
     observation = combineObservation(observation, followUp);
   }

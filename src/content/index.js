@@ -1,6 +1,7 @@
 import stylesText from "../ui/styles.css";
 import MarkdownIt from "markdown-it";
 import { acceptTurnMessage, createSendGate } from "../common/streamProtocol.js";
+import { PURE_MODE_KEY } from "../common/chatMode.js";
 import { createPageController } from "../page/pageController.js";
 import { createWebMcpSession } from "./webMcp.js";
 import {
@@ -26,8 +27,14 @@ for (const name of STICKER_NAMES) {
 
 const STICKER_TAG_REGEX = /\[sticker:(\w+)\]/g;
 
-const renderMarkdown = (text) => {
-  const html = md.render(String(text || ""));
+const renderImage = md.renderer.rules.image;
+md.renderer.rules.image = (tokens, index, options, env, renderer) => env.pureMode
+  ? md.utils.escapeHtml(tokens[index].content)
+  : renderImage(tokens, index, options, env, renderer);
+
+const renderMarkdown = (text, pureMode = false) => {
+  const html = md.render(String(text || ""), { pureMode });
+  if (pureMode) return html;
   return html.replace(
     STICKER_TAG_REGEX,
     (match, name) => {
@@ -80,6 +87,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const API_BUFFER_MAX = 800;
   const apiRespBuffer = [];
   const API_RESP_BUFFER_MAX = 80;
+  let pureMode = null;
+  let savingPureMode = false;
   let apiListenerInstalled = false;
   let apiHookInjected = false;
 
@@ -105,6 +114,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       window.addEventListener(
         "message",
         (event) => {
+          if (pureMode !== false) return;
           const data = event?.data;
           if (!data || data.__nahidaNet !== true) return;
           const kind = data.item?.kind;
@@ -276,7 +286,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     maxEntries = 200,
     stripQuery = true,
     reset = false
-  } = {}) => {
+  } = {}, signal) => {
     ensureApiHooked();
     if (reset) apiBuffer.length = 0;
 
@@ -296,6 +306,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     if (Number.isFinite(ms) && ms > 0) {
       await new Promise((r) => setTimeout(r, ms));
     }
+    if (signal.aborted) return { error: "网页读取已停止。" };
 
     // 兜底：利用 PerformanceResourceTiming 里的 resource 记录（initiatorType 通常包含 fetch/xmlhttprequest）。
     const perfItems = [];
@@ -362,7 +373,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     stripQuery = true,
     reset = true,
     maxResponseChars = 4000
-  } = {}) => {
+  } = {}, signal) => {
     ensureApiHooked();
     if (reset) apiRespBuffer.length = 0;
 
@@ -394,19 +405,17 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       maxResponses: Math.max(1, Math.min(200, Number(maxEntries) || 20)),
       maxResponseChars: Math.max(256, Math.min(20000, Number(maxResponseChars) || 4000))
     });
+    const stopCapture = () => setCaptureCfg({ enabled: false, captureResponses: false });
+    signal.addEventListener("abort", stopCapture, { once: true });
 
     const ms = Number(waitMs);
     if (Number.isFinite(ms) && ms > 0) {
       await new Promise((r) => setTimeout(r, ms));
     }
 
-    // 关闭响应抓取，避免后续大量返回把内存/消息塞满。
-    setCaptureCfg({
-      enabled: false,
-      captureResponses: false,
-      maxResponses: Math.max(1, Math.min(200, Number(maxEntries) || 20)),
-      maxResponseChars: Math.max(256, Math.min(20000, Number(maxResponseChars) || 4000))
-    });
+    signal.removeEventListener("abort", stopCapture);
+    if (signal.aborted) return { error: "网页读取已停止。" };
+    stopCapture();
 
     const all = Array.isArray(apiRespBuffer) ? apiRespBuffer : [];
     const slice = all.slice(Math.max(0, all.length - Math.max(1, Math.min(2000, maxEntries))));
@@ -583,15 +592,35 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const pageActionToggle = document.createElement("input");
   pageActionToggle.className = "settings-toggle";
   pageActionToggle.type = "checkbox";
+  pageActionToggle.disabled = true;
   pageActionToggle.setAttribute("role", "switch");
   pageActionToggle.setAttribute("aria-label", "启用页面操作（全局）");
   pageActionCopy.append(pageActionLabel, pageActionDescription);
   pageActionToggleRow.append(pageActionCopy, pageActionToggle);
-  pageActionSection.append(pageActionTitle, pageActionToggleRow);
+
+  const pureModeRow = document.createElement("label");
+  pureModeRow.className = "settings-toggle-row";
+  const pureModeCopy = document.createElement("div");
+  pureModeCopy.className = "settings-toggle-copy";
+  const pureModeLabel = document.createElement("div");
+  pureModeLabel.className = "settings-toggle-label";
+  pureModeLabel.textContent = "纯净模式（全局）";
+  const pureModeDescription = document.createElement("div");
+  pureModeDescription.className = "settings-toggle-description";
+  pureModeDescription.textContent = "只发送聊天内容和你主动添加的图片，禁止读取或操作网页。切换时会开始新对话。";
+  const pureModeToggle = document.createElement("input");
+  pureModeToggle.className = "settings-toggle";
+  pureModeToggle.type = "checkbox";
+  pureModeToggle.disabled = true;
+  pureModeToggle.setAttribute("role", "switch");
+  pureModeToggle.setAttribute("aria-label", pureModeLabel.textContent);
+  pureModeCopy.append(pureModeLabel, pureModeDescription);
+  pureModeRow.append(pureModeCopy, pureModeToggle);
+  pageActionSection.append(pageActionTitle, pureModeRow, pageActionToggleRow);
 
   const settingsHint = document.createElement("div");
   settingsHint.className = "settings-hint";
-  settingsHint.textContent = "模型配置和页面操作开关都会保存在本地浏览器（chrome.storage.local），不会上传。";
+  settingsHint.textContent = "模型配置和开关设置保存在当前浏览器。";
 
   const settingsActions = document.createElement("div");
   settingsActions.className = "settings-actions";
@@ -620,7 +649,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const welcome = document.createElement("div");
   welcome.className = "msg-welcome";
-  welcome.textContent = "你好呀～我是纳西妲！我可以理解当前页面；如需我点击、填写或滚动，请先在右上角设置中开启“启用页面操作（全局）”。";
+  const defaultWelcome = "你好呀～我是纳西妲！我可以理解当前页面；如需我点击、填写或滚动，请先在右上角设置中开启“启用页面操作（全局）”。";
+  welcome.textContent = defaultWelcome;
   messagesEl.appendChild(welcome);
  
   const composerWrap = document.createElement("div");
@@ -659,8 +689,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const input = document.createElement("textarea");
   input.className = "input";
   input.rows = 2;
-  input.placeholder =
-    "问我页面内容，或让我点击、填写、滚动；Enter 发送，回形针可选图";
+  const defaultPlaceholder = "问我页面内容，或让我点击、填写、滚动；Enter 发送，回形针可选图";
+  input.placeholder = defaultPlaceholder;
 
   const sendIconUrl = chrome.runtime.getURL("assets/send.png");
   const stopIconUrl = chrome.runtime.getURL("assets/stop.png");
@@ -728,7 +758,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   let activePort = null;
   /** 当前一轮对话的 port，用于「停止」发 abort / disconnect */
   let chatStreamPort = null;
-  let activeWebMcpController = null;
+  let activeTurnController = null;
   let streamWatchdogId = 0;
 
   const clearStreamWatchdog = () => {
@@ -743,13 +773,13 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     streamWatchdogId = setTimeout(() => {
       streamWatchdogId = 0;
       if (!isStreaming) return;
-      activeWebMcpController?.abort();
+      activeTurnController?.abort();
       const p = chatStreamPort;
       try {
         p?.postMessage({ type: "abort_chat" });
       } catch {}
       setTimeout(() => {
-        if (!isStreaming) return;
+        if (!isStreaming || chatStreamPort !== p) return;
         try {
           p?.disconnect();
         } catch {}
@@ -1001,12 +1031,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const stopStreamingChat = () => {
     const p = chatStreamPort;
     if (!p) return;
-    activeWebMcpController?.abort();
+    activeTurnController?.abort();
     try {
       p.postMessage({ type: "abort_chat" });
     } catch {}
     setTimeout(() => {
-      if (!isStreaming) return;
+      if (!isStreaming || chatStreamPort !== p) return;
       try {
         p.disconnect();
       } catch {}
@@ -1021,8 +1051,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     attachSlot.classList.toggle("attach-disabled", !enabled);
     isStreaming = !enabled;
     if (enabled) {
-      activeWebMcpController?.abort();
-      activeWebMcpController = null;
+      activeTurnController?.abort();
+      activeTurnController = null;
       sendGate.release();
       clearStreamWatchdog();
       sendButton.setAttribute("aria-label", "发送");
@@ -1274,10 +1304,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     };
   };
 
-  const runPageAction = async (name, args = {}, actionLedger, webMcp) => {
+  const runPageAction = async (name, args, actionLedger, webMcp, signal) => {
+    const actionContextVersion = chatContextVersion;
     if (!pageActionSettingLoaded) {
       await loadGlobalPageActionSetting();
     }
+    if (pureMode !== false || signal.aborted) return { error: "页面操作已停止。" };
     if (!globalPageActionEnabled) {
       const result = {
         ok: false,
@@ -1312,8 +1344,14 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       return result;
     }
     const executeAction = async () => {
-      if (name === "click") return pageController.click(args);
-      if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
+      if (pureMode !== false || signal.aborted) return { error: "页面操作已停止。" };
+      if (name === "click") {
+        return pageController.click(args, {
+          signal,
+          canRunQueuedAction: () => pureMode === false && actionContextVersion === chatContextVersion
+        });
+      }
+      if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked }, signal);
       if (name === "type") return pageController.type(args);
       if (name === "select_option") return pageController.selectOption(args);
       if (name === "press_key") return pageController.pressKey(args);
@@ -1321,6 +1359,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       return { error: `未知页面操作: ${name}` };
     };
     let result = await executeAction();
+    if (signal.aborted) return result;
     const looksStale = (value) => value?.status === "target_stale" || /目标已失效|目标已经被页面重绘/.test(String(value?.error || ""));
     if (looksStale(result)) {
       log.update("目标已失效，正在刷新页面状态并重新绑定");
@@ -1352,32 +1391,30 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     return result;
   };
 
-  const runTool = async (name, args = {}, actionLedger, webMcp) => {
+  const runTool = async (name, args = {}, actionLedger, webMcp, signal) => {
+    if (pureMode !== false || signal.aborted) return { error: "纯净模式下无法访问或操作网页。" };
     if (name === "webmcp_list") return webMcp.list(args);
-    if (name === "webmcp_call") return runPageAction(name, args, actionLedger, webMcp);
     if (name === "get_page_state") return pageController.getPageState(args);
     if (name === "list_targets") return pageController.listTargets(args);
     if (name === "get_target_state") return pageController.getTargetState(args);
     if (name === "read_page") return tool_read_page(args);
     if (name === "get_visible_text") return tool_get_visible_text(args);
     if (name === "query") return tool_query(args);
-    if (name === "get_api_endpoints") return tool_get_api_endpoints(args);
-    if (name === "get_api_responses") return tool_get_api_responses(args);
+    if (name === "get_api_endpoints") return tool_get_api_endpoints(args, signal);
+    if (name === "get_api_responses") return tool_get_api_responses(args, signal);
     if (name === "wait") return pageController.wait(args);
-    if (PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args, actionLedger);
+    if (name === "webmcp_call" || PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args, actionLedger, webMcp, signal);
     return { error: `未知工具: ${name}` };
   };
 
   const sendChat = () => {
+    if (pureMode === null || savingPureMode) return;
     const text = input.value.trim();
     const hasImages = pendingImages.length > 0;
     if ((!text && !hasImages) || isStreaming || !sendGate.tryAcquire()) return;
     const requestContextVersion = chatContextVersion;
     ensureApiKeyOrOpenSettings().then(async (ok) => {
-      if (requestContextVersion !== chatContextVersion) {
-        sendGate.release();
-        return;
-      }
+      if (requestContextVersion !== chatContextVersion) return;
       if (!ok) {
         sendGate.release();
         return;
@@ -1390,22 +1427,27 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         input.value = "";
         const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
         const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
-        if (requestContextVersion !== chatContextVersion) {
-          sendGate.release();
-          return;
-        }
+        if (requestContextVersion !== chatContextVersion) return;
         doSendChat(text, urls);
       } catch (error) {
+        if (requestContextVersion !== chatContextVersion) return;
         sendGate.release();
         showComposerHint(String(error?.message || "发送前读取内容失败，请重试。"));
       }
     }).catch((error) => {
+      if (requestContextVersion !== chatContextVersion) return;
       sendGate.release();
       showComposerHint(String(error?.message || "发送前检查配置失败，请重试。"));
     });
   };
 
   const doSendChat = (text, imageDataUrls = [], streamOptions = {}) => {
+    if (pureMode === null || savingPureMode) {
+      sendGate.release();
+      return;
+    }
+    const turnPureMode = pureMode;
+    const turnContextVersion = chatContextVersion;
     const trimmed = String(text || "").trim();
     const urls = Array.isArray(imageDataUrls) ? imageDataUrls.filter(Boolean) : [];
     if (!trimmed && !urls.length) {
@@ -1413,7 +1455,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       return;
     }
 
-    const includePageContext = streamOptions.includePageContext !== false;
+    const includePageContext = !turnPureMode && streamOptions.includePageContext !== false;
     let bubbleText =
       streamOptions.bubbleText != null ? String(streamOptions.bubbleText || "").trim() : "";
     if (!bubbleText) {
@@ -1580,7 +1622,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
       if (thinkText) {
         ensureThinkBlock();
-        thinkContentEl.innerHTML = renderMarkdown(thinkText);
+        thinkContentEl.innerHTML = renderMarkdown(thinkText, turnPureMode);
         if (thinkClosed && !finished) {
           thinkBlockEl.classList.remove("streaming");
           thinkBlockEl.classList.add("collapsed");
@@ -1593,7 +1635,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       const trimmedReply = replyText.replace(/^\n+/, "");
       if (trimmedReply || (finished && thinkClosed)) {
         ensureReplyContent();
-        replyContentEl.innerHTML = renderMarkdown(trimmedReply);
+        replyContentEl.innerHTML = renderMarkdown(trimmedReply, turnPureMode);
       }
 
       scrollToBottom();
@@ -1612,11 +1654,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
 
     const turnPort = activePort;
-    const webMcpController = new AbortController();
-    activeWebMcpController = webMcpController;
-    const webMcp = createWebMcpSession(webMcpController.signal);
+    const turnController = new AbortController();
+    activeTurnController = turnController;
+    const webMcp = createWebMcpSession(turnController.signal);
 
     turnPort.onMessage.addListener((msg) => {
+      if (turnContextVersion !== chatContextVersion) return;
       if (streamMessageTypes.has(msg?.type)) {
         const accepted = acceptTurnMessage(turnId, lastStreamSeq, msg);
         if (!accepted.accepted) return;
@@ -1624,15 +1667,15 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
 
       if (msg?.type === "tool") {
-        if (webMcpController.signal.aborted) return;
+        if (turnController.signal.aborted) return;
         if (typingIndicator.parentNode) typingIndicator.remove();
-        runTool(msg.name, msg.args, actionLedger, webMcp)
+        runTool(msg.name, msg.args, actionLedger, webMcp, turnController.signal)
           .then((result) => {
-            if (webMcpController.signal.aborted) return;
+            if (turnController.signal.aborted) return;
             turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           })
           .catch((error) => {
-            if (webMcpController.signal.aborted) return;
+            if (turnController.signal.aborted) return;
             turnPort.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error?.message || error) } });
           });
         return;
@@ -1671,6 +1714,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         if (turnHandled) return;
         turnHandled = true;
         chatStreamPort = null;
+        turnPort.disconnect();
         clearStreamWatchdog();
         if (typingIndicator.parentNode) typingIndicator.remove();
         renderStream(true);
@@ -1687,18 +1731,18 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         }
 
         if (replyContentEl) {
-          replyContentEl.innerHTML = renderMarkdown(cleanedReply.replace(/^\n+/, ""));
+          replyContentEl.innerHTML = renderMarkdown(cleanedReply.replace(/^\n+/, ""), turnPureMode);
         }
 
         chatHistory.push({ role: "assistant", content: cleanedReply || rawResponse });
         setInputEnabled(true);
         input.focus();
 
-        const stickerPromise = lastExecutionProgress?.status === "paused"
+        const stickerPromise = turnPureMode || lastExecutionProgress?.status === "paused"
           ? Promise.resolve(null)
           : requestStickerDecision({ userText: turnUserText, assistantText: cleanedReply });
         stickerPromise.then((stickerName) => {
-            if (!stickerName || !STICKER_URLS[stickerName]) return;
+            if (turnContextVersion !== chatContextVersion || !stickerName || !STICKER_URLS[stickerName]) return;
             const bubble = document.createElement("div");
             bubble.className = "msg assistant sticker-msg";
             const img = document.createElement("img");
@@ -1717,6 +1761,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         if (turnHandled) return;
         turnHandled = true;
         chatStreamPort = null;
+        turnPort.disconnect();
         clearStreamWatchdog();
         if (typingIndicator.parentNode) typingIndicator.remove();
         assistantEl.classList.replace("assistant", "error");
@@ -1732,7 +1777,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     });
 
     turnPort.onDisconnect.addListener(() => {
-      webMcpController.abort();
+      turnController.abort();
+      if (turnContextVersion !== chatContextVersion) return;
       chatStreamPort = null;
       if (turnHandled) {
         if (activePort === turnPort) activePort = null;
@@ -1765,6 +1811,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
     turnPort.postMessage({
       type: "chat",
+      pureMode: turnPureMode,
       messages: chatHistory,
       turnId,
       executionId: executionTaskId,
@@ -1836,6 +1883,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   };
 
   const syncSelectionMenuFromDocument = () => {
+    if (pureMode !== false || savingPureMode) return;
     const sel = document.getSelection();
     if (!sel || sel.isCollapsed || selectionAnchoredInExtensionUi(sel)) {
       hideSelectionMenu();
@@ -2019,6 +2067,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   });
   translateMenuBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (pureMode !== false || savingPureMode) return;
     const text = pendingSelectionText;
     hideSelectionMenu();
     if (!String(text || "").trim()) return;
@@ -2027,9 +2076,15 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       showComposerHint("当前正在回复，请稍后再试翻译。");
       return;
     }
+    if (!sendGate.tryAcquire()) return;
+    const requestContextVersion = chatContextVersion;
     ensureApiKeyOrOpenSettings()
       .then((ok) => {
-        if (!ok) return;
+        if (requestContextVersion !== chatContextVersion) return;
+        if (!ok) {
+          sendGate.release();
+          return;
+        }
         setDialogOpen(true);
         const body = String(text);
         const instruction = `请将下面这段文本翻译：若原文主要为非中文，译为自然流畅的中文；若原文主要为中文，译为自然流畅的英文。只输出译文正文，不要额外说明或标题。\n\n---\n${body}\n---`;
@@ -2040,7 +2095,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
           turnUserText: body.slice(0, 800)
         });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (requestContextVersion === chatContextVersion) sendGate.release();
+      });
   });
 
   document.addEventListener("mouseup", onDocumentMouseUpForSelectionMenu, false);
@@ -2113,10 +2170,55 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     pendingPointerDown = null;
   };
 
+  const resetChat = () => {
+    chatContextVersion += 1;
+    const port = chatStreamPort;
+    chatStreamPort = null;
+    activePort = null;
+    setInputEnabled(true);
+    port?.disconnect();
+    chatHistory.length = 0;
+    revokeAllPendingPreviewUrls();
+    pendingImages = [];
+    refreshImagePreviewRow();
+    input.value = "";
+    messagesEl.replaceChildren(welcome);
+    scrollToBottom();
+  };
+
+  const applyPureMode = (enabled) => {
+    const previous = pureMode;
+    pureMode = enabled;
+    pureModeToggle.checked = enabled;
+    pureModeToggle.disabled = savingPureMode;
+    pageActionToggle.disabled = enabled;
+    input.placeholder = enabled
+      ? "输入消息；Enter 发送，回形针可选图"
+      : defaultPlaceholder;
+    welcome.textContent = enabled
+      ? "纯净模式已开启。你可以直接和纳西妲聊天，网页内容不会加入对话。"
+      : defaultWelcome;
+    hideSelectionMenu();
+    if (enabled) {
+      apiBuffer.length = 0;
+      apiRespBuffer.length = 0;
+    }
+    if (previous !== null && previous !== enabled) resetChat();
+  };
+
+  const loadPureMode = async () => {
+    if (pureMode !== null) return;
+    try {
+      const settings = await chrome.storage.local.get(PURE_MODE_KEY);
+      if (pureMode === null) applyPureMode(settings[PURE_MODE_KEY] === true);
+    } catch {}
+  };
+
   const handleStorageChange = (changes, areaName) => {
     if (areaName !== "local") {
       return;
     }
+    if (changes[PURE_MODE_KEY]) applyPureMode(changes[PURE_MODE_KEY].newValue === true);
     const pageActionChange = changes?.[STORAGE_KEY_PAGE_ACTION_ENABLED];
     if (pageActionChange) {
       setGlobalPageActionEnabled(pageActionChange.newValue === true);
@@ -2143,21 +2245,32 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   closeButton.addEventListener("click", () => setDialogOpen(false));
   clearContextButton.addEventListener("click", () => {
     if (isStreaming) return;
-    chatContextVersion += 1;
-    chatHistory.length = 0;
-    revokeAllPendingPreviewUrls();
-    pendingImages = [];
-    refreshImagePreviewRow();
-    input.value = "";
-    messagesEl.replaceChildren(welcome);
-    scrollToBottom();
+    resetChat();
     input.focus();
+  });
+  pureModeToggle.addEventListener("change", async () => {
+    if (pureMode === null || savingPureMode) return;
+    const enabled = pureModeToggle.checked;
+    const previous = pureMode;
+    savingPureMode = true;
+    pureModeToggle.disabled = true;
+    if (enabled) applyPureMode(true);
+    try {
+      await chrome.storage.local.set({ [PURE_MODE_KEY]: enabled });
+      applyPureMode(enabled);
+    } catch {
+      applyPureMode(previous);
+      showComposerHint("纯净模式设置保存失败，请重试。");
+    } finally {
+      savingPureMode = false;
+      pureModeToggle.disabled = false;
+    }
   });
   pageActionToggle.addEventListener("change", () => {
     saveGlobalPageActionSetting(pageActionToggle.checked).catch(() => {});
   });
   settingsButton.addEventListener("click", async () => {
-    await loadLlmConfigIntoForm();
+    await Promise.all([loadLlmConfigIntoForm(), loadPureMode()]);
     setSettingsOpen(true);
   });
   settingsCancel.addEventListener("click", () => setSettingsOpen(false));
@@ -2503,7 +2616,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     renderIcon();
     const [stored] = await Promise.all([
       safeReadPosition(STORAGE_KEY),
-      loadGlobalPageActionSetting()
+      loadGlobalPageActionSetting(),
+      loadPureMode()
     ]);
     if (stored) {
       iconPosition = resolveAnchoredIconPosition(

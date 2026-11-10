@@ -1,4 +1,5 @@
 import { drainSseBuffer } from "../common/streamProtocol.js";
+import { PURE_MODE_KEY } from "../common/chatMode.js";
 import { isNativeToolsUnsupported, runNativePageAgent } from "./nativeAgent.js";
 import {
   createExecutionController,
@@ -17,21 +18,7 @@ const DEFAULT_CONFIG = {
 const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
 const LEGACY_TOOL_TIMEOUT_MS = 90_000;
 
-async function getLlmConfig() {
-  try {
-    const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
-    const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
-    return {
-      apiBaseUrl: String(cfg.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl),
-      apiKey: String(cfg.apiKey || DEFAULT_CONFIG.apiKey),
-      model: String(cfg.model || DEFAULT_CONFIG.model)
-    };
-  } catch {
-    return { ...DEFAULT_CONFIG };
-  }
-}
-
-
+const PURE_SYSTEM_PROMPT = "你是纳西妲，来自《原神》。用自然、清晰的语言回答用户。你只能使用对话中提供的内容，无法读取当前网页、访问浏览器或调用工具。";
 const LEGACY_SYSTEM_PROMPT = `你是纳西妲（Nahida），来自游戏《原神》的草之神。你正在帮助用户理解和操作当前网页。
 
 当前模型接口不支持原生工具调用。需要读取或操作页面时，严格只输出一行 JSON，不要输出任何额外文字：
@@ -266,7 +253,7 @@ function uiSafeAssistantStreamText(fullResponse) {
   return s;
 }
 
-async function callChatCompletionOnce(config, messages) {
+async function callChatCompletionOnce(config, messages, signal) {
   const url = `${config.apiBaseUrl}/chat/completions`;
   const response = await fetch(url, {
     method: "POST",
@@ -274,7 +261,8 @@ async function callChatCompletionOnce(config, messages) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.apiKey}`
     },
-    body: JSON.stringify({ model: config.model, messages, stream: false })
+    body: JSON.stringify({ model: config.model, messages, stream: false }),
+    signal
   });
 
   if (!response.ok) {
@@ -328,12 +316,12 @@ async function requestTool(port, name, args) {
   });
 }
 
-async function decideSticker(config, { userText, assistantText }) {
+async function decideSticker(config, { userText, assistantText }, signal) {
   const messages = [
     { role: "system", content: STICKER_DECIDER_PROMPT },
     { role: "user", content: `user:\n${String(userText || "").slice(0, 2000)}\n\nassistant:\n${String(assistantText || "").slice(0, 4000)}` }
   ];
-  const out = await callChatCompletionOnce(config, messages);
+  const out = await callChatCompletionOnce(config, messages, signal);
   const parsed = parseAgentJson(out);
   const sticker = parsed?.sticker;
   if (sticker == null) return null;
@@ -631,9 +619,7 @@ function nahidaInjectQueryFrame(selector, limit, includeAttrs) {
 }
 
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (!msg || typeof msg.type !== "string") return false;
-
+function handlePageMessage(msg, sender, sendResponse) {
   if (msg.type === "nahida_read_iframe_frames") {
     const tabId = sender.tab?.id;
     if (tabId == null) {
@@ -700,16 +686,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ error: String(e?.message || e), perFrame: [] }));
     return true;
   }
+}
 
-  return false;
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!["nahida_read_iframe_frames", "nahida_visible_all_frames", "nahida_query_all_frames"].includes(msg?.type)) return false;
+  chrome.storage.local.get(PURE_MODE_KEY).then((settings) => {
+    if (settings[PURE_MODE_KEY] === true) {
+      sendResponse({ error: "纯净模式下无法访问网页。" });
+      return;
+    }
+    handlePageMessage(msg, sender, sendResponse);
+  }).catch(() => sendResponse({ error: "无法读取纯净模式设置。" }));
+  return true;
 });
 
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "nahida-chat") return;
 
   let activeController = null;
+  let activeMode = null;
+  const abortOnModeChange = (changes, area) => {
+    const change = changes[PURE_MODE_KEY];
+    if (area === "local" && change && activeMode !== null && activeMode !== (change.newValue === true)) {
+      activeController?.abort();
+    }
+  };
+  chrome.storage.onChanged.addListener(abortOnModeChange);
 
   port.onDisconnect.addListener(() => {
+    chrome.storage.onChanged.removeListener(abortOnModeChange);
     activeController?.abort();
     activeController = null;
   });
@@ -719,17 +724,40 @@ chrome.runtime.onConnect.addListener((port) => {
       activeController?.abort();
       return;
     }
-    const config = await getLlmConfig();
-    if (!config.apiKey) {
-      safePost(port, { type: "error", error: "missing_api_key" });
-      return;
-    }
+    if (msg?.type !== "chat" && msg?.type !== "sticker_decide") return;
+    activeController?.abort();
+    const controller = new AbortController();
+    activeController = controller;
+    activeMode = null;
+    const emit = createTurnEmitter(port, msg.turnId);
     try {
+      const settings = await chrome.storage.local.get([STORAGE_KEY_LLM_CONFIG, PURE_MODE_KEY]);
+      if (controller.signal.aborted) return;
+      const saved = settings[STORAGE_KEY_LLM_CONFIG] || {};
+      const config = {
+        apiBaseUrl: String(saved.apiBaseUrl || DEFAULT_CONFIG.apiBaseUrl),
+        apiKey: String(saved.apiKey || DEFAULT_CONFIG.apiKey),
+        model: String(saved.model || DEFAULT_CONFIG.model)
+      };
+      const pureMode = settings[PURE_MODE_KEY] === true;
+      activeMode = pureMode;
+      if (msg.type === "chat" && pureMode !== (msg.pureMode === true)) {
+        emit({ type: "error", error: "聊天模式已切换，请重新发送。" });
+        return;
+      }
+      if (!config.apiKey) {
+        emit({ type: "error", error: "missing_api_key" });
+        return;
+      }
       if (msg.type === "chat") {
-        activeController?.abort();
-        const controller = new AbortController();
-        activeController = controller;
-        const emit = createTurnEmitter(port, msg.turnId);
+        if (pureMode) {
+          const messages = [{ role: "system", content: PURE_SYSTEM_PROMPT }, ...msg.messages];
+          for await (const content of streamChatCompletion(config, messages, controller.signal)) {
+            if (controller.signal.aborted || !emit({ type: "chunk", content })) return;
+          }
+          if (!controller.signal.aborted) emit({ type: "done" });
+          return;
+        }
         try {
           await runNativePageAgent(config, msg.messages, port, controller.signal, {
             turnId: msg.turnId,
@@ -753,21 +781,24 @@ chrome.runtime.onConnect.addListener((port) => {
           } else {
             throw error;
           }
-        } finally {
-          if (activeController === controller) activeController = null;
         }
         return;
       }
       if (msg.type === "sticker_decide") {
-        const sticker = await decideSticker(config, { userText: msg.userText, assistantText: msg.assistantText });
+        const sticker = pureMode ? null : await decideSticker(config, msg, controller.signal);
         safePost(port, { type: "sticker_decision", id: msg.id, sticker });
       }
     } catch (error) {
       if (isAbortError(error)) {
-        safePost(port, { type: "done" });
+        emit({ type: "done" });
         return;
       }
-      safePost(port, { type: "error", error: String(error?.message || error) });
+      emit({ type: "error", error: String(error?.message || error) });
+    } finally {
+      if (activeController === controller) {
+        activeController = null;
+        activeMode = null;
+      }
     }
   });
 });

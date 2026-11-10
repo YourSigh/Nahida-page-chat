@@ -5440,6 +5440,9 @@
     return { accepted: true, lastSeq: Number.isFinite(seq) ? seq : lastSeq };
   };
 
+  // src/common/chatMode.js
+  var PURE_MODE_KEY = "nahida_pure_mode";
+
   // src/page/perception/semantic.js
   var clipText = (value, max = 180) => String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
   var clip = clipText;
@@ -6029,9 +6032,11 @@
     }
     return false;
   };
-  var queuedNavigationResult = (target, action) => {
+  var queuedNavigationResult = (target, action, canRunQueuedAction) => {
     const clickElement = actionTarget(target);
-    setTimeout(() => activate(clickElement), 80);
+    setTimeout(() => {
+      if (!canRunQueuedAction || canRunQueuedAction()) activate(clickElement);
+    }, 80);
     return {
       ok: true,
       action,
@@ -6046,7 +6051,7 @@
     changes: Array.from(/* @__PURE__ */ new Set([...first.changes || [], ...second.changes || []])),
     mutated: Boolean(first.mutated || second.mutated)
   });
-  var clickTarget = async (target, { check = false } = {}) => {
+  var clickTarget = async (target, { check = false, signal, canRunQueuedAction } = {}) => {
     const action = check ? "check" : "click";
     const invalid = invalidTarget(target, action);
     if (invalid) return invalid;
@@ -6072,14 +6077,14 @@
         })
       };
     }
-    if (!check && canNavigate(target)) return queuedNavigationResult(target, action);
+    if (!check && canNavigate(target)) return queuedNavigationResult(target, action, canRunQueuedAction);
     const primary = actionTarget(target);
     if (!activate(primary)) return { action, error: "\u65E0\u6CD5\u5411\u76EE\u6807\u6D3E\u53D1\u70B9\u51FB\u4E8B\u4EF6\u3002" };
     let observation = await observeAfterAction(target, before, { timeout: 520 });
     const afterPrimary = observation.after;
     const checkable = ["radio", "checkbox", "switch"].includes(target.kind);
     const needsFallback = (check || checkable) && target.stateElement && target.stateElement !== primary && afterPrimary.checked !== true && (check || before.checked === afterPrimary.checked);
-    if (needsFallback && activate(target.stateElement)) {
+    if (needsFallback && !signal?.aborted && activate(target.stateElement)) {
       const followUp = await observeAfterAction(target, before, { timeout: 360 });
       observation = combineObservation(observation, followUp);
     }
@@ -6088,7 +6093,7 @@
       ...verifyActivation({ action, target, before, observation, expectedChecked: check ? true : void 0 })
     };
   };
-  var setCheckedTarget = async (target, { checked = true } = {}) => {
+  var setCheckedTarget = async (target, { checked = true, signal } = {}) => {
     const action = "set_checked";
     const invalid = invalidTarget(target, action);
     if (invalid) return invalid;
@@ -6112,7 +6117,7 @@
     if (!activate(primary)) return { action, error: "\u65E0\u6CD5\u5411\u76EE\u6807\u6D3E\u53D1\u8BBE\u7F6E\u72B6\u6001\u4E8B\u4EF6\u3002" };
     let observation = await observeAfterAction(target, before, { timeout: 520 });
     const needsFallback = target.stateElement && target.stateElement !== primary && observation.after.checked !== expectedChecked && before.checked === observation.after.checked;
-    if (needsFallback && activate(target.stateElement)) {
+    if (needsFallback && !signal?.aborted && activate(target.stateElement)) {
       const followUp = await observeAfterAction(target, before, { timeout: 360 });
       observation = combineObservation(observation, followUp);
     }
@@ -7050,14 +7055,14 @@
       }
       return attachActionTarget(finalResult, activeResolved, beforeTarget);
     };
-    const click = async ({ targetId } = {}) => {
+    const click = async ({ targetId } = {}, options) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
       const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
       const beforeState = snapshotTargetState(resolved.candidate);
-      return finalizeAction(await clickTarget(resolved.candidate), resolved, beforeTarget, beforeState);
+      return finalizeAction(await clickTarget(resolved.candidate, options), resolved, beforeTarget, beforeState);
     };
-    const setChecked = async ({ targetId, checked = true } = {}) => {
+    const setChecked = async ({ targetId, checked = true } = {}, signal) => {
       const resolved = resolveTarget(targetId);
       if (resolved.error) return resolved;
       const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
@@ -7065,7 +7070,7 @@
         return { error: "\u76EE\u6807\u4E0D\u662F\u5355\u9009\u3001\u591A\u9009\u6216\u5F00\u5173\u63A7\u4EF6\u3002", target: beforeTarget };
       }
       const beforeState = snapshotTargetState(resolved.candidate);
-      return finalizeAction(await setCheckedTarget(resolved.candidate, { checked }), resolved, beforeTarget, beforeState);
+      return finalizeAction(await setCheckedTarget(resolved.candidate, { checked, signal }), resolved, beforeTarget, beforeState);
     };
     const check = async ({ targetId } = {}) => setChecked({ targetId, checked: true });
     const type = async ({ targetId, text: text2 = "", clear = true } = {}) => {
@@ -7318,8 +7323,11 @@
     STICKER_URLS[name] = chrome.runtime.getURL(`assets/nahida/${name}.png`);
   }
   var STICKER_TAG_REGEX = /\[sticker:(\w+)\]/g;
-  var renderMarkdown = (text2) => {
-    const html = md.render(String(text2 || ""));
+  var renderImage = md.renderer.rules.image;
+  md.renderer.rules.image = (tokens, index, options, env, renderer) => env.pureMode ? md.utils.escapeHtml(tokens[index].content) : renderImage(tokens, index, options, env, renderer);
+  var renderMarkdown = (text2, pureMode = false) => {
+    const html = md.render(String(text2 || ""), { pureMode });
+    if (pureMode) return html;
     return html.replace(
       STICKER_TAG_REGEX,
       (match2, name) => {
@@ -7370,6 +7378,8 @@
     const API_BUFFER_MAX = 800;
     const apiRespBuffer = [];
     const API_RESP_BUFFER_MAX = 80;
+    let pureMode = null;
+    let savingPureMode = false;
     let apiListenerInstalled = false;
     let apiHookInjected = false;
     const pushApiItem = (item) => {
@@ -7391,6 +7401,7 @@
         window.addEventListener(
           "message",
           (event) => {
+            if (pureMode !== false) return;
             const data = event?.data;
             if (!data || data.__nahidaNet !== true) return;
             const kind = data.item?.kind;
@@ -7558,7 +7569,7 @@
       maxEntries = 200,
       stripQuery = true,
       reset = false
-    } = {}) => {
+    } = {}, signal) => {
       ensureApiHooked();
       if (reset) apiBuffer.length = 0;
       const stripFn = (url) => {
@@ -7576,6 +7587,7 @@
       if (Number.isFinite(ms) && ms > 0) {
         await new Promise((r) => setTimeout(r, ms));
       }
+      if (signal.aborted) return { error: "\u7F51\u9875\u8BFB\u53D6\u5DF2\u505C\u6B62\u3002" };
       const perfItems = [];
       try {
         const resources = performance?.getEntriesByType?.("resource") || [];
@@ -7633,7 +7645,7 @@
       stripQuery = true,
       reset = true,
       maxResponseChars = 4e3
-    } = {}) => {
+    } = {}, signal) => {
       ensureApiHooked();
       if (reset) apiRespBuffer.length = 0;
       const stripFn = (url) => {
@@ -7662,16 +7674,15 @@
         maxResponses: Math.max(1, Math.min(200, Number(maxEntries) || 20)),
         maxResponseChars: Math.max(256, Math.min(2e4, Number(maxResponseChars) || 4e3))
       });
+      const stopCapture = () => setCaptureCfg({ enabled: false, captureResponses: false });
+      signal.addEventListener("abort", stopCapture, { once: true });
       const ms = Number(waitMs);
       if (Number.isFinite(ms) && ms > 0) {
         await new Promise((r) => setTimeout(r, ms));
       }
-      setCaptureCfg({
-        enabled: false,
-        captureResponses: false,
-        maxResponses: Math.max(1, Math.min(200, Number(maxEntries) || 20)),
-        maxResponseChars: Math.max(256, Math.min(2e4, Number(maxResponseChars) || 4e3))
-      });
+      signal.removeEventListener("abort", stopCapture);
+      if (signal.aborted) return { error: "\u7F51\u9875\u8BFB\u53D6\u5DF2\u505C\u6B62\u3002" };
+      stopCapture();
       const all = Array.isArray(apiRespBuffer) ? apiRespBuffer : [];
       const slice = all.slice(Math.max(0, all.length - Math.max(1, Math.min(2e3, maxEntries))));
       const responses = slice.map((x) => ({
@@ -7815,14 +7826,33 @@
     const pageActionToggle = document.createElement("input");
     pageActionToggle.className = "settings-toggle";
     pageActionToggle.type = "checkbox";
+    pageActionToggle.disabled = true;
     pageActionToggle.setAttribute("role", "switch");
     pageActionToggle.setAttribute("aria-label", "\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09");
     pageActionCopy.append(pageActionLabel, pageActionDescription);
     pageActionToggleRow.append(pageActionCopy, pageActionToggle);
-    pageActionSection.append(pageActionTitle, pageActionToggleRow);
+    const pureModeRow = document.createElement("label");
+    pureModeRow.className = "settings-toggle-row";
+    const pureModeCopy = document.createElement("div");
+    pureModeCopy.className = "settings-toggle-copy";
+    const pureModeLabel = document.createElement("div");
+    pureModeLabel.className = "settings-toggle-label";
+    pureModeLabel.textContent = "\u7EAF\u51C0\u6A21\u5F0F\uFF08\u5168\u5C40\uFF09";
+    const pureModeDescription = document.createElement("div");
+    pureModeDescription.className = "settings-toggle-description";
+    pureModeDescription.textContent = "\u53EA\u53D1\u9001\u804A\u5929\u5185\u5BB9\u548C\u4F60\u4E3B\u52A8\u6DFB\u52A0\u7684\u56FE\u7247\uFF0C\u7981\u6B62\u8BFB\u53D6\u6216\u64CD\u4F5C\u7F51\u9875\u3002\u5207\u6362\u65F6\u4F1A\u5F00\u59CB\u65B0\u5BF9\u8BDD\u3002";
+    const pureModeToggle = document.createElement("input");
+    pureModeToggle.className = "settings-toggle";
+    pureModeToggle.type = "checkbox";
+    pureModeToggle.disabled = true;
+    pureModeToggle.setAttribute("role", "switch");
+    pureModeToggle.setAttribute("aria-label", pureModeLabel.textContent);
+    pureModeCopy.append(pureModeLabel, pureModeDescription);
+    pureModeRow.append(pureModeCopy, pureModeToggle);
+    pageActionSection.append(pageActionTitle, pureModeRow, pageActionToggleRow);
     const settingsHint = document.createElement("div");
     settingsHint.className = "settings-hint";
-    settingsHint.textContent = "\u6A21\u578B\u914D\u7F6E\u548C\u9875\u9762\u64CD\u4F5C\u5F00\u5173\u90FD\u4F1A\u4FDD\u5B58\u5728\u672C\u5730\u6D4F\u89C8\u5668\uFF08chrome.storage.local\uFF09\uFF0C\u4E0D\u4F1A\u4E0A\u4F20\u3002";
+    settingsHint.textContent = "\u6A21\u578B\u914D\u7F6E\u548C\u5F00\u5173\u8BBE\u7F6E\u4FDD\u5B58\u5728\u5F53\u524D\u6D4F\u89C8\u5668\u3002";
     const settingsActions = document.createElement("div");
     settingsActions.className = "settings-actions";
     const settingsCancel = document.createElement("button");
@@ -7850,7 +7880,8 @@
     messagesEl.className = "messages";
     const welcome = document.createElement("div");
     welcome.className = "msg-welcome";
-    welcome.textContent = "\u4F60\u597D\u5440\uFF5E\u6211\u662F\u7EB3\u897F\u59B2\uFF01\u6211\u53EF\u4EE5\u7406\u89E3\u5F53\u524D\u9875\u9762\uFF1B\u5982\u9700\u6211\u70B9\u51FB\u3001\u586B\u5199\u6216\u6EDA\u52A8\uFF0C\u8BF7\u5148\u5728\u53F3\u4E0A\u89D2\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\u3002";
+    const defaultWelcome = "\u4F60\u597D\u5440\uFF5E\u6211\u662F\u7EB3\u897F\u59B2\uFF01\u6211\u53EF\u4EE5\u7406\u89E3\u5F53\u524D\u9875\u9762\uFF1B\u5982\u9700\u6211\u70B9\u51FB\u3001\u586B\u5199\u6216\u6EDA\u52A8\uFF0C\u8BF7\u5148\u5728\u53F3\u4E0A\u89D2\u8BBE\u7F6E\u4E2D\u5F00\u542F\u201C\u542F\u7528\u9875\u9762\u64CD\u4F5C\uFF08\u5168\u5C40\uFF09\u201D\u3002";
+    welcome.textContent = defaultWelcome;
     messagesEl.appendChild(welcome);
     const composerWrap = document.createElement("div");
     composerWrap.className = "composer-wrap";
@@ -7878,7 +7909,8 @@
     const input = document.createElement("textarea");
     input.className = "input";
     input.rows = 2;
-    input.placeholder = "\u95EE\u6211\u9875\u9762\u5185\u5BB9\uFF0C\u6216\u8BA9\u6211\u70B9\u51FB\u3001\u586B\u5199\u3001\u6EDA\u52A8\uFF1BEnter \u53D1\u9001\uFF0C\u56DE\u5F62\u9488\u53EF\u9009\u56FE";
+    const defaultPlaceholder = "\u95EE\u6211\u9875\u9762\u5185\u5BB9\uFF0C\u6216\u8BA9\u6211\u70B9\u51FB\u3001\u586B\u5199\u3001\u6EDA\u52A8\uFF1BEnter \u53D1\u9001\uFF0C\u56DE\u5F62\u9488\u53EF\u9009\u56FE";
+    input.placeholder = defaultPlaceholder;
     const sendIconUrl = chrome.runtime.getURL("assets/send.png");
     const stopIconUrl = chrome.runtime.getURL("assets/stop.png");
     const sendButton = document.createElement("button");
@@ -7936,7 +7968,7 @@
     const sendGate = createSendGate();
     let activePort = null;
     let chatStreamPort = null;
-    let activeWebMcpController = null;
+    let activeTurnController = null;
     let streamWatchdogId = 0;
     const clearStreamWatchdog = () => {
       if (streamWatchdogId) {
@@ -7949,14 +7981,14 @@
       streamWatchdogId = setTimeout(() => {
         streamWatchdogId = 0;
         if (!isStreaming) return;
-        activeWebMcpController?.abort();
+        activeTurnController?.abort();
         const p = chatStreamPort;
         try {
           p?.postMessage({ type: "abort_chat" });
         } catch {
         }
         setTimeout(() => {
-          if (!isStreaming) return;
+          if (!isStreaming || chatStreamPort !== p) return;
           try {
             p?.disconnect();
           } catch {
@@ -8195,13 +8227,13 @@
     const stopStreamingChat = () => {
       const p = chatStreamPort;
       if (!p) return;
-      activeWebMcpController?.abort();
+      activeTurnController?.abort();
       try {
         p.postMessage({ type: "abort_chat" });
       } catch {
       }
       setTimeout(() => {
-        if (!isStreaming) return;
+        if (!isStreaming || chatStreamPort !== p) return;
         try {
           p.disconnect();
         } catch {
@@ -8216,8 +8248,8 @@
       attachSlot.classList.toggle("attach-disabled", !enabled);
       isStreaming = !enabled;
       if (enabled) {
-        activeWebMcpController?.abort();
-        activeWebMcpController = null;
+        activeTurnController?.abort();
+        activeTurnController = null;
         sendGate.release();
         clearStreamWatchdog();
         sendButton.setAttribute("aria-label", "\u53D1\u9001");
@@ -8453,10 +8485,12 @@ ${f.text}
         }
       };
     };
-    const runPageAction = async (name, args = {}, actionLedger, webMcp) => {
+    const runPageAction = async (name, args, actionLedger, webMcp, signal) => {
+      const actionContextVersion = chatContextVersion;
       if (!pageActionSettingLoaded) {
         await loadGlobalPageActionSetting();
       }
+      if (pureMode !== false || signal.aborted) return { error: "\u9875\u9762\u64CD\u4F5C\u5DF2\u505C\u6B62\u3002" };
       if (!globalPageActionEnabled) {
         const result2 = {
           ok: false,
@@ -8489,8 +8523,14 @@ ${f.text}
         return result2;
       }
       const executeAction = async () => {
-        if (name === "click") return pageController.click(args);
-        if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
+        if (pureMode !== false || signal.aborted) return { error: "\u9875\u9762\u64CD\u4F5C\u5DF2\u505C\u6B62\u3002" };
+        if (name === "click") {
+          return pageController.click(args, {
+            signal,
+            canRunQueuedAction: () => pureMode === false && actionContextVersion === chatContextVersion
+          });
+        }
+        if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked }, signal);
         if (name === "type") return pageController.type(args);
         if (name === "select_option") return pageController.selectOption(args);
         if (name === "press_key") return pageController.pressKey(args);
@@ -8498,6 +8538,7 @@ ${f.text}
         return { error: `\u672A\u77E5\u9875\u9762\u64CD\u4F5C: ${name}` };
       };
       let result = await executeAction();
+      if (signal.aborted) return result;
       const looksStale = (value) => value?.status === "target_stale" || /目标已失效|目标已经被页面重绘/.test(String(value?.error || ""));
       if (looksStale(result)) {
         log.update("\u76EE\u6807\u5DF2\u5931\u6548\uFF0C\u6B63\u5728\u5237\u65B0\u9875\u9762\u72B6\u6001\u5E76\u91CD\u65B0\u7ED1\u5B9A");
@@ -8528,31 +8569,29 @@ ${f.text}
       }
       return result;
     };
-    const runTool = async (name, args = {}, actionLedger, webMcp) => {
+    const runTool = async (name, args = {}, actionLedger, webMcp, signal) => {
+      if (pureMode !== false || signal.aborted) return { error: "\u7EAF\u51C0\u6A21\u5F0F\u4E0B\u65E0\u6CD5\u8BBF\u95EE\u6216\u64CD\u4F5C\u7F51\u9875\u3002" };
       if (name === "webmcp_list") return webMcp.list(args);
-      if (name === "webmcp_call") return runPageAction(name, args, actionLedger, webMcp);
       if (name === "get_page_state") return pageController.getPageState(args);
       if (name === "list_targets") return pageController.listTargets(args);
       if (name === "get_target_state") return pageController.getTargetState(args);
       if (name === "read_page") return tool_read_page(args);
       if (name === "get_visible_text") return tool_get_visible_text(args);
       if (name === "query") return tool_query(args);
-      if (name === "get_api_endpoints") return tool_get_api_endpoints(args);
-      if (name === "get_api_responses") return tool_get_api_responses(args);
+      if (name === "get_api_endpoints") return tool_get_api_endpoints(args, signal);
+      if (name === "get_api_responses") return tool_get_api_responses(args, signal);
       if (name === "wait") return pageController.wait(args);
-      if (PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args, actionLedger);
+      if (name === "webmcp_call" || PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args, actionLedger, webMcp, signal);
       return { error: `\u672A\u77E5\u5DE5\u5177: ${name}` };
     };
     const sendChat = () => {
+      if (pureMode === null || savingPureMode) return;
       const text2 = input.value.trim();
       const hasImages = pendingImages.length > 0;
       if (!text2 && !hasImages || isStreaming || !sendGate.tryAcquire()) return;
       const requestContextVersion = chatContextVersion;
       ensureApiKeyOrOpenSettings().then(async (ok) => {
-        if (requestContextVersion !== chatContextVersion) {
-          sendGate.release();
-          return;
-        }
+        if (requestContextVersion !== chatContextVersion) return;
         if (!ok) {
           sendGate.release();
           return;
@@ -8565,28 +8604,33 @@ ${f.text}
           input.value = "";
           const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
           const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
-          if (requestContextVersion !== chatContextVersion) {
-            sendGate.release();
-            return;
-          }
+          if (requestContextVersion !== chatContextVersion) return;
           doSendChat(text2, urls);
         } catch (error2) {
+          if (requestContextVersion !== chatContextVersion) return;
           sendGate.release();
           showComposerHint(String(error2?.message || "\u53D1\u9001\u524D\u8BFB\u53D6\u5185\u5BB9\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002"));
         }
       }).catch((error2) => {
+        if (requestContextVersion !== chatContextVersion) return;
         sendGate.release();
         showComposerHint(String(error2?.message || "\u53D1\u9001\u524D\u68C0\u67E5\u914D\u7F6E\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002"));
       });
     };
     const doSendChat = (text2, imageDataUrls = [], streamOptions = {}) => {
+      if (pureMode === null || savingPureMode) {
+        sendGate.release();
+        return;
+      }
+      const turnPureMode = pureMode;
+      const turnContextVersion = chatContextVersion;
       const trimmed = String(text2 || "").trim();
       const urls = Array.isArray(imageDataUrls) ? imageDataUrls.filter(Boolean) : [];
       if (!trimmed && !urls.length) {
         sendGate.release();
         return;
       }
-      const includePageContext = streamOptions.includePageContext !== false;
+      const includePageContext = !turnPureMode && streamOptions.includePageContext !== false;
       let bubbleText = streamOptions.bubbleText != null ? String(streamOptions.bubbleText || "").trim() : "";
       if (!bubbleText) {
         bubbleText = trimmed || (urls.length ? "\uFF08\u9644\u56FE\uFF09" : "");
@@ -8724,7 +8768,7 @@ ${replyText.slice(after2, c2)}`;
         const { thinkText, replyText, thinkClosed } = parseThinkAndReply(rawResponse);
         if (thinkText) {
           ensureThinkBlock();
-          thinkContentEl.innerHTML = renderMarkdown(thinkText);
+          thinkContentEl.innerHTML = renderMarkdown(thinkText, turnPureMode);
           if (thinkClosed && !finished) {
             thinkBlockEl.classList.remove("streaming");
             thinkBlockEl.classList.add("collapsed");
@@ -8736,7 +8780,7 @@ ${replyText.slice(after2, c2)}`;
         const trimmedReply = replyText.replace(/^\n+/, "");
         if (trimmedReply || finished && thinkClosed) {
           ensureReplyContent();
-          replyContentEl.innerHTML = renderMarkdown(trimmedReply);
+          replyContentEl.innerHTML = renderMarkdown(trimmedReply, turnPureMode);
         }
         scrollToBottom();
       };
@@ -8752,23 +8796,24 @@ ${replyText.slice(after2, c2)}`;
         return;
       }
       const turnPort = activePort;
-      const webMcpController = new AbortController();
-      activeWebMcpController = webMcpController;
-      const webMcp = createWebMcpSession(webMcpController.signal);
+      const turnController = new AbortController();
+      activeTurnController = turnController;
+      const webMcp = createWebMcpSession(turnController.signal);
       turnPort.onMessage.addListener((msg) => {
+        if (turnContextVersion !== chatContextVersion) return;
         if (streamMessageTypes.has(msg?.type)) {
           const accepted = acceptTurnMessage(turnId, lastStreamSeq, msg);
           if (!accepted.accepted) return;
           lastStreamSeq = accepted.lastSeq;
         }
         if (msg?.type === "tool") {
-          if (webMcpController.signal.aborted) return;
+          if (turnController.signal.aborted) return;
           if (typingIndicator.parentNode) typingIndicator.remove();
-          runTool(msg.name, msg.args, actionLedger, webMcp).then((result) => {
-            if (webMcpController.signal.aborted) return;
+          runTool(msg.name, msg.args, actionLedger, webMcp, turnController.signal).then((result) => {
+            if (turnController.signal.aborted) return;
             turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           }).catch((error2) => {
-            if (webMcpController.signal.aborted) return;
+            if (turnController.signal.aborted) return;
             turnPort.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error2?.message || error2) } });
           });
           return;
@@ -8803,6 +8848,7 @@ ${replyText.slice(after2, c2)}`;
           if (turnHandled) return;
           turnHandled = true;
           chatStreamPort = null;
+          turnPort.disconnect();
           clearStreamWatchdog();
           if (typingIndicator.parentNode) typingIndicator.remove();
           renderStream(true);
@@ -8818,14 +8864,14 @@ ${replyText.slice(after2, c2)}`;
             replyContentEl.innerHTML = renderMarkdown("\uFF08\u7EB3\u897F\u59B2\u6CA1\u6709\u56DE\u590D\u5185\u5BB9\uFF09");
           }
           if (replyContentEl) {
-            replyContentEl.innerHTML = renderMarkdown(cleanedReply.replace(/^\n+/, ""));
+            replyContentEl.innerHTML = renderMarkdown(cleanedReply.replace(/^\n+/, ""), turnPureMode);
           }
           chatHistory.push({ role: "assistant", content: cleanedReply || rawResponse });
           setInputEnabled(true);
           input.focus();
-          const stickerPromise = lastExecutionProgress?.status === "paused" ? Promise.resolve(null) : requestStickerDecision({ userText: turnUserText, assistantText: cleanedReply });
+          const stickerPromise = turnPureMode || lastExecutionProgress?.status === "paused" ? Promise.resolve(null) : requestStickerDecision({ userText: turnUserText, assistantText: cleanedReply });
           stickerPromise.then((stickerName) => {
-            if (!stickerName || !STICKER_URLS[stickerName]) return;
+            if (turnContextVersion !== chatContextVersion || !stickerName || !STICKER_URLS[stickerName]) return;
             const bubble = document.createElement("div");
             bubble.className = "msg assistant sticker-msg";
             const img = document.createElement("img");
@@ -8843,6 +8889,7 @@ ${replyText.slice(after2, c2)}`;
           if (turnHandled) return;
           turnHandled = true;
           chatStreamPort = null;
+          turnPort.disconnect();
           clearStreamWatchdog();
           if (typingIndicator.parentNode) typingIndicator.remove();
           assistantEl.classList.replace("assistant", "error");
@@ -8858,7 +8905,8 @@ ${replyText.slice(after2, c2)}`;
         }
       });
       turnPort.onDisconnect.addListener(() => {
-        webMcpController.abort();
+        turnController.abort();
+        if (turnContextVersion !== chatContextVersion) return;
         chatStreamPort = null;
         if (turnHandled) {
           if (activePort === turnPort) activePort = null;
@@ -8890,6 +8938,7 @@ ${replyText.slice(after2, c2)}`;
       });
       turnPort.postMessage({
         type: "chat",
+        pureMode: turnPureMode,
         messages: chatHistory,
         turnId,
         executionId: executionTaskId,
@@ -8953,6 +9002,7 @@ ${replyText.slice(after2, c2)}`;
       selectionMenu.style.top = `${Math.round(top)}px`;
     };
     const syncSelectionMenuFromDocument = () => {
+      if (pureMode !== false || savingPureMode) return;
       const sel = document.getSelection();
       if (!sel || sel.isCollapsed || selectionAnchoredInExtensionUi(sel)) {
         hideSelectionMenu();
@@ -9110,6 +9160,7 @@ ${replyText.slice(after2, c2)}`;
     });
     translateMenuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (pureMode !== false || savingPureMode) return;
       const text2 = pendingSelectionText;
       hideSelectionMenu();
       if (!String(text2 || "").trim()) return;
@@ -9118,8 +9169,14 @@ ${replyText.slice(after2, c2)}`;
         showComposerHint("\u5F53\u524D\u6B63\u5728\u56DE\u590D\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u7FFB\u8BD1\u3002");
         return;
       }
+      if (!sendGate.tryAcquire()) return;
+      const requestContextVersion = chatContextVersion;
       ensureApiKeyOrOpenSettings().then((ok) => {
-        if (!ok) return;
+        if (requestContextVersion !== chatContextVersion) return;
+        if (!ok) {
+          sendGate.release();
+          return;
+        }
         setDialogOpen(true);
         const body2 = String(text2);
         const instruction = `\u8BF7\u5C06\u4E0B\u9762\u8FD9\u6BB5\u6587\u672C\u7FFB\u8BD1\uFF1A\u82E5\u539F\u6587\u4E3B\u8981\u4E3A\u975E\u4E2D\u6587\uFF0C\u8BD1\u4E3A\u81EA\u7136\u6D41\u7545\u7684\u4E2D\u6587\uFF1B\u82E5\u539F\u6587\u4E3B\u8981\u4E3A\u4E2D\u6587\uFF0C\u8BD1\u4E3A\u81EA\u7136\u6D41\u7545\u7684\u82F1\u6587\u3002\u53EA\u8F93\u51FA\u8BD1\u6587\u6B63\u6587\uFF0C\u4E0D\u8981\u989D\u5916\u8BF4\u660E\u6216\u6807\u9898\u3002
@@ -9134,6 +9191,7 @@ ${body2}
           turnUserText: body2.slice(0, 800)
         });
       }).catch(() => {
+        if (requestContextVersion === chatContextVersion) sendGate.release();
       });
     });
     document.addEventListener("mouseup", onDocumentMouseUpForSelectionMenu, false);
@@ -9197,10 +9255,49 @@ ${body2}
       }
       pendingPointerDown = null;
     };
+    const resetChat = () => {
+      chatContextVersion += 1;
+      const port = chatStreamPort;
+      chatStreamPort = null;
+      activePort = null;
+      setInputEnabled(true);
+      port?.disconnect();
+      chatHistory.length = 0;
+      revokeAllPendingPreviewUrls();
+      pendingImages = [];
+      refreshImagePreviewRow();
+      input.value = "";
+      messagesEl.replaceChildren(welcome);
+      scrollToBottom();
+    };
+    const applyPureMode = (enabled) => {
+      const previous = pureMode;
+      pureMode = enabled;
+      pureModeToggle.checked = enabled;
+      pureModeToggle.disabled = savingPureMode;
+      pageActionToggle.disabled = enabled;
+      input.placeholder = enabled ? "\u8F93\u5165\u6D88\u606F\uFF1BEnter \u53D1\u9001\uFF0C\u56DE\u5F62\u9488\u53EF\u9009\u56FE" : defaultPlaceholder;
+      welcome.textContent = enabled ? "\u7EAF\u51C0\u6A21\u5F0F\u5DF2\u5F00\u542F\u3002\u4F60\u53EF\u4EE5\u76F4\u63A5\u548C\u7EB3\u897F\u59B2\u804A\u5929\uFF0C\u7F51\u9875\u5185\u5BB9\u4E0D\u4F1A\u52A0\u5165\u5BF9\u8BDD\u3002" : defaultWelcome;
+      hideSelectionMenu();
+      if (enabled) {
+        apiBuffer.length = 0;
+        apiRespBuffer.length = 0;
+      }
+      if (previous !== null && previous !== enabled) resetChat();
+    };
+    const loadPureMode = async () => {
+      if (pureMode !== null) return;
+      try {
+        const settings = await chrome.storage.local.get(PURE_MODE_KEY);
+        if (pureMode === null) applyPureMode(settings[PURE_MODE_KEY] === true);
+      } catch {
+      }
+    };
     const handleStorageChange = (changes, areaName) => {
       if (areaName !== "local") {
         return;
       }
+      if (changes[PURE_MODE_KEY]) applyPureMode(changes[PURE_MODE_KEY].newValue === true);
       const pageActionChange = changes?.[STORAGE_KEY_PAGE_ACTION_ENABLED];
       if (pageActionChange) {
         setGlobalPageActionEnabled(pageActionChange.newValue === true);
@@ -9225,22 +9322,33 @@ ${body2}
     closeButton.addEventListener("click", () => setDialogOpen(false));
     clearContextButton.addEventListener("click", () => {
       if (isStreaming) return;
-      chatContextVersion += 1;
-      chatHistory.length = 0;
-      revokeAllPendingPreviewUrls();
-      pendingImages = [];
-      refreshImagePreviewRow();
-      input.value = "";
-      messagesEl.replaceChildren(welcome);
-      scrollToBottom();
+      resetChat();
       input.focus();
+    });
+    pureModeToggle.addEventListener("change", async () => {
+      if (pureMode === null || savingPureMode) return;
+      const enabled = pureModeToggle.checked;
+      const previous = pureMode;
+      savingPureMode = true;
+      pureModeToggle.disabled = true;
+      if (enabled) applyPureMode(true);
+      try {
+        await chrome.storage.local.set({ [PURE_MODE_KEY]: enabled });
+        applyPureMode(enabled);
+      } catch {
+        applyPureMode(previous);
+        showComposerHint("\u7EAF\u51C0\u6A21\u5F0F\u8BBE\u7F6E\u4FDD\u5B58\u5931\u8D25\uFF0C\u8BF7\u91CD\u8BD5\u3002");
+      } finally {
+        savingPureMode = false;
+        pureModeToggle.disabled = false;
+      }
     });
     pageActionToggle.addEventListener("change", () => {
       saveGlobalPageActionSetting(pageActionToggle.checked).catch(() => {
       });
     });
     settingsButton.addEventListener("click", async () => {
-      await loadLlmConfigIntoForm();
+      await Promise.all([loadLlmConfigIntoForm(), loadPureMode()]);
       setSettingsOpen(true);
     });
     settingsCancel.addEventListener("click", () => setSettingsOpen(false));
@@ -9535,7 +9643,8 @@ ${input.value.slice(end)}`;
       renderIcon();
       const [stored] = await Promise.all([
         safeReadPosition(STORAGE_KEY),
-        loadGlobalPageActionSetting()
+        loadGlobalPageActionSetting(),
+        loadPureMode()
       ]);
       if (stored) {
         iconPosition = resolveAnchoredIconPosition(

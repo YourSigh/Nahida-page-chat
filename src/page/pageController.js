@@ -304,15 +304,15 @@ export function createPageController({ extensionHost } = {}) {
     return attachActionTarget(finalResult, activeResolved, beforeTarget);
   };
 
-  const click = async ({ targetId } = {}) => {
+  const click = async ({ targetId } = {}, options) => {
     const resolved = resolveTarget(targetId);
     if (resolved.error) return resolved;
     const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
     const beforeState = snapshotTargetState(resolved.candidate);
-    return finalizeAction(await clickTarget(resolved.candidate), resolved, beforeTarget, beforeState);
+    return finalizeAction(await clickTarget(resolved.candidate, options), resolved, beforeTarget, beforeState);
   };
 
-  const setChecked = async ({ targetId, checked = true } = {}) => {
+  const setChecked = async ({ targetId, checked = true } = {}, signal) => {
     const resolved = resolveTarget(targetId);
     if (resolved.error) return resolved;
     const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
@@ -320,7 +320,7 @@ export function createPageController({ extensionHost } = {}) {
       return { error: "目标不是单选、多选或开关控件。", target: beforeTarget };
     }
     const beforeState = snapshotTargetState(resolved.candidate);
-    return finalizeAction(await setCheckedTarget(resolved.candidate, { checked }), resolved, beforeTarget, beforeState);
+    return finalizeAction(await setCheckedTarget(resolved.candidate, { checked, signal }), resolved, beforeTarget, beforeState);
   };
 
   const check = async ({ targetId } = {}) => setChecked({ targetId, checked: true });
