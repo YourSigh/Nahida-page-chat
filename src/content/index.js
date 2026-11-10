@@ -2,6 +2,7 @@ import stylesText from "../ui/styles.css";
 import MarkdownIt from "markdown-it";
 import { acceptTurnMessage, createSendGate } from "../common/streamProtocol.js";
 import { createPageController } from "../page/pageController.js";
+import { createWebMcpSession } from "./webMcp.js";
 import {
   anchorIconPosition,
   computeAnchoredDialogPosition,
@@ -727,6 +728,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   let activePort = null;
   /** 当前一轮对话的 port，用于「停止」发 abort / disconnect */
   let chatStreamPort = null;
+  let activeWebMcpController = null;
   let streamWatchdogId = 0;
 
   const clearStreamWatchdog = () => {
@@ -741,6 +743,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     streamWatchdogId = setTimeout(() => {
       streamWatchdogId = 0;
       if (!isStreaming) return;
+      activeWebMcpController?.abort();
       const p = chatStreamPort;
       try {
         p?.postMessage({ type: "abort_chat" });
@@ -998,6 +1001,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const stopStreamingChat = () => {
     const p = chatStreamPort;
     if (!p) return;
+    activeWebMcpController?.abort();
     try {
       p.postMessage({ type: "abort_chat" });
     } catch {}
@@ -1017,6 +1021,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     attachSlot.classList.toggle("attach-disabled", !enabled);
     isStreaming = !enabled;
     if (enabled) {
+      activeWebMcpController?.abort();
+      activeWebMcpController = null;
       sendGate.release();
       clearStreamWatchdog();
       sendButton.setAttribute("aria-label", "发送");
@@ -1222,6 +1228,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   };
 
   const actionSummary = (name, args = {}) => {
+    if (name === "webmcp_call") return "调用网站 WebMCP 工具";
     if (name === "click") return `点击 ${targetLabel(args.targetId)}`;
     if (name === "set_checked" || name === "check") return `${args.checked === false ? "取消选中" : "选中"} ${targetLabel(args.targetId)}`;
     if (name === "type") {
@@ -1267,7 +1274,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     };
   };
 
-  const runPageAction = async (name, args = {}, actionLedger) => {
+  const runPageAction = async (name, args = {}, actionLedger, webMcp) => {
     if (!pageActionSettingLoaded) {
       await loadGlobalPageActionSetting();
     }
@@ -1299,6 +1306,11 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
     if (ledgerKey) actionLedger.set(ledgerKey, { pending: true });
     const log = appendToolLog(name, args, "正在执行");
+    if (name === "webmcp_call") {
+      const result = await webMcp.call(args);
+      log.done(result);
+      return result;
+    }
     const executeAction = async () => {
       if (name === "click") return pageController.click(args);
       if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
@@ -1340,7 +1352,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     return result;
   };
 
-  const runTool = async (name, args = {}, actionLedger) => {
+  const runTool = async (name, args = {}, actionLedger, webMcp) => {
+    if (name === "webmcp_list") return webMcp.list(args);
+    if (name === "webmcp_call") return runPageAction(name, args, actionLedger, webMcp);
     if (name === "get_page_state") return pageController.getPageState(args);
     if (name === "list_targets") return pageController.listTargets(args);
     if (name === "get_target_state") return pageController.getTargetState(args);
@@ -1598,6 +1612,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
 
     const turnPort = activePort;
+    const webMcpController = new AbortController();
+    activeWebMcpController = webMcpController;
+    const webMcp = createWebMcpSession(webMcpController.signal);
 
     turnPort.onMessage.addListener((msg) => {
       if (streamMessageTypes.has(msg?.type)) {
@@ -1607,12 +1624,15 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
 
       if (msg?.type === "tool") {
+        if (webMcpController.signal.aborted) return;
         if (typingIndicator.parentNode) typingIndicator.remove();
-        runTool(msg.name, msg.args, actionLedger)
+        runTool(msg.name, msg.args, actionLedger, webMcp)
           .then((result) => {
+            if (webMcpController.signal.aborted) return;
             turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           })
           .catch((error) => {
+            if (webMcpController.signal.aborted) return;
             turnPort.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error?.message || error) } });
           });
         return;
@@ -1712,6 +1732,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     });
 
     turnPort.onDisconnect.addListener(() => {
+      webMcpController.abort();
       chatStreamPort = null;
       if (turnHandled) {
         if (activePort === turnPort) activePort = null;

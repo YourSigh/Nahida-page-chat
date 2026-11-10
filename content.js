@@ -7119,6 +7119,106 @@
     };
   }
 
+  // src/content/webMcp.js
+  var MAX_LIST_LENGTH = 5e3;
+  var MAX_RESULT_LENGTH = 5e3;
+  var MAX_INPUT_LENGTH = 16e3;
+  function createWebMcpSession(signal) {
+    let tools = /* @__PURE__ */ new Map();
+    let sequence = 0;
+    const getContext = () => {
+      const context = document.modelContext;
+      return typeof context?.getTools === "function" && typeof context?.executeTool === "function" ? context : null;
+    };
+    const list2 = async ({ offset = 0 } = {}) => {
+      tools = /* @__PURE__ */ new Map();
+      const context = getContext();
+      if (!context) return { available: false, tools: [] };
+      if (!Number.isSafeInteger(offset) || offset < 0) return { error: "offset \u5FC5\u987B\u662F\u975E\u8D1F\u6574\u6570\u3002" };
+      const registered = (await context.getTools()).filter(
+        (tool) => tool.origin === location.origin && !tool.annotations?.debugging
+      );
+      if (signal.aborted) return { error: "\u672C\u8F6E\u5BF9\u8BDD\u5DF2\u505C\u6B62\u3002" };
+      const descriptors = [];
+      let totalLength = 0;
+      let index = offset;
+      for (; index < registered.length; index += 1) {
+        const tool = registered[index];
+        const toolId = `webmcp-${sequence + 1}`;
+        const schemaLength = JSON.stringify(tool.inputSchema)?.length || 0;
+        const descriptor = {
+          toolId,
+          name: tool.name.slice(0, 160),
+          description: tool.description.slice(0, 500),
+          origin: tool.origin,
+          inputSchema: schemaLength <= 3500 ? tool.inputSchema : void 0,
+          schemaOmitted: schemaLength > 3500 || void 0,
+          readOnlyHint: tool.annotations?.readOnlyHint === true,
+          consequentialHint: tool.annotations?.consequentialHint === true
+        };
+        const length = JSON.stringify(descriptor).length;
+        if (totalLength + length > MAX_LIST_LENGTH) break;
+        totalLength += length;
+        sequence += 1;
+        tools.set(toolId, tool);
+        descriptors.push(descriptor);
+      }
+      return {
+        available: true,
+        tools: descriptors,
+        nextOffset: index < registered.length ? index : void 0
+      };
+    };
+    const call = async ({ toolId, input = {} } = {}) => {
+      const action = "webmcp_call";
+      const tool = tools.get(toolId);
+      if (!tool) return { action, error: "WebMCP \u5DE5\u5177 ID \u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u5217\u51FA\u5F53\u524D\u9875\u9762\u7684\u5DE5\u5177\u3002" };
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return { action, error: "WebMCP \u5DE5\u5177\u53C2\u6570\u5FC5\u987B\u662F JSON \u5BF9\u8C61\u3002" };
+      }
+      const inputJson = JSON.stringify(input);
+      if (inputJson.length > MAX_INPUT_LENGTH) return { action, error: "WebMCP \u5DE5\u5177\u53C2\u6570\u8FC7\u957F\u3002" };
+      if (signal.aborted) return { action, error: "\u672C\u8F6E\u5BF9\u8BDD\u5DF2\u505C\u6B62\u3002" };
+      const context = getContext();
+      if (!context) return { action, error: "\u5F53\u524D\u9875\u9762\u7684 WebMCP \u63A5\u53E3\u4E0D\u53EF\u7528\u3002" };
+      const timeout = AbortSignal.timeout(15e3);
+      const options = { signal: AbortSignal.any([signal, timeout]) };
+      try {
+        let raw;
+        try {
+          raw = await context.executeTool(tool, input, options);
+        } catch (error2) {
+          if (!error2?.message?.startsWith("Failed to parse input")) throw error2;
+          raw = await context.executeTool(tool, inputJson, options);
+        }
+        let result = raw;
+        if (typeof raw === "string") {
+          try {
+            result = JSON.parse(raw);
+          } catch {
+          }
+        }
+        const failed = result?.isError === true || Boolean(result?.error);
+        const truncated = (JSON.stringify(result)?.length || 0) > MAX_RESULT_LENGTH;
+        return {
+          action,
+          actionExecuted: true,
+          ok: !failed,
+          result: truncated ? String(raw).slice(0, 800) : result,
+          truncated: truncated || void 0,
+          error: failed ? "\u7F51\u7AD9\u5DE5\u5177\u8FD4\u56DE\u4E86\u9519\u8BEF\uFF0C\u8BF7\u67E5\u770B\u5176\u7ED3\u679C\u3002" : void 0
+        };
+      } catch {
+        return {
+          action,
+          actionExecuted: true,
+          error: signal.aborted || timeout.aborted ? "WebMCP \u8C03\u7528\u5DF2\u505C\u6B62\u6216\u8D85\u65F6\uFF0C\u8BF7\u5148\u786E\u8BA4\u9875\u9762\u72B6\u6001\u3002" : "\u7F51\u7AD9\u5DE5\u5177\u6267\u884C\u5931\u8D25\u6216\u5DF2\u5931\u6548\uFF0C\u8BF7\u5148\u786E\u8BA4\u9875\u9762\u72B6\u6001\u3002"
+        };
+      }
+    };
+    return { list: list2, call };
+  }
+
   // src/utils/geometry.js
   var clamp = (value, min, max) => Math.min(Math.max(value, min), max);
   var clampIconPosition = ({ x, y }, { edgeGap, buttonSize, viewportWidth, viewportHeight }) => ({
@@ -7836,6 +7936,7 @@
     const sendGate = createSendGate();
     let activePort = null;
     let chatStreamPort = null;
+    let activeWebMcpController = null;
     let streamWatchdogId = 0;
     const clearStreamWatchdog = () => {
       if (streamWatchdogId) {
@@ -7848,6 +7949,7 @@
       streamWatchdogId = setTimeout(() => {
         streamWatchdogId = 0;
         if (!isStreaming) return;
+        activeWebMcpController?.abort();
         const p = chatStreamPort;
         try {
           p?.postMessage({ type: "abort_chat" });
@@ -8093,6 +8195,7 @@
     const stopStreamingChat = () => {
       const p = chatStreamPort;
       if (!p) return;
+      activeWebMcpController?.abort();
       try {
         p.postMessage({ type: "abort_chat" });
       } catch {
@@ -8113,6 +8216,8 @@
       attachSlot.classList.toggle("attach-disabled", !enabled);
       isStreaming = !enabled;
       if (enabled) {
+        activeWebMcpController?.abort();
+        activeWebMcpController = null;
         sendGate.release();
         clearStreamWatchdog();
         sendButton.setAttribute("aria-label", "\u53D1\u9001");
@@ -8316,6 +8421,7 @@ ${f.text}
       return target.error ? `\u76EE\u6807 ${targetId}` : `\u300C${target.label || targetId}\u300D`;
     };
     const actionSummary = (name, args = {}) => {
+      if (name === "webmcp_call") return "\u8C03\u7528\u7F51\u7AD9 WebMCP \u5DE5\u5177";
       if (name === "click") return `\u70B9\u51FB ${targetLabel(args.targetId)}`;
       if (name === "set_checked" || name === "check") return `${args.checked === false ? "\u53D6\u6D88\u9009\u4E2D" : "\u9009\u4E2D"} ${targetLabel(args.targetId)}`;
       if (name === "type") {
@@ -8347,7 +8453,7 @@ ${f.text}
         }
       };
     };
-    const runPageAction = async (name, args = {}, actionLedger) => {
+    const runPageAction = async (name, args = {}, actionLedger, webMcp) => {
       if (!pageActionSettingLoaded) {
         await loadGlobalPageActionSetting();
       }
@@ -8377,6 +8483,11 @@ ${f.text}
       }
       if (ledgerKey) actionLedger.set(ledgerKey, { pending: true });
       const log = appendToolLog(name, args, "\u6B63\u5728\u6267\u884C");
+      if (name === "webmcp_call") {
+        const result2 = await webMcp.call(args);
+        log.done(result2);
+        return result2;
+      }
       const executeAction = async () => {
         if (name === "click") return pageController.click(args);
         if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked });
@@ -8417,7 +8528,9 @@ ${f.text}
       }
       return result;
     };
-    const runTool = async (name, args = {}, actionLedger) => {
+    const runTool = async (name, args = {}, actionLedger, webMcp) => {
+      if (name === "webmcp_list") return webMcp.list(args);
+      if (name === "webmcp_call") return runPageAction(name, args, actionLedger, webMcp);
       if (name === "get_page_state") return pageController.getPageState(args);
       if (name === "list_targets") return pageController.listTargets(args);
       if (name === "get_target_state") return pageController.getTargetState(args);
@@ -8639,6 +8752,9 @@ ${replyText.slice(after2, c2)}`;
         return;
       }
       const turnPort = activePort;
+      const webMcpController = new AbortController();
+      activeWebMcpController = webMcpController;
+      const webMcp = createWebMcpSession(webMcpController.signal);
       turnPort.onMessage.addListener((msg) => {
         if (streamMessageTypes.has(msg?.type)) {
           const accepted = acceptTurnMessage(turnId, lastStreamSeq, msg);
@@ -8646,10 +8762,13 @@ ${replyText.slice(after2, c2)}`;
           lastStreamSeq = accepted.lastSeq;
         }
         if (msg?.type === "tool") {
+          if (webMcpController.signal.aborted) return;
           if (typingIndicator.parentNode) typingIndicator.remove();
-          runTool(msg.name, msg.args, actionLedger).then((result) => {
+          runTool(msg.name, msg.args, actionLedger, webMcp).then((result) => {
+            if (webMcpController.signal.aborted) return;
             turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           }).catch((error2) => {
+            if (webMcpController.signal.aborted) return;
             turnPort.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error2?.message || error2) } });
           });
           return;
@@ -8739,6 +8858,7 @@ ${replyText.slice(after2, c2)}`;
         }
       });
       turnPort.onDisconnect.addListener(() => {
+        webMcpController.abort();
         chatStreamPort = null;
         if (turnHandled) {
           if (activePort === turnPort) activePort = null;

@@ -7,7 +7,8 @@ export const PAGE_MUTATION_TOOLS = new Set([
   "check",
   "type",
   "select_option",
-  "press_key"
+  "press_key",
+  "webmcp_call"
 ]);
 
 export const isPageMutationTool = (name) => PAGE_MUTATION_TOOLS.has(String(name || ""));

@@ -17,6 +17,7 @@
 - 支持 AI 对话（OpenAI 兼容接口），回复支持 Markdown 渲染
 - 支持 `<think>...</think>` 思考过程展示（可折叠，类似 DeepSeek）
 - 内置网页智能体：优先使用 OpenAI 兼容的原生 Function Calling；不支持时自动回退到兼容模式
+- 支持发现并调用当前网页公开的 WebMCP 工具
 - 内置 Browser Interaction Runtime：先生成可交互语义目标，再使用 `targetId` 操作精确元素，不让模型猜 CSS selector
 - 识别原生控件、ARIA 控件、可见 `label` 代理、Vue/React 风格自定义 radio/checkbox/switch、可滚动容器，以及开放 Shadow DOM 内的目标
 - 支持点击、选中、输入、下拉选择、按键、滚动、等待等操作；每次动作都会返回验证状态与证据，不会把“事件已派发”误报成成功
@@ -30,6 +31,12 @@
 - 读取工具会尽量合并 **iframe 内**可注入 frame 的正文/可见文本/query 结果（跨域但同扩展权限的页面一般可读；极少数沙箱 iframe 仍可能无法注入）
 
 页面操作目前以主页面文档为目标；iframe 仍支持内容读取，但不会被自动点击或输入，避免把元素定位到错误 frame。
+
+### 使用 WebMCP
+
+用支持 WebMCP 的 Chrome 打开已注册工具的网站。如果浏览器尚未开启 WebMCP，可在 `chrome://flags/#enable-webmcp-testing` 启用 WebMCP 并重启浏览器。打开纳西妲后，可以问「这个页面有哪些 WebMCP 工具？」。要调用网站工具，请先在设置中开启「启用页面操作（全局）」，再说明想完成的任务。
+
+纳西妲通过 Chrome 的 `document.modelContext` 在当前标签页发现工具，只列出同源工具。浏览器未启用 WebMCP 或网站未公开匹配的工具时，仍可使用原有页面操作。参见 [Chrome WebMCP 指南](https://developer.chrome.com/docs/ai/webmcp/)。
 
 页面操作说明：
 
