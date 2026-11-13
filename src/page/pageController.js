@@ -307,7 +307,7 @@ export function createPageController({ extensionHost } = {}) {
     if (resolved.error) return resolved;
     const beforeTarget = targetSnapshot(resolved.id, resolved.candidate);
     const beforeState = snapshotTargetState(resolved.candidate);
-    return finalizeAction(await clickTarget(resolved.candidate, options), resolved, beforeTarget, beforeState);
+    return finalizeAction(await clickTarget(resolved.candidate, { ...options, extensionHost }), resolved, beforeTarget, beforeState);
   };
 
   const setChecked = async ({ targetId, checked = true } = {}, signal) => {

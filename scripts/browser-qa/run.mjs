@@ -61,6 +61,10 @@ try {
     nahida_page_action_enabled: true, nahida_pure_mode: false
   }), origin);
   const cases = [
+    { target: 'Covered button', action: 'click', args: {}, verified: false, setup: p => p.evaluate(() => window.showFixtureOverlay()), check: async p => { assert.equal(await p.evaluate(() => window.coveredClicks), 0); assert.equal(scenario.result.actionExecuted, false); } },
+    { target: 'Modal background button', action: 'click', args: {}, verified: false, setup: p => p.evaluate(() => document.querySelector('#page-modal').hidden = false), check: async p => { assert.equal(await p.evaluate(() => window.coveredClicks), 0); assert.equal(scenario.result.status, 'blocked_occluded'); } },
+    { target: 'Modal inside button', action: 'click', args: {}, verified: true, setup: p => p.evaluate(() => document.querySelector('#page-modal').hidden = false), check: async p => assert.equal(await p.locator('#modal-inside').getAttribute('aria-expanded'), 'true') },
+    { target: 'Shadow button', action: 'click', args: {}, verified: true, check: async p => assert.equal(await p.locator('#shadow-fixture button').getAttribute('aria-expanded'), 'true') },
     { target: 'No-tool greeting', greeting: true, verified: null, check: async () => {} },
     { target: 'Expand details', action: 'click', args: {}, verified: true, check: async p => { assert.equal(await p.locator('#expand').getAttribute('aria-expanded'), 'true'); assert.equal(await p.evaluate(() => window.fixtureClicks), 1); } },
     { target: 'Display name', action: 'type', args: { text: 'Alice', clear: true }, verified: true, check: async p => assert.equal(await p.locator('#name').inputValue(), 'Alice') },
@@ -75,6 +79,7 @@ try {
     const page = await context.newPage();
     try {
       await page.goto(origin);
+      await testCase.setup?.(page);
       await page.getByRole('button', { name: '页面悬浮图标', exact: true }).click();
       const input = page.locator('#ys-floating-icon-extension-root').locator('textarea.input');
       await input.fill(testCase.greeting ? '你好' : `Local QA: ${testCase.action} ${testCase.target} ${JSON.stringify(testCase.args)}`);

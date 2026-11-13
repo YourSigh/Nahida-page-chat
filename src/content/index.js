@@ -1,3 +1,4 @@
+import { runCheckedAction } from "./checkedActionLedger.js";
 import { executionDisplay } from "../common/executionDisplay.js";
 import { createUserMessage } from "../common/messageTrust.js";
 import stylesText from "../ui/styles.css";
@@ -1312,22 +1313,6 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
     const normalizedName = name === "check" ? "set_checked" : name;
     const isCheckedAction = normalizedName === "set_checked";
-    const ledgerKey = isCheckedAction && args.targetId ? String(args.targetId) : "";
-    if (ledgerKey && actionLedger?.has(ledgerKey)) {
-      const previous = actionLedger.get(ledgerKey);
-      return {
-        ok: Boolean(previous?.ok),
-        verified: Boolean(previous?.verified),
-        status: "already_attempted",
-        actionExecuted: false,
-        target: previous?.target,
-        evidence: previous?.evidence,
-        error: previous?.verified
-          ? undefined
-          : "同一次操作中已尝试过这个目标，未再重复激活；请重新读取页面状态确认。"
-      };
-    }
-    if (ledgerKey) actionLedger.set(ledgerKey, { pending: true });
     const log = appendToolLog(name, args, "正在执行");
     if (name === "webmcp_call") {
       const result = await webMcp.call(args);
@@ -1349,36 +1334,44 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       if (name === "scroll") return pageController.scroll(args);
       return { error: `未知页面操作: ${name}` };
     };
-    let result = await executeAction();
-    if (signal.aborted) return result;
-    const looksStale = (value) => value?.status === "target_stale" || /目标已失效|目标已经被页面重绘/.test(String(value?.error || ""));
-    if (looksStale(result)) {
-      log.update("目标已失效，正在刷新页面状态并重新绑定");
-      const freshState = await pageController.refresh({ region: "all", page: 1, maxElements: 60 });
-      if (freshState?.error) {
-        result = {
-          ...result,
-          status: "target_rebind_failed",
-          reason: "refresh_failed",
-          error: `刷新页面状态失败：${freshState.error}`
-        };
-      } else {
-        result = await executeAction();
-        if (looksStale(result)) {
+    const executeWithRecovery = async () => {
+      let result = await executeAction();
+      if (signal.aborted) return result;
+      const looksStale = (value) => value?.status === "target_stale" || /目标已失效|目标已经被页面重绘/.test(String(value?.error || ""));
+      if (looksStale(result)) {
+        log.update("目标已失效，正在刷新页面状态并重新绑定");
+        const freshState = await pageController.refresh({ region: "all", page: 1, maxElements: 60 });
+        if (freshState?.error) {
           result = {
             ...result,
             status: "target_rebind_failed",
-            reason: "not_found",
-            error: "刷新后仍无法安全重新绑定该目标，请重新读取页面状态。"
+            reason: "refresh_failed",
+            error: `刷新页面状态失败：${freshState.error}`
           };
+        } else {
+          result = await executeAction();
+          if (looksStale(result)) {
+            result = {
+              ...result,
+              status: "target_rebind_failed",
+              reason: "not_found",
+              error: "刷新后仍无法安全重新绑定该目标，请重新读取页面状态。"
+            };
+          }
         }
       }
-    }
+      return result;
+    };
+    const result = isCheckedAction
+      ? await runCheckedAction({
+        ledger: actionLedger,
+        targetId: args.targetId,
+        checked: name === "check" ? true : args.checked,
+        readState: () => pageController.getTargetState({ targetId: args.targetId }),
+        execute: executeWithRecovery
+      })
+      : await executeWithRecovery();
     log.done(result);
-    if (ledgerKey) {
-      if (result?.actionExecuted || result?.status === "already_checked" || result?.status === "already_unchecked") actionLedger.set(ledgerKey, result);
-      else actionLedger.delete(ledgerKey);
-    }
     return result;
   };
 

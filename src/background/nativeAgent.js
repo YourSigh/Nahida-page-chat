@@ -148,7 +148,7 @@ const PAGE_TOOLS = [
     type: "function",
     function: {
       name: "set_checked",
-      description: "幂等地将 radio、checkbox 或 switch 设置为选中/开启或未选中/关闭；同一目标不要重复调用。",
+      description: "幂等地将 radio、checkbox 或 switch 设置为选中/开启或未选中/关闭；不要重复请求同一目标的同一状态；用户明确要求改变状态时，可以设置相反状态。",
       parameters: {
         type: "object",
         properties: {

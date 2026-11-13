@@ -74,17 +74,47 @@ const composedContains = (ancestor, element) => {
   return false;
 };
 
-export const isHitTestable = (element) => {
-  if (!canReceivePointer(element) || typeof document.elementsFromPoint !== "function") return false;
-  const rect = rectFor(element);
-  const x = Math.max(1, Math.min(window.innerWidth - 1, rect.left + rect.width / 2));
-  const y = Math.max(1, Math.min(window.innerHeight - 1, rect.top + rect.height / 2));
+// Resolve the foremost page hit, descending open shadow roots. The extension's
+// own chat is not a page blocker; no real page overlay is filtered out.
+const topPageHit = (root, x, y, extensionHost, seen = new Set()) => {
+  const hits = typeof root.elementsFromPoint === "function"
+    ? root.elementsFromPoint(x, y)
+    : [root.elementFromPoint?.(x, y)].filter(Boolean);
+  const hit = hits.find((node) => !isExtensionElement(node, extensionHost) && !seen.has(node));
+  if (!hit) return null;
+  seen.add(hit);
+  if (hit.shadowRoot?.mode === "open") {
+    return topPageHit(hit.shadowRoot, x, y, extensionHost, seen) || hit;
+  }
+  return hit;
+};
+
+export const pointerBlockReason = (element, { extensionHost } = {}) => {
+  if (!canReceivePointer(element)) return "目标当前无法接收点击。";
+  let modalElements = [];
   try {
-    return document.elementsFromPoint(x, y).some((hit) => composedContains(element, hit));
+    modalElements = [...document.querySelectorAll(":modal, [role='dialog'][aria-modal='true'], [role='alertdialog'][aria-modal='true']")];
   } catch {
-    return false;
+    try { modalElements = [...document.querySelectorAll("[role='dialog'][aria-modal='true'], [role='alertdialog'][aria-modal='true']")]; } catch {}
+  }
+  const modal = modalElements.find((node) => !isExtensionElement(node, extensionHost) && isVisible(node) && !composedContains(node, element));
+  if (modal) return "页面有模态对话框，目标位于对话框外；请先处理对话框。";
+  // Older DOM adapters without hit testing cannot establish occlusion.
+  if (typeof document.elementsFromPoint !== "function") return "";
+  const rect = rectFor(element);
+  const left = Math.max(0, rect.left), right = Math.min(window.innerWidth, rect.right);
+  const top = Math.max(0, rect.top), bottom = Math.min(window.innerHeight, rect.bottom);
+  if (right <= left || bottom <= top) return "目标不在可点击视口内，请重新读取页面状态。";
+  try {
+    const hit = topPageHit(document, (left + right) / 2, (top + bottom) / 2, extensionHost);
+    return hit && composedContains(element, hit) ? "" : "目标被页面中的其他元素遮挡，请先处理遮挡并重新读取页面状态。";
+  } catch {
+    return "无法确认目标是否被遮挡，请重新读取页面状态。";
   }
 };
+
+export const isHitTestable = (element, options) =>
+  typeof document.elementsFromPoint === "function" && !pointerBlockReason(element, options);
 
 export const isScrollable = (element) => {
   const tag = String(element?.tagName || "").toLowerCase();

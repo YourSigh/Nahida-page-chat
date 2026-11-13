@@ -1,5 +1,5 @@
 import { inputTypeFor, isSensitive } from "../perception/semantic.js";
-import { canReceivePointer, isDisabled, isVisible } from "../perception/visibility.js";
+import { canReceivePointer, isDisabled, isVisible, pointerBlockReason } from "../perception/visibility.js";
 import { observeAfterAction, snapshotTargetState } from "../verification/stateSnapshot.js";
 import { verifyActivation, verifySelect, verifyValue } from "../verification/verifyAction.js";
 
@@ -45,10 +45,15 @@ const revealAndFocus = (element) => {
   } catch {}
 };
 
-const activate = (element) => {
+const activate = (element, pointerOptions) => {
   if (!element?.isConnected) return false;
   try {
+    if (pointerOptions) {
+      element.scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" });
+      if (pointerBlockReason(element, pointerOptions)) return false;
+    }
     revealAndFocus(element);
+    if (pointerOptions && pointerBlockReason(element, pointerOptions)) return false;
     element.click();
     return true;
   } catch {
@@ -70,10 +75,10 @@ const canNavigate = (target) => {
   return false;
 };
 
-const queuedNavigationResult = (target, action, canRunQueuedAction, signal) => {
+const queuedNavigationResult = (target, action, canRunQueuedAction, signal, pointerOptions) => {
   const clickElement = actionTarget(target);
   setTimeout(() => {
-    if ((!signal?.aborted || signal.reason === "turn_completed") && (!canRunQueuedAction || canRunQueuedAction())) activate(clickElement);
+    if ((!signal?.aborted || signal.reason === "turn_completed") && (!canRunQueuedAction || canRunQueuedAction())) activate(clickElement, pointerOptions);
   }, 80);
   return {
     ok: true,
@@ -92,7 +97,7 @@ const combineObservation = (first, second) => ({
   mutated: Boolean(first.mutated || second.mutated)
 });
 
-export const clickTarget = async (target, { check = false, signal, canRunQueuedAction } = {}) => {
+export const clickTarget = async (target, { check = false, signal, canRunQueuedAction, extensionHost } = {}) => {
   const action = check ? "check" : "click";
   const invalid = invalidTarget(target, action);
   if (invalid) return invalid;
@@ -121,9 +126,15 @@ export const clickTarget = async (target, { check = false, signal, canRunQueuedA
     };
   }
 
-  if (!check && canNavigate(target)) return queuedNavigationResult(target, action, canRunQueuedAction, signal);
+  const pointerOptions = check ? undefined : { extensionHost };
+  if (pointerOptions) {
+    try { actionTarget(target).scrollIntoView?.({ block: "center", inline: "nearest", behavior: "auto" }); } catch {}
+    const blocked = pointerBlockReason(actionTarget(target), pointerOptions);
+    if (blocked) return { ok: false, action, blocked: true, verified: false, actionExecuted: false, status: "blocked_occluded", error: blocked };
+  }
+  if (!check && canNavigate(target)) return queuedNavigationResult(target, action, canRunQueuedAction, signal, pointerOptions);
   const primary = actionTarget(target);
-  if (!activate(primary)) return { action, error: "无法向目标派发点击事件。" };
+  if (!activate(primary, pointerOptions)) return { action, verified: false, actionExecuted: false, error: "目标不可点击或已被遮挡，未派发点击事件。" };
 
   let observation = await observeAfterAction(target, before, { timeout: 520 });
   const afterPrimary = observation.after;
