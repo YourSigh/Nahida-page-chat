@@ -3,6 +3,9 @@ import { canReceivePointer, isDisabled, isVisible } from "../perception/visibili
 import { observeAfterAction, snapshotTargetState } from "../verification/stateSnapshot.js";
 import { verifyActivation, verifySelect, verifyValue } from "../verification/verifyAction.js";
 
+// Internal-only verifier; not included in tool responses or serialized to models.
+export const reverifyReboundAction = Symbol("reverifyReboundAction");
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const actionTarget = (target) => target?.clickElement || target?.element || target?.stateElement;
@@ -67,10 +70,10 @@ const canNavigate = (target) => {
   return false;
 };
 
-const queuedNavigationResult = (target, action, canRunQueuedAction) => {
+const queuedNavigationResult = (target, action, canRunQueuedAction, signal) => {
   const clickElement = actionTarget(target);
   setTimeout(() => {
-    if (!canRunQueuedAction || canRunQueuedAction()) activate(clickElement);
+    if ((!signal?.aborted || signal.reason === "turn_completed") && (!canRunQueuedAction || canRunQueuedAction())) activate(clickElement);
   }, 80);
   return {
     ok: true,
@@ -118,7 +121,7 @@ export const clickTarget = async (target, { check = false, signal, canRunQueuedA
     };
   }
 
-  if (!check && canNavigate(target)) return queuedNavigationResult(target, action, canRunQueuedAction);
+  if (!check && canNavigate(target)) return queuedNavigationResult(target, action, canRunQueuedAction, signal);
   const primary = actionTarget(target);
   if (!activate(primary)) return { action, error: "无法向目标派发点击事件。" };
 
@@ -137,7 +140,9 @@ export const clickTarget = async (target, { check = false, signal, canRunQueuedA
 
   return {
     action,
-    ...verifyActivation({ action, target, before, observation, expectedChecked: check ? true : undefined })
+    ...verifyActivation({ action, target, before, observation, expectedChecked: check ? true : undefined }),
+    [reverifyReboundAction]: (next) =>
+      verifyActivation({ action, target, before, observation: next, expectedChecked: check ? true : undefined })
   };
 };
 
@@ -177,7 +182,9 @@ export const setCheckedTarget = async (target, { checked = true, signal } = {}) 
 
   return {
     action,
-    ...verifyActivation({ action, target, before, observation, expectedChecked })
+    ...verifyActivation({ action, target, before, observation, expectedChecked }),
+    [reverifyReboundAction]: (next) =>
+      verifyActivation({ action, target, before, observation: next, expectedChecked })
   };
 };
 
@@ -237,10 +244,10 @@ export const typeIntoTarget = async (target, { text = "", clear = true } = {}) =
     return { action, error: `输入失败: ${String(error?.message || error)}` };
   }
   const observation = await observeAfterAction(target, before, { timeout: 420 });
-  return {
-    action,
-    ...verifyValue({ action, before, observation, expectedValue: nextValue, sensitive: isSensitive(element) })
-  };
+  const verify = (next) => verifyValue({
+    observation: next, expectedValue: nextValue, sensitive: isSensitive(element) || next.after.sensitive
+  });
+  return { action, ...verify(observation), [reverifyReboundAction]: verify };
 };
 
 export const selectOptionInTarget = async (target, { value, label } = {}) => {
@@ -274,10 +281,9 @@ export const selectOptionInTarget = async (target, { value, label } = {}) => {
     return { action, error: `选择失败: ${String(error?.message || error)}` };
   }
   const observation = await observeAfterAction(target, before, { timeout: 420 });
-  return {
-    action,
-    ...verifySelect({ observation, expectedValue: option.value, expectedLabel: option.label || option.textContent?.trim() || "" })
-  };
+  const expectedLabel = option.label || option.textContent?.trim() || "";
+  const verify = (next) => verifySelect({ observation: next, expectedValue: option.value, expectedLabel });
+  return { action, ...verify(observation), [reverifyReboundAction]: verify };
 };
 
 export const pressKeyOnTarget = async (target, { key } = {}) => {

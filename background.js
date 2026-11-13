@@ -255,6 +255,9 @@
     const isNewCompletedQuestion = Boolean(questionId && !completedQuestionIds.has(questionId));
     if (isNewCompletedQuestion) completedQuestionIds.add(questionId);
     const next = {
+      // Count observed operation outcomes, never inferred task completion.
+      verifiedActionCalls: Math.max(0, Number(previous?.verifiedActionCalls) || 0) + (actualMutation && result?.verified === true ? 1 : 0),
+      unverifiedActionCalls: Math.max(0, Number(previous?.unverifiedActionCalls) || 0) + (actualMutation && result?.verified !== true ? 1 : 0),
       verifiedItems: Math.max(priorVerified, completedQuestionIds.size),
       completedItems: Math.max(priorCompleted, completedQuestionIds.size),
       completedItemKeys: Array.from(completedItemKeys),
@@ -415,12 +418,10 @@
     }
     progressText() {
       const p = this.progress || {};
-      const total = Number(this.budget.plan?.estimatedItems) || 0;
-      const completed = Math.max(Number(p.completedItems) || 0, Number(p.verifiedItems) || 0);
-      const itemText = total > 1 ? ` \xB7 \u5DF2\u5B8C\u6210\u9898\u76EE ${Math.min(completed, total)} / ${total}` : "";
+      const verified = Math.max(0, Number(p.verifiedActionCalls) || 0);
       const remainingMs = Math.max(0, this.budget.maxWallTimeMs - (this.now() - this.usage.startedAt));
       const remaining = Math.ceil(remainingMs / 6e4);
-      return `\u6267\u884C\u8FDB\u5EA6${itemText} \xB7 \u9875\u9762\u53D8\u66F4 ${this.usage.pageMutations} / ${this.budget.maxPageMutations} \xB7 \u5DE5\u5177 ${this.usage.toolExecutions} / ${this.budget.maxToolExecutions} \xB7 \u9884\u8BA1\u5269\u4F59\u7EA6 ${remaining} \u5206\u949F`;
+      return `\u6267\u884C\u8BB0\u5F55 \xB7 \u5DE5\u5177\u8C03\u7528 ${this.usage.toolExecutions} \u6B21 \xB7 \u5DF2\u6838\u9A8C\u64CD\u4F5C ${verified} \u6B21 \xB7 \u672C\u8F6E\u6267\u884C\u65F6\u9650\u5269\u4F59\u4E0D\u8D85\u8FC7 ${remaining} \u5206\u949F\uFF08\u975E\u5B8C\u6210\u65F6\u95F4\u9884\u6D4B\uFF09`;
     }
     snapshot() {
       const elapsed = Math.max(0, this.now() - this.usage.startedAt);

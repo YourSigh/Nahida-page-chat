@@ -233,6 +233,9 @@ export const progressFromToolResult = (result, previous = {}) => {
   const isNewCompletedQuestion = Boolean(questionId && !completedQuestionIds.has(questionId));
   if (isNewCompletedQuestion) completedQuestionIds.add(questionId);
   const next = {
+    // Count observed operation outcomes, never inferred task completion.
+    verifiedActionCalls: Math.max(0, Number(previous?.verifiedActionCalls) || 0) + (actualMutation && result?.verified === true ? 1 : 0),
+    unverifiedActionCalls: Math.max(0, Number(previous?.unverifiedActionCalls) || 0) + (actualMutation && result?.verified !== true ? 1 : 0),
     verifiedItems: Math.max(priorVerified, completedQuestionIds.size),
     completedItems: Math.max(priorCompleted, completedQuestionIds.size),
     completedItemKeys: Array.from(completedItemKeys),
@@ -427,12 +430,10 @@ export class ExecutionBudgetManager {
 
   progressText() {
     const p = this.progress || {};
-    const total = Number(this.budget.plan?.estimatedItems) || 0;
-    const completed = Math.max(Number(p.completedItems) || 0, Number(p.verifiedItems) || 0);
-    const itemText = total > 1 ? ` · 已完成题目 ${Math.min(completed, total)} / ${total}` : "";
+    const verified = Math.max(0, Number(p.verifiedActionCalls) || 0);
     const remainingMs = Math.max(0, this.budget.maxWallTimeMs - (this.now() - this.usage.startedAt));
     const remaining = Math.ceil(remainingMs / 60_000);
-    return `执行进度${itemText} · 页面变更 ${this.usage.pageMutations} / ${this.budget.maxPageMutations} · 工具 ${this.usage.toolExecutions} / ${this.budget.maxToolExecutions} · 预计剩余约 ${remaining} 分钟`;
+    return `执行记录 · 工具调用 ${this.usage.toolExecutions} 次 · 已核验操作 ${verified} 次 · 本轮执行时限剩余不超过 ${remaining} 分钟（非完成时间预测）`;
   }
 
   snapshot() {

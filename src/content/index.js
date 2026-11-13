@@ -1,3 +1,4 @@
+import { executionDisplay } from "../common/executionDisplay.js";
 import { createUserMessage } from "../common/messageTrust.js";
 import stylesText from "../ui/styles.css";
 import MarkdownIt from "markdown-it";
@@ -1584,9 +1585,11 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     const renderExecutionProgress = (progressMessage) => {
       const progress = progressMessage?.progress || progressMessage || {};
       lastExecutionProgress = progress;
+      const display = executionDisplay(progress);
+      if (!display.visible) return;
       ensureExecutionProgress();
-      executionProgressEl.classList.toggle("paused", progress.status === "paused");
-      executionProgressTextEl.textContent = progress.text || "正在计算执行预算…";
+      executionProgressEl.classList.toggle("paused", display.paused);
+      executionProgressTextEl.textContent = display.text;
 
       if (progress.status === "paused" && progress.canResume && !executionResumeButton) {
         executionResumeButton = document.createElement("button");
@@ -1606,6 +1609,14 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         });
         executionProgressEl.appendChild(executionResumeButton);
       }
+    };
+
+    const finishExecutionProgress = (outcome) => {
+      if (!executionProgressEl) return;
+      const display = executionDisplay(lastExecutionProgress, outcome);
+      executionProgressEl.hidden = !display.visible;
+      executionProgressEl.classList.toggle("paused", Boolean(display.paused));
+      executionProgressTextEl.textContent = display.text;
     };
 
     const renderStream = (finished) => {
@@ -1684,7 +1695,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
 
       if (msg?.type === "progress") {
-        if (typingIndicator.parentNode) typingIndicator.remove();
+        if (executionDisplay(msg.progress || msg).visible && typingIndicator.parentNode) typingIndicator.remove();
         renderExecutionProgress(msg);
         scrollToBottom();
         return;
@@ -1703,7 +1714,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         renderStream(false);
       } else if (msg.type === "done") {
         if (turnHandled) return;
+        finishExecutionProgress(msg);
         turnHandled = true;
+        if (msg.status !== "incomplete") turnController.abort("turn_completed");
         chatStreamPort = null;
         turnPort.disconnect();
         clearStreamWatchdog();
@@ -1776,6 +1789,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         return;
       }
       if (isStreaming) {
+        finishExecutionProgress({ type: "disconnect" });
         turnHandled = true;
         clearStreamWatchdog();
         if (typingIndicator.parentNode) typingIndicator.remove();

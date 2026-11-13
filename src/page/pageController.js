@@ -1,4 +1,4 @@
-import { clickTarget, pressKeyOnTarget, scrollTarget, selectOptionInTarget, setCheckedTarget, typeIntoTarget } from "./actions/interaction.js";
+import { clickTarget, pressKeyOnTarget, reverifyReboundAction, scrollTarget, selectOptionInTarget, setCheckedTarget, typeIntoTarget } from "./actions/interaction.js";
 import { collectSemanticTargets } from "./perception/collectTargets.js";
 import {
   accessibleNameFor,
@@ -14,7 +14,7 @@ import {
 import { isDisabled, isInViewport, isVisible, rectFor } from "./perception/visibility.js";
 import { rankTargets } from "./ranking/rankTargets.js";
 import { TargetRegistry } from "./registry/targetRegistry.js";
-import { evidenceFor, meaningfulChanges, snapshotTargetState } from "./verification/stateSnapshot.js";
+import { meaningfulChanges, snapshotTargetState } from "./verification/stateSnapshot.js";
 
 const MAX_TARGETS_PER_PAGE = 60;
 const MAX_REGISTERED_TARGETS = 1_200;
@@ -275,29 +275,27 @@ export function createPageController({ extensionHost } = {}) {
 
   const finalizeAction = (result, resolved, beforeTarget, beforeState) => {
     let activeResolved = resolved;
-    let finalResult = result;
     const candidateStillConnected = Boolean(
       resolved.candidate?.clickElement?.isConnected && resolved.candidate?.stateElement?.isConnected
     );
 
-    // Frameworks frequently replace the clicked node during the event handler.
-    // Rebind once by fingerprint so verification observes the new instance too.
-    if (!result?.verified && !candidateStillConnected) {
+    const { [reverifyReboundAction]: reverify, ...publicResult } = result;
+    let finalResult = publicResult;
+
+    // The old node's state is not proof of what the replacement accepted.
+    // Re-run the original action's verifier, never dispatch the action again.
+    if (publicResult.actionExecuted === true && !candidateStillConnected && reverify) {
       const rebound = registry.resolve(resolved.id);
-      if (!rebound.error) {
+      if (!rebound.error && rebound.rebound) {
         activeResolved = rebound;
-        const afterState = snapshotTargetState(rebound.candidate);
-        const changes = meaningfulChanges(beforeState, afterState);
-        if (rebound.rebound && changes.length) {
-          finalResult = {
-            ...result,
-            ok: true,
-            verified: true,
-            status: "verified",
-            evidence: evidenceFor({ before: beforeState, after: afterState, changes, mutated: true }),
-            error: undefined
-          };
-        }
+        const after = snapshotTargetState(rebound.candidate);
+        const verification = reverify({
+          before: beforeState,
+          after,
+          changes: meaningfulChanges(beforeState, after),
+          mutated: true
+        });
+        finalResult = { ...publicResult, ...verification, error: verification.error };
       }
     }
 

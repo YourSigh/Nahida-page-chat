@@ -1,0 +1,16 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Nahida local action fixture</title>
+<style>body{font:18px sans-serif;padding:30px;max-width:640px}label,button{display:block;margin:18px 0}input,select{font:inherit}#details{padding:10px}</style>
+<h1>Local-only extension QA</h1>
+<button id="expand" type="button" aria-expanded="false">Expand details</button><div id="details" hidden>Visible details</div>
+<label>Display name <input id="name" aria-label="Display name"></label>
+<label>Color <select id="color" aria-label="Color"><option value="red">Red</option><option value="blue">Blue</option></select></label>
+<label><input id="subscribe" type="checkbox"> Subscribe locally</label>
+<button id="noop" type="button">No-op button</button>
+<label>Accepted replacement <input id="accepted" aria-label="Accepted replacement"></label>
+<label>Rejected replacement <input id="rejected" aria-label="Rejected replacement" value="old"></label>
+<script>
+window.fixtureClicks=0;
+expand.onclick=()=>{window.fixtureClicks++;expand.setAttribute('aria-expanded','true');details.hidden=false};
+function replacement(id,reject){document.getElementById(id).addEventListener('input',function(){const next=this.cloneNode(true);next.value=reject?'REJECTED':this.value;this.replaceWith(next);},{once:true});}
+replacement('accepted',false);replacement('rejected',true);
+</script></html>
