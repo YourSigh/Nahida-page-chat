@@ -1,10 +1,16 @@
+import { createUserMessage } from "../common/messageTrust.js";
 import stylesText from "../ui/styles.css";
 import MarkdownIt from "markdown-it";
+import { acceptTurnMessage, createSendGate } from "../common/streamProtocol.js";
+import { PURE_MODE_KEY } from "../common/chatMode.js";
+import { createPageController } from "../page/pageController.js";
+import { createWebMcpSession } from "./webMcp.js";
 import {
-  clampIconPosition,
+  anchorIconPosition,
   computeAnchoredDialogPosition,
   getDefaultIconPosition,
-  clampDialogPosition
+  clampDialogPosition,
+  resolveAnchoredIconPosition
 } from "../utils/geometry.js";
 import { safeReadPosition, safeWritePosition } from "../storage/positionStorage.js";
 
@@ -22,8 +28,14 @@ for (const name of STICKER_NAMES) {
 
 const STICKER_TAG_REGEX = /\[sticker:(\w+)\]/g;
 
-const renderMarkdown = (text) => {
-  const html = md.render(String(text || ""));
+const renderImage = md.renderer.rules.image;
+md.renderer.rules.image = (tokens, index, options, env, renderer) => env.pureMode
+  ? md.utils.escapeHtml(tokens[index].content)
+  : renderImage(tokens, index, options, env, renderer);
+
+const renderMarkdown = (text, pureMode = false) => {
+  const html = md.render(String(text || ""), { pureMode });
+  if (pureMode) return html;
   return html.replace(
     STICKER_TAG_REGEX,
     (match, name) => {
@@ -76,6 +88,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const API_BUFFER_MAX = 800;
   const apiRespBuffer = [];
   const API_RESP_BUFFER_MAX = 80;
+  let pureMode = null;
+  let savingPureMode = false;
   let apiListenerInstalled = false;
   let apiHookInjected = false;
 
@@ -101,6 +115,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       window.addEventListener(
         "message",
         (event) => {
+          if (pureMode !== false) return;
           const data = event?.data;
           if (!data || data.__nahidaNet !== true) return;
           const kind = data.item?.kind;
@@ -272,7 +287,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     maxEntries = 200,
     stripQuery = true,
     reset = false
-  } = {}) => {
+  } = {}, signal) => {
     ensureApiHooked();
     if (reset) apiBuffer.length = 0;
 
@@ -292,6 +307,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     if (Number.isFinite(ms) && ms > 0) {
       await new Promise((r) => setTimeout(r, ms));
     }
+    if (signal.aborted) return { error: "网页读取已停止。" };
 
     // 兜底：利用 PerformanceResourceTiming 里的 resource 记录（initiatorType 通常包含 fetch/xmlhttprequest）。
     const perfItems = [];
@@ -358,7 +374,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     stripQuery = true,
     reset = true,
     maxResponseChars = 4000
-  } = {}) => {
+  } = {}, signal) => {
     ensureApiHooked();
     if (reset) apiRespBuffer.length = 0;
 
@@ -390,19 +406,17 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       maxResponses: Math.max(1, Math.min(200, Number(maxEntries) || 20)),
       maxResponseChars: Math.max(256, Math.min(20000, Number(maxResponseChars) || 4000))
     });
+    const stopCapture = () => setCaptureCfg({ enabled: false, captureResponses: false });
+    signal.addEventListener("abort", stopCapture, { once: true });
 
     const ms = Number(waitMs);
     if (Number.isFinite(ms) && ms > 0) {
       await new Promise((r) => setTimeout(r, ms));
     }
 
-    // 关闭响应抓取，避免后续大量返回把内存/消息塞满。
-    setCaptureCfg({
-      enabled: false,
-      captureResponses: false,
-      maxResponses: Math.max(1, Math.min(200, Number(maxEntries) || 20)),
-      maxResponseChars: Math.max(256, Math.min(20000, Number(maxResponseChars) || 4000))
-    });
+    signal.removeEventListener("abort", stopCapture);
+    if (signal.aborted) return { error: "网页读取已停止。" };
+    stopCapture();
 
     const all = Array.isArray(apiRespBuffer) ? apiRespBuffer : [];
     const slice = all.slice(Math.max(0, all.length - Math.max(1, Math.min(2000, maxEntries))));
@@ -489,6 +503,15 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const headerActions = document.createElement("div");
   headerActions.className = "dialog-actions";
 
+  let globalPageActionEnabled = false;
+  let pageActionSettingLoaded = false;
+
+  const clearContextButton = document.createElement("button");
+  clearContextButton.className = "icon-button clear-context-button";
+  clearContextButton.type = "button";
+  clearContextButton.setAttribute("aria-label", "清空上下文");
+  clearContextButton.textContent = "清空";
+
   const settingsButton = document.createElement("button");
   settingsButton.className = "icon-button settings-button";
   settingsButton.type = "button";
@@ -512,7 +535,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   closeImg.src = chrome.runtime.getURL("assets/close.png");
   closeButton.appendChild(closeImg);
 
-  headerActions.append(settingsButton, closeButton);
+  headerActions.append(clearContextButton, settingsButton, closeButton);
   header.append(title, headerActions);
 
   const settingsPanel = document.createElement("div");
@@ -526,7 +549,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const settingsTitle = document.createElement("div");
   settingsTitle.className = "settings-title";
-  settingsTitle.textContent = "大模型配置";
+  settingsTitle.textContent = "设置";
 
   const fieldBaseUrlLabel = document.createElement("label");
   fieldBaseUrlLabel.className = "settings-label";
@@ -552,9 +575,53 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   fieldKey.type = "password";
   fieldKey.placeholder = "sk-...";
 
+  const pageActionSection = document.createElement("section");
+  pageActionSection.className = "settings-section";
+  const pageActionTitle = document.createElement("div");
+  pageActionTitle.className = "settings-section-title";
+  pageActionTitle.textContent = "页面操作";
+  const pageActionToggleRow = document.createElement("label");
+  pageActionToggleRow.className = "settings-toggle-row";
+  const pageActionCopy = document.createElement("div");
+  pageActionCopy.className = "settings-toggle-copy";
+  const pageActionLabel = document.createElement("div");
+  pageActionLabel.className = "settings-toggle-label";
+  pageActionLabel.textContent = "启用页面操作（全局）";
+  const pageActionDescription = document.createElement("div");
+  pageActionDescription.className = "settings-toggle-description";
+  pageActionDescription.textContent = "切换后立即生效：开启后可在所有网页点击、填写、选择和滚动；关闭后仅读取页面内容。";
+  const pageActionToggle = document.createElement("input");
+  pageActionToggle.className = "settings-toggle";
+  pageActionToggle.type = "checkbox";
+  pageActionToggle.disabled = true;
+  pageActionToggle.setAttribute("role", "switch");
+  pageActionToggle.setAttribute("aria-label", "启用页面操作（全局）");
+  pageActionCopy.append(pageActionLabel, pageActionDescription);
+  pageActionToggleRow.append(pageActionCopy, pageActionToggle);
+
+  const pureModeRow = document.createElement("label");
+  pureModeRow.className = "settings-toggle-row";
+  const pureModeCopy = document.createElement("div");
+  pureModeCopy.className = "settings-toggle-copy";
+  const pureModeLabel = document.createElement("div");
+  pureModeLabel.className = "settings-toggle-label";
+  pureModeLabel.textContent = "纯净模式（全局）";
+  const pureModeDescription = document.createElement("div");
+  pureModeDescription.className = "settings-toggle-description";
+  pureModeDescription.textContent = "只发送聊天内容和你主动添加的图片，禁止读取或操作网页。切换时会开始新对话。";
+  const pureModeToggle = document.createElement("input");
+  pureModeToggle.className = "settings-toggle";
+  pureModeToggle.type = "checkbox";
+  pureModeToggle.disabled = true;
+  pureModeToggle.setAttribute("role", "switch");
+  pureModeToggle.setAttribute("aria-label", pureModeLabel.textContent);
+  pureModeCopy.append(pureModeLabel, pureModeDescription);
+  pureModeRow.append(pureModeCopy, pureModeToggle);
+  pageActionSection.append(pageActionTitle, pureModeRow, pageActionToggleRow);
+
   const settingsHint = document.createElement("div");
   settingsHint.className = "settings-hint";
-  settingsHint.textContent = "配置会保存在本地浏览器（chrome.storage.local），不会上传。";
+  settingsHint.textContent = "模型配置和开关设置保存在当前浏览器。";
 
   const settingsActions = document.createElement("div");
   settingsActions.className = "settings-actions";
@@ -573,6 +640,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     fieldBaseUrlLabel, fieldBaseUrl,
     fieldModelLabel, fieldModel,
     fieldKeyLabel, fieldKey,
+    pageActionSection,
     settingsHint,
     settingsActions
   );
@@ -582,7 +650,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const welcome = document.createElement("div");
   welcome.className = "msg-welcome";
-  welcome.textContent = "你好呀～我是纳西妲！有什么我可以帮你的吗？";
+  const defaultWelcome = "你好呀～我是纳西妲！我可以理解当前页面；如需我点击、填写或滚动，请先在右上角设置中开启“启用页面操作（全局）”。";
+  welcome.textContent = defaultWelcome;
+  messagesEl.appendChild(welcome);
  
   const composerWrap = document.createElement("div");
   composerWrap.className = "composer-wrap";
@@ -620,8 +690,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const input = document.createElement("textarea");
   input.className = "input";
   input.rows = 2;
-  input.placeholder =
-    "输入消息，Enter 发送；回形针选图，或在此 Ctrl+V 粘贴截图 / 拖入图片";
+  const defaultPlaceholder = "问我页面内容，或让我点击、填写、滚动；Enter 发送，回形针可选图";
+  input.placeholder = defaultPlaceholder;
 
   const sendIconUrl = chrome.runtime.getURL("assets/send.png");
   const stopIconUrl = chrome.runtime.getURL("assets/stop.png");
@@ -644,7 +714,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   dialog.append(header, settingsPanel, body);
 
   // --- Chat state & logic ---
+  const pageController = createPageController({ extensionHost: host });
   const chatHistory = [];
+  let chatContextVersion = 0;
   const MAX_CHAT_IMAGES = 8;
   const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
@@ -683,9 +755,11 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   let composerHintTimer = 0;
 
   let isStreaming = false;
+  const sendGate = createSendGate();
   let activePort = null;
   /** 当前一轮对话的 port，用于「停止」发 abort / disconnect */
   let chatStreamPort = null;
+  let activeTurnController = null;
   let streamWatchdogId = 0;
 
   const clearStreamWatchdog = () => {
@@ -700,12 +774,13 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     streamWatchdogId = setTimeout(() => {
       streamWatchdogId = 0;
       if (!isStreaming) return;
+      activeTurnController?.abort();
       const p = chatStreamPort;
       try {
         p?.postMessage({ type: "abort_chat" });
       } catch {}
       setTimeout(() => {
-        if (!isStreaming) return;
+        if (!isStreaming || chatStreamPort !== p) return;
         try {
           p?.disconnect();
         } catch {}
@@ -714,6 +789,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }, 180_000);
   };
   const STORAGE_KEY_LLM_CONFIG = "nahida_llm_config";
+  const STORAGE_KEY_PAGE_ACTION_ENABLED = "nahida_page_action_enabled";
   const DEFAULT_LLM_CONFIG = {
     apiBaseUrl: "https://api.openai.com/v1",
     model: "gpt-4o-mini",
@@ -739,17 +815,47 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   document.addEventListener("pointerdown", closeSettingsIfClickOutside, true);
 
+  const setGlobalPageActionEnabled = (enabled) => {
+    globalPageActionEnabled = Boolean(enabled);
+    pageActionToggle.checked = globalPageActionEnabled;
+  };
+
+  const loadGlobalPageActionSetting = async () => {
+    try {
+      const data = await chrome.storage.local.get(STORAGE_KEY_PAGE_ACTION_ENABLED);
+      setGlobalPageActionEnabled(data?.[STORAGE_KEY_PAGE_ACTION_ENABLED] === true);
+    } catch {
+      setGlobalPageActionEnabled(false);
+    } finally {
+      pageActionSettingLoaded = true;
+    }
+  };
+
+  const saveGlobalPageActionSetting = async (enabled) => {
+    setGlobalPageActionEnabled(enabled);
+    pageActionSettingLoaded = true;
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY_PAGE_ACTION_ENABLED]: globalPageActionEnabled });
+    } catch {
+      await loadGlobalPageActionSetting();
+    }
+  };
+
   const loadLlmConfigIntoForm = async () => {
     try {
-      const data = await chrome.storage.local.get(STORAGE_KEY_LLM_CONFIG);
+      const data = await chrome.storage.local.get([STORAGE_KEY_LLM_CONFIG, STORAGE_KEY_PAGE_ACTION_ENABLED]);
       const cfg = data?.[STORAGE_KEY_LLM_CONFIG] || {};
       fieldBaseUrl.value = String(cfg.apiBaseUrl || DEFAULT_LLM_CONFIG.apiBaseUrl);
       fieldModel.value = String(cfg.model || DEFAULT_LLM_CONFIG.model);
       fieldKey.value = String(cfg.apiKey || DEFAULT_LLM_CONFIG.apiKey);
+      setGlobalPageActionEnabled(data?.[STORAGE_KEY_PAGE_ACTION_ENABLED] === true);
+      pageActionSettingLoaded = true;
     } catch {
       fieldBaseUrl.value = DEFAULT_LLM_CONFIG.apiBaseUrl;
       fieldModel.value = DEFAULT_LLM_CONFIG.model;
       fieldKey.value = DEFAULT_LLM_CONFIG.apiKey;
+      setGlobalPageActionEnabled(false);
+      pageActionSettingLoaded = true;
     }
   };
 
@@ -912,25 +1018,15 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
   };
 
-  const buildUserApiMessage = (textBlock, imageDataUrls) => {
-    if (!imageDataUrls?.length) return { role: "user", content: textBlock };
-    return {
-      role: "user",
-      content: [
-        { type: "text", text: textBlock },
-        ...imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } }))
-      ]
-    };
-  };
-
   const stopStreamingChat = () => {
     const p = chatStreamPort;
     if (!p) return;
+    activeTurnController?.abort();
     try {
       p.postMessage({ type: "abort_chat" });
     } catch {}
     setTimeout(() => {
-      if (!isStreaming) return;
+      if (!isStreaming || chatStreamPort !== p) return;
       try {
         p.disconnect();
       } catch {}
@@ -941,15 +1037,20 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   const setInputEnabled = (enabled) => {
     input.disabled = !enabled;
     fileInput.disabled = !enabled;
+    clearContextButton.disabled = !enabled;
     attachSlot.classList.toggle("attach-disabled", !enabled);
     isStreaming = !enabled;
     if (enabled) {
+      activeTurnController?.abort();
+      activeTurnController = null;
+      sendGate.release();
       clearStreamWatchdog();
       sendButton.setAttribute("aria-label", "发送");
       sendImg.src = sendIconUrl;
       sendImg.className = "send-icon";
       sendButton.disabled = false;
     } else {
+      sendGate.markStreaming();
       armStreamWatchdog();
       sendButton.setAttribute("aria-label", "停止生成");
       sendImg.src = stopIconUrl;
@@ -1098,7 +1199,8 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         text: (el.innerText || el.textContent || "").trim().slice(0, 500),
         attrs,
         rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
-        frameUrl: location.href
+        frameUrl: location.href,
+        frameId: 0
       };
     });
     return { selector, count: results.length, results };
@@ -1123,7 +1225,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       for (const pf of resp.perFrame) {
         if (pf.error) continue;
         for (const r of pf.results || []) {
-          merged.push({ ...r, frameUrl: pf.url });
+          merged.push({ ...r, frameUrl: pf.url, frameId: pf.frameId ?? 0 });
           if (merged.length >= lim) break;
         }
         if (merged.length >= lim) break;
@@ -1137,38 +1239,213 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
   };
 
-  const runTool = async (name, args) => {
+  const PAGE_ACTION_TOOLS = new Set(["click", "set_checked", "check", "type", "select_option", "press_key", "scroll"]);
+
+  const targetLabel = (targetId) => {
+    if (!targetId) return "当前页面";
+    const target = pageController.describeTarget(targetId);
+    return target.error ? `目标 ${targetId}` : `「${target.label || targetId}」`;
+  };
+
+  const actionSummary = (name, args = {}) => {
+    if (name === "webmcp_call") return "调用网站 WebMCP 工具";
+    if (name === "click") return `点击 ${targetLabel(args.targetId)}`;
+    if (name === "set_checked" || name === "check") return `${args.checked === false ? "取消选中" : "选中"} ${targetLabel(args.targetId)}`;
+    if (name === "type") {
+      const target = pageController.describeTarget(args.targetId);
+      const text = String(args.text ?? "");
+      const sensitive = /password|passwd|token|secret|api[-_]?key/i.test(`${target.kind || ""} ${target.label || ""}`);
+      const preview = sensitive ? "（内容已隐藏）" : text.length > 80 ? `${text.slice(0, 80)}…` : text;
+      return `在 ${targetLabel(args.targetId)} ${args.clear === false ? "追加" : "填写"}「${preview}」`;
+    }
+    if (name === "select_option") return `在 ${targetLabel(args.targetId)} 选择「${args.label ?? args.value ?? "未指定选项"}」`;
+    if (name === "press_key") return `在 ${targetLabel(args.targetId)} 按下 ${args.key || "未指定按键"}`;
+    if (name === "scroll") return `将${args.targetId ? targetLabel(args.targetId) : "页面"}向 ${args.direction || "down"} 滚动 ${args.amount || 600}px`;
+    return `执行 ${name}`;
+  };
+
+  const appendToolLog = (name, args = {}, status = "正在准备") => {
+    const item = document.createElement("div");
+    item.className = "tool-log";
+    item.textContent = `${status}：${actionSummary(name, args)}`;
+    messagesEl.appendChild(item);
+    scrollToBottom();
+    return {
+      update(status) {
+        item.classList.remove("error");
+        item.textContent = `${status}：${actionSummary(name, args)}`;
+      },
+      done(result) {
+        item.classList.toggle("error", Boolean(result?.error));
+        item.textContent = result?.error
+          ? `${result?.actionExecuted ? "待确认" : "未完成"}：${result.error}`
+          : result?.status === "already_checked"
+            ? `已确认：${actionSummary(name, args)}（原本已经选中）`
+          : result?.status === "already_unchecked"
+            ? `已确认：${actionSummary(name, args)}（原本已经关闭）`
+          : result?.status === "already_attempted"
+            ? `已跳过重复操作：${actionSummary(name, args)}`
+          : result?.queued
+            ? `已安排：${actionSummary(name, args)}`
+            : result?.verified === false
+              ? `已派发，待确认：${actionSummary(name, args)}`
+            : `已执行：${actionSummary(name, args)}`;
+      }
+    };
+  };
+
+  const runPageAction = async (name, args, actionLedger, webMcp, signal) => {
+    const actionContextVersion = chatContextVersion;
+    if (!pageActionSettingLoaded) {
+      await loadGlobalPageActionSetting();
+    }
+    if (pureMode !== false || signal.aborted) return { error: "页面操作已停止。" };
+    if (!globalPageActionEnabled) {
+      const result = {
+        ok: false,
+        disabled: true,
+        error: "全局页面操作已关闭。请在右上角设置中开启“启用页面操作（全局）”。"
+      };
+      appendToolLog(name, args, "未执行").done(result);
+      return result;
+    }
+    const normalizedName = name === "check" ? "set_checked" : name;
+    const isCheckedAction = normalizedName === "set_checked";
+    const ledgerKey = isCheckedAction && args.targetId ? String(args.targetId) : "";
+    if (ledgerKey && actionLedger?.has(ledgerKey)) {
+      const previous = actionLedger.get(ledgerKey);
+      return {
+        ok: Boolean(previous?.ok),
+        verified: Boolean(previous?.verified),
+        status: "already_attempted",
+        actionExecuted: false,
+        target: previous?.target,
+        evidence: previous?.evidence,
+        error: previous?.verified
+          ? undefined
+          : "同一次操作中已尝试过这个目标，未再重复激活；请重新读取页面状态确认。"
+      };
+    }
+    if (ledgerKey) actionLedger.set(ledgerKey, { pending: true });
+    const log = appendToolLog(name, args, "正在执行");
+    if (name === "webmcp_call") {
+      const result = await webMcp.call(args);
+      log.done(result);
+      return result;
+    }
+    const executeAction = async () => {
+      if (pureMode !== false || signal.aborted) return { error: "页面操作已停止。" };
+      if (name === "click") {
+        return pageController.click(args, {
+          signal,
+          canRunQueuedAction: () => pureMode === false && actionContextVersion === chatContextVersion
+        });
+      }
+      if (isCheckedAction) return pageController.setChecked({ ...args, checked: name === "check" ? true : args.checked }, signal);
+      if (name === "type") return pageController.type(args);
+      if (name === "select_option") return pageController.selectOption(args);
+      if (name === "press_key") return pageController.pressKey(args);
+      if (name === "scroll") return pageController.scroll(args);
+      return { error: `未知页面操作: ${name}` };
+    };
+    let result = await executeAction();
+    if (signal.aborted) return result;
+    const looksStale = (value) => value?.status === "target_stale" || /目标已失效|目标已经被页面重绘/.test(String(value?.error || ""));
+    if (looksStale(result)) {
+      log.update("目标已失效，正在刷新页面状态并重新绑定");
+      const freshState = await pageController.refresh({ region: "all", page: 1, maxElements: 60 });
+      if (freshState?.error) {
+        result = {
+          ...result,
+          status: "target_rebind_failed",
+          reason: "refresh_failed",
+          error: `刷新页面状态失败：${freshState.error}`
+        };
+      } else {
+        result = await executeAction();
+        if (looksStale(result)) {
+          result = {
+            ...result,
+            status: "target_rebind_failed",
+            reason: "not_found",
+            error: "刷新后仍无法安全重新绑定该目标，请重新读取页面状态。"
+          };
+        }
+      }
+    }
+    log.done(result);
+    if (ledgerKey) {
+      if (result?.actionExecuted || result?.status === "already_checked" || result?.status === "already_unchecked") actionLedger.set(ledgerKey, result);
+      else actionLedger.delete(ledgerKey);
+    }
+    return result;
+  };
+
+  const runTool = async (name, args = {}, actionLedger, webMcp, signal) => {
+    if (pureMode !== false || signal.aborted) return { error: "纯净模式下无法访问或操作网页。" };
+    if (name === "webmcp_list") return webMcp.list(args);
+    if (name === "get_page_state") return pageController.getPageState(args);
+    if (name === "list_targets") return pageController.listTargets(args);
+    if (name === "get_target_state") return pageController.getTargetState(args);
     if (name === "read_page") return tool_read_page(args);
     if (name === "get_visible_text") return tool_get_visible_text(args);
     if (name === "query") return tool_query(args);
-    if (name === "get_api_endpoints") return tool_get_api_endpoints(args);
-    if (name === "get_api_responses") return tool_get_api_responses(args);
+    if (name === "get_api_endpoints") return tool_get_api_endpoints(args, signal);
+    if (name === "get_api_responses") return tool_get_api_responses(args, signal);
+    if (name === "wait") return pageController.wait(args);
+    if (name === "webmcp_call" || PAGE_ACTION_TOOLS.has(name)) return runPageAction(name, args, actionLedger, webMcp, signal);
     return { error: `未知工具: ${name}` };
   };
 
   const sendChat = () => {
+    if (pureMode === null || savingPureMode) return;
     const text = input.value.trim();
     const hasImages = pendingImages.length > 0;
-    if ((!text && !hasImages) || isStreaming) return;
+    if ((!text && !hasImages) || isStreaming || !sendGate.tryAcquire()) return;
+    const requestContextVersion = chatContextVersion;
     ensureApiKeyOrOpenSettings().then(async (ok) => {
-      if (!ok) return;
-      const snapshotFiles = pendingImages.map((p) => p.file);
-      revokeAllPendingPreviewUrls();
-      pendingImages = [];
-      refreshImagePreviewRow();
-      input.value = "";
-      const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
-      const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
-      doSendChat(text, urls);
+      if (requestContextVersion !== chatContextVersion) return;
+      if (!ok) {
+        sendGate.release();
+        return;
+      }
+      try {
+        const snapshotFiles = pendingImages.map((p) => p.file);
+        revokeAllPendingPreviewUrls();
+        pendingImages = [];
+        refreshImagePreviewRow();
+        input.value = "";
+        const dataUrls = await Promise.all(snapshotFiles.map((f) => readFileAsDataUrl(f)));
+        const urls = dataUrls.filter((d) => /^data:image\//i.test(String(d || "")));
+        if (requestContextVersion !== chatContextVersion) return;
+        doSendChat(text, urls);
+      } catch (error) {
+        if (requestContextVersion !== chatContextVersion) return;
+        sendGate.release();
+        showComposerHint(String(error?.message || "发送前读取内容失败，请重试。"));
+      }
+    }).catch((error) => {
+      if (requestContextVersion !== chatContextVersion) return;
+      sendGate.release();
+      showComposerHint(String(error?.message || "发送前检查配置失败，请重试。"));
     });
   };
 
   const doSendChat = (text, imageDataUrls = [], streamOptions = {}) => {
+    if (pureMode === null || savingPureMode) {
+      sendGate.release();
+      return;
+    }
+    const turnPureMode = pureMode;
+    const turnContextVersion = chatContextVersion;
     const trimmed = String(text || "").trim();
     const urls = Array.isArray(imageDataUrls) ? imageDataUrls.filter(Boolean) : [];
-    if (!trimmed && !urls.length) return;
+    if (!trimmed && !urls.length) {
+      sendGate.release();
+      return;
+    }
 
-    const includePageContext = streamOptions.includePageContext !== false;
+    const includePageContext = !turnPureMode && streamOptions.includePageContext !== false;
     let bubbleText =
       streamOptions.bubbleText != null ? String(streamOptions.bubbleText || "").trim() : "";
     if (!bubbleText) {
@@ -1182,11 +1459,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     const questionLine =
       trimmed || "（用户仅上传了图片，请根据图片回答。）";
 
-    const textBlock = pageContext
-      ? `[以下是用户当前浏览的页面信息]\n${pageContext}\n\n[用户的问题]\n${questionLine}`
-      : questionLine;
-
-    chatHistory.push(buildUserApiMessage(textBlock, urls));
+    const externalData = [];
+    if (pageContext) externalData.push({ source: "current_page", data: pageContext });
+    if (streamOptions.selectedText != null) {
+      externalData.push({ source: "selected_text", data: String(streamOptions.selectedText) });
+    }
+    chatHistory.push(createUserMessage(questionLine, urls, externalData));
 
     setInputEnabled(false);
 
@@ -1208,6 +1486,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         ? String(streamOptions.turnUserText || "")
         : trimmed || (urls.length ? "[用户上传了图片]" : "");
     let turnHandled = false;
+    const turnId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const executionTaskId = String(streamOptions.executionId || turnId);
+    let lastExecutionProgress = null;
+    let lastStreamSeq = 0;
+    const streamMessageTypes = new Set(["chunk", "chunk_reset", "progress", "tool_log", "done", "error"]);
+    const actionLedger = new Map();
 
     const parseThinkAndReply = (raw) => {
       const OPEN = "\x00THINK_O\x00";
@@ -1284,12 +1568,52 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       assistantEl.appendChild(replyContentEl);
     };
 
+    let executionProgressEl = null;
+    let executionProgressTextEl = null;
+    let executionResumeButton = null;
+    const ensureExecutionProgress = () => {
+      if (executionProgressEl) return;
+      executionProgressEl = document.createElement("div");
+      executionProgressEl.className = "execution-progress";
+      executionProgressTextEl = document.createElement("span");
+      executionProgressTextEl.className = "execution-progress-text";
+      executionProgressEl.appendChild(executionProgressTextEl);
+      assistantEl.insertBefore(executionProgressEl, assistantEl.firstChild);
+    };
+
+    const renderExecutionProgress = (progressMessage) => {
+      const progress = progressMessage?.progress || progressMessage || {};
+      lastExecutionProgress = progress;
+      ensureExecutionProgress();
+      executionProgressEl.classList.toggle("paused", progress.status === "paused");
+      executionProgressTextEl.textContent = progress.text || "正在计算执行预算…";
+
+      if (progress.status === "paused" && progress.canResume && !executionResumeButton) {
+        executionResumeButton = document.createElement("button");
+        executionResumeButton.type = "button";
+        executionResumeButton.className = "execution-resume";
+        executionResumeButton.textContent = "继续执行";
+        executionResumeButton.addEventListener("click", () => {
+          if (!lastExecutionProgress || !sendGate.tryAcquire()) return;
+          executionResumeButton.disabled = true;
+          doSendChat("继续执行", [], {
+            includePageContext: false,
+            bubbleText: "继续执行",
+            turnUserText: "继续执行",
+            executionId: executionTaskId,
+            resume: lastExecutionProgress
+          });
+        });
+        executionProgressEl.appendChild(executionResumeButton);
+      }
+    };
+
     const renderStream = (finished) => {
       const { thinkText, replyText, thinkClosed } = parseThinkAndReply(rawResponse);
 
       if (thinkText) {
         ensureThinkBlock();
-        thinkContentEl.innerHTML = renderMarkdown(thinkText);
+        thinkContentEl.innerHTML = renderMarkdown(thinkText, turnPureMode);
         if (thinkClosed && !finished) {
           thinkBlockEl.classList.remove("streaming");
           thinkBlockEl.classList.add("collapsed");
@@ -1302,7 +1626,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       const trimmedReply = replyText.replace(/^\n+/, "");
       if (trimmedReply || (finished && thinkClosed)) {
         ensureReplyContent();
-        replyContentEl.innerHTML = renderMarkdown(trimmedReply);
+        replyContentEl.innerHTML = renderMarkdown(trimmedReply, turnPureMode);
       }
 
       scrollToBottom();
@@ -1320,20 +1644,49 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       return;
     }
 
-    activePort.onMessage.addListener((msg) => {
+    const turnPort = activePort;
+    const turnController = new AbortController();
+    activeTurnController = turnController;
+    const webMcp = createWebMcpSession(turnController.signal);
+
+    turnPort.onMessage.addListener((msg) => {
+      if (turnContextVersion !== chatContextVersion) return;
+      if (streamMessageTypes.has(msg?.type)) {
+        const accepted = acceptTurnMessage(turnId, lastStreamSeq, msg);
+        if (!accepted.accepted) return;
+        lastStreamSeq = accepted.lastSeq;
+      }
+
       if (msg?.type === "tool") {
-        runTool(msg.name, msg.args)
+        if (turnController.signal.aborted) return;
+        if (typingIndicator.parentNode) typingIndicator.remove();
+        runTool(msg.name, msg.args, actionLedger, webMcp, turnController.signal)
           .then((result) => {
-            activePort?.postMessage({ type: "tool_result", id: msg.id, result });
+            if (turnController.signal.aborted) return;
+            turnPort.postMessage({ type: "tool_result", id: msg.id, result });
           })
           .catch((error) => {
-            activePort?.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error?.message || error) } });
+            if (turnController.signal.aborted) return;
+            turnPort.postMessage({ type: "tool_result", id: msg.id, result: { error: String(error?.message || error) } });
           });
         return;
       }
 
       if (msg?.type === "tool_log") {
-        // TODO: 可以在 UI 里显示工具调用日志（先不影响主流程）
+        if (msg.name === "compatibility" || msg.name === "resume_refresh") {
+          const item = document.createElement("div");
+          item.className = "tool-log";
+          item.textContent = String(msg.args?.message || (msg.name === "compatibility" ? "已切换到兼容工具模式。" : "恢复任务前正在刷新页面状态…"));
+          messagesEl.appendChild(item);
+          scrollToBottom();
+        }
+        return;
+      }
+
+      if (msg?.type === "progress") {
+        if (typingIndicator.parentNode) typingIndicator.remove();
+        renderExecutionProgress(msg);
+        scrollToBottom();
         return;
       }
 
@@ -1352,6 +1705,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         if (turnHandled) return;
         turnHandled = true;
         chatStreamPort = null;
+        turnPort.disconnect();
         clearStreamWatchdog();
         if (typingIndicator.parentNode) typingIndicator.remove();
         renderStream(true);
@@ -1368,16 +1722,18 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         }
 
         if (replyContentEl) {
-          replyContentEl.innerHTML = renderMarkdown(cleanedReply.replace(/^\n+/, ""));
+          replyContentEl.innerHTML = renderMarkdown(cleanedReply.replace(/^\n+/, ""), turnPureMode);
         }
 
         chatHistory.push({ role: "assistant", content: cleanedReply || rawResponse });
         setInputEnabled(true);
         input.focus();
 
-        requestStickerDecision({ userText: turnUserText, assistantText: cleanedReply })
-          .then((stickerName) => {
-            if (!stickerName || !STICKER_URLS[stickerName]) return;
+        const stickerPromise = turnPureMode || lastExecutionProgress?.status === "paused"
+          ? Promise.resolve(null)
+          : requestStickerDecision({ userText: turnUserText, assistantText: cleanedReply });
+        stickerPromise.then((stickerName) => {
+            if (turnContextVersion !== chatContextVersion || !stickerName || !STICKER_URLS[stickerName]) return;
             const bubble = document.createElement("div");
             bubble.className = "msg assistant sticker-msg";
             const img = document.createElement("img");
@@ -1391,11 +1747,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
           })
           .catch(() => {});
 
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
       } else if (msg.type === "error") {
         if (turnHandled) return;
         turnHandled = true;
         chatStreamPort = null;
+        turnPort.disconnect();
         clearStreamWatchdog();
         if (typingIndicator.parentNode) typingIndicator.remove();
         assistantEl.classList.replace("assistant", "error");
@@ -1406,14 +1763,16 @@ const requestStickerDecision = ({ userText, assistantText }) => {
           assistantEl.textContent = msg.error;
         }
         setInputEnabled(true);
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
       }
     });
 
-    activePort.onDisconnect.addListener(() => {
+    turnPort.onDisconnect.addListener(() => {
+      turnController.abort();
+      if (turnContextVersion !== chatContextVersion) return;
       chatStreamPort = null;
       if (turnHandled) {
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
         return;
       }
       if (isStreaming) {
@@ -1435,13 +1794,20 @@ const requestStickerDecision = ({ userText, assistantText }) => {
           chatHistory.push({ role: "assistant", content: reply || rawResponse });
         }
         setInputEnabled(true);
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
       } else {
-        activePort = null;
+        if (activePort === turnPort) activePort = null;
       }
     });
 
-    activePort.postMessage({ type: "chat", messages: chatHistory });
+    turnPort.postMessage({
+      type: "chat",
+      pureMode: turnPureMode,
+      messages: chatHistory,
+      turnId,
+      executionId: executionTaskId,
+      resume: streamOptions.resume || undefined
+    });
   };
 
   const resizeHandleDirs = ["n", "e", "s", "w", "ne", "nw", "se", "sw"];
@@ -1508,6 +1874,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   };
 
   const syncSelectionMenuFromDocument = () => {
+    if (pureMode !== false || savingPureMode) return;
     const sel = document.getSelection();
     if (!sel || sel.isCollapsed || selectionAnchoredInExtensionUi(sel)) {
       hideSelectionMenu();
@@ -1573,11 +1940,14 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const viewport = () => ({ viewportWidth: window.innerWidth, viewportHeight: window.innerHeight });
 
-  let iconPosition = getDefaultIconPosition({
-    edgeGap: EDGE_GAP,
-    buttonSize: BUTTON_SIZE,
-    ...viewport()
-  });
+  let iconPosition = anchorIconPosition(
+    getDefaultIconPosition({
+      edgeGap: EDGE_GAP,
+      buttonSize: BUTTON_SIZE,
+      ...viewport()
+    }),
+    { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+  );
 
   let dragState = null;
   let pendingPointerDown = null;
@@ -1688,6 +2058,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   });
   translateMenuBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (pureMode !== false || savingPureMode) return;
     const text = pendingSelectionText;
     hideSelectionMenu();
     if (!String(text || "").trim()) return;
@@ -1696,20 +2067,29 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       showComposerHint("当前正在回复，请稍后再试翻译。");
       return;
     }
+    if (!sendGate.tryAcquire()) return;
+    const requestContextVersion = chatContextVersion;
     ensureApiKeyOrOpenSettings()
       .then((ok) => {
-        if (!ok) return;
+        if (requestContextVersion !== chatContextVersion) return;
+        if (!ok) {
+          sendGate.release();
+          return;
+        }
         setDialogOpen(true);
         const body = String(text);
-        const instruction = `请将下面这段文本翻译：若原文主要为非中文，译为自然流畅的中文；若原文主要为中文，译为自然流畅的英文。只输出译文正文，不要额外说明或标题。\n\n---\n${body}\n---`;
+        const instruction = `请将下面这段文本翻译：若原文主要为非中文，译为自然流畅的中文；若原文主要为中文，译为自然流畅的英文。只输出译文正文，不要额外说明或标题。原文位于 selected_text 资料中。`;
         const preview = body.length > 120 ? `${body.slice(0, 120)}…` : body;
         doSendChat(instruction, [], {
           bubbleText: `翻译选中文本：${preview}`,
+          selectedText: body,
           includePageContext: false,
           turnUserText: body.slice(0, 800)
         });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (requestContextVersion === chatContextVersion) sendGate.release();
+      });
   });
 
   document.addEventListener("mouseup", onDocumentMouseUpForSelectionMenu, false);
@@ -1751,7 +2131,7 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       }
     }
 
-    iconPosition = clampIconPosition(
+    iconPosition = anchorIconPosition(
       { x: event.clientX - dragState.offsetX, y: event.clientY - dragState.offsetY },
       { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
     );
@@ -1769,7 +2149,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       if (button.hasPointerCapture(event.pointerId)) {
         button.releasePointerCapture(event.pointerId);
       }
-      iconPosition = clampIconPosition(iconPosition, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+      iconPosition = resolveAnchoredIconPosition(
+        iconPosition,
+        { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+      );
       renderIcon();
       await safeWritePosition(STORAGE_KEY, iconPosition);
     } else {
@@ -1779,16 +2162,69 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     pendingPointerDown = null;
   };
 
+  const resetChat = () => {
+    chatContextVersion += 1;
+    const port = chatStreamPort;
+    chatStreamPort = null;
+    activePort = null;
+    setInputEnabled(true);
+    port?.disconnect();
+    chatHistory.length = 0;
+    revokeAllPendingPreviewUrls();
+    pendingImages = [];
+    refreshImagePreviewRow();
+    input.value = "";
+    messagesEl.replaceChildren(welcome);
+    scrollToBottom();
+  };
+
+  const applyPureMode = (enabled) => {
+    const previous = pureMode;
+    pureMode = enabled;
+    pureModeToggle.checked = enabled;
+    pureModeToggle.disabled = savingPureMode;
+    pageActionToggle.disabled = enabled;
+    input.placeholder = enabled
+      ? "输入消息；Enter 发送，回形针可选图"
+      : defaultPlaceholder;
+    welcome.textContent = enabled
+      ? "纯净模式已开启。你可以直接和纳西妲聊天，网页内容不会加入对话。"
+      : defaultWelcome;
+    hideSelectionMenu();
+    if (enabled) {
+      apiBuffer.length = 0;
+      apiRespBuffer.length = 0;
+    }
+    if (previous !== null && previous !== enabled) resetChat();
+  };
+
+  const loadPureMode = async () => {
+    if (pureMode !== null) return;
+    try {
+      const settings = await chrome.storage.local.get(PURE_MODE_KEY);
+      if (pureMode === null) applyPureMode(settings[PURE_MODE_KEY] === true);
+    } catch {}
+  };
+
   const handleStorageChange = (changes, areaName) => {
     if (areaName !== "local") {
       return;
+    }
+    if (changes[PURE_MODE_KEY]) applyPureMode(changes[PURE_MODE_KEY].newValue === true);
+    const pageActionChange = changes?.[STORAGE_KEY_PAGE_ACTION_ENABLED];
+    if (pageActionChange) {
+      setGlobalPageActionEnabled(pageActionChange.newValue === true);
+      pageActionSettingLoaded = true;
     }
     const change = changes?.[STORAGE_KEY];
     const nextValue = change?.newValue;
     if (!nextValue || !Number.isFinite(nextValue.x) || !Number.isFinite(nextValue.y)) {
       return;
     }
-    iconPosition = clampIconPosition(nextValue, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+    iconPosition = resolveAnchoredIconPosition(
+      nextValue,
+      { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+    );
     renderIcon();
   };
 
@@ -1799,8 +2235,34 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   button.addEventListener("dragstart", (event) => event.preventDefault());
 
   closeButton.addEventListener("click", () => setDialogOpen(false));
+  clearContextButton.addEventListener("click", () => {
+    if (isStreaming) return;
+    resetChat();
+    input.focus();
+  });
+  pureModeToggle.addEventListener("change", async () => {
+    if (pureMode === null || savingPureMode) return;
+    const enabled = pureModeToggle.checked;
+    const previous = pureMode;
+    savingPureMode = true;
+    pureModeToggle.disabled = true;
+    if (enabled) applyPureMode(true);
+    try {
+      await chrome.storage.local.set({ [PURE_MODE_KEY]: enabled });
+      applyPureMode(enabled);
+    } catch {
+      applyPureMode(previous);
+      showComposerHint("纯净模式设置保存失败，请重试。");
+    } finally {
+      savingPureMode = false;
+      pureModeToggle.disabled = false;
+    }
+  });
+  pageActionToggle.addEventListener("change", () => {
+    saveGlobalPageActionSetting(pageActionToggle.checked).catch(() => {});
+  });
   settingsButton.addEventListener("click", async () => {
-    await loadLlmConfigIntoForm();
+    await Promise.all([loadLlmConfigIntoForm(), loadPureMode()]);
     setSettingsOpen(true);
   });
   settingsCancel.addEventListener("click", () => setSettingsOpen(false));
@@ -1960,7 +2422,10 @@ const requestStickerDecision = ({ userText, assistantText }) => {
   };
 
   window.addEventListener("resize", () => {
-    iconPosition = clampIconPosition(iconPosition, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+    iconPosition = resolveAnchoredIconPosition(
+      iconPosition,
+      { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+    );
     renderIcon();
     if (isDialogOpen) {
       clampDialogIntoViewport();
@@ -1975,6 +2440,9 @@ const requestStickerDecision = ({ userText, assistantText }) => {
       return;
     }
     if (settingsButton.contains(event.target)) {
+      return;
+    }
+    if (clearContextButton.contains(event.target)) {
       return;
     }
     const rect = dialog.getBoundingClientRect();
@@ -2138,13 +2606,19 @@ const requestStickerDecision = ({ userText, assistantText }) => {
 
   const bootstrap = async () => {
     renderIcon();
-    const stored = await safeReadPosition(STORAGE_KEY);
+    const [stored] = await Promise.all([
+      safeReadPosition(STORAGE_KEY),
+      loadGlobalPageActionSetting(),
+      loadPureMode()
+    ]);
     if (stored) {
-      iconPosition = clampIconPosition(stored, { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() });
+      iconPosition = resolveAnchoredIconPosition(
+        stored,
+        { edgeGap: EDGE_GAP, buttonSize: BUTTON_SIZE, ...viewport() }
+      );
       renderIcon();
     }
   };
 
   bootstrap();
 })();
-
