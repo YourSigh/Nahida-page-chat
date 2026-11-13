@@ -97,3 +97,63 @@ test("typing and selecting report the original and new values", async (t) => {
   assert.equal(selected.evidence.before.selectedValue, "a");
   assert.equal(selected.evidence.after.selectedValue, "b");
 });
+
+test("stopping before a queued navigation prevents the click", async (t) => {
+  browserFixture(t);
+  const link = element("A", { href: "/next" });
+  link.hasAttribute = (name) => name === "href";
+  let clicks = 0;
+  link.click = () => { clicks++; };
+  const controller = new AbortController();
+  const result = await clickTarget(target(link, "link"), { signal: controller.signal });
+  assert.equal(result.status, "queued_navigation");
+  assert.equal(result.verified, false);
+  controller.abort();
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(clicks, 0);
+});
+
+test("rechecking a replacement input compares the actual value to the requested one", async (t) => {
+  browserFixture(t);
+  const input = element("INPUT", { type: "text" });
+  input.value = "original";
+  input.dispatchEvent = () => { input.isConnected = false; return true; };
+  const result = await typeIntoTarget(target(input, "textbox"), { text: "requested" });
+  assert.equal(result.verified, false);
+  const { reverifyReboundAction } = await import("../src/page/actions/interaction.js");
+  const observation = {
+    before: result.evidence.before,
+    after: { ...result.evidence.after, connected: true, value: "different" },
+    changes: ["value"],
+    mutated: true
+  };
+  assert.equal(result[reverifyReboundAction](observation).verified, false);
+  observation.after.value = "requested";
+  assert.equal(result[reverifyReboundAction](observation).verified, true);
+});
+
+test("a controlled field that rolls back shortly after input is not reported as verified", async (t) => {
+  browserFixture(t);
+  const input = element("INPUT", { type: "text" });
+  input.value = "original";
+  input.dispatchEvent = (event) => {
+    if (event.type === "input") setTimeout(() => { input.value = "original"; }, 30);
+    return true;
+  };
+  const result = await typeIntoTarget(target(input, "textbox"), { text: "requested" });
+  assert.equal(result.verified, false);
+  assert.equal(result.evidence.after.value, "original");
+});
+
+test("normal turn completion does not cancel an already queued navigation", async (t) => {
+  browserFixture(t);
+  const link = element("A", { href: "/next" });
+  link.hasAttribute = (name) => name === "href";
+  let clicks = 0;
+  link.click = () => { clicks++; };
+  const controller = new AbortController();
+  await clickTarget(target(link, "link"), { signal: controller.signal });
+  controller.abort("turn_completed");
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(clicks, 1);
+});

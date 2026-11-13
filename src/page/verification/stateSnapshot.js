@@ -81,6 +81,9 @@ export const observeAfterAction = async (target, before, { timeout = 650 } = {})
     let observer = null;
     let rafId = 0;
     let timer = 0;
+    let last = before;
+    let lastChangeAt = 0;
+    const settleMs = 120;
 
     const finish = () => {
       if (settled) return;
@@ -94,7 +97,12 @@ export const observeAfterAction = async (target, before, { timeout = 650 } = {})
 
     const check = () => {
       const after = snapshotTargetState(target);
-      if (meaningfulChanges(before, after).length) finish();
+      if (after.connected !== last.connected || meaningfulChanges(last, after).length) {
+        last = after;
+        lastChangeAt = performance.now();
+      }
+      if (after.connected && meaningfulChanges(before, after).length &&
+          lastChangeAt && performance.now() - lastChangeAt >= settleMs) finish();
     };
 
     try {
@@ -111,12 +119,10 @@ export const observeAfterAction = async (target, before, { timeout = 650 } = {})
       });
     } catch {}
 
-    let frames = 0;
     const frameCheck = () => {
       if (settled) return;
       check();
-      frames += 1;
-      if (frames < 8) rafId = requestAnimationFrame(frameCheck);
+      if (!settled) rafId = requestAnimationFrame(frameCheck);
     };
     rafId = requestAnimationFrame(frameCheck);
     timer = setTimeout(finish, duration);

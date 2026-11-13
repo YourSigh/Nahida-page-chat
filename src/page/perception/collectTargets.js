@@ -192,7 +192,7 @@ const candidateFor = (element, extensionHost, { probeCursor = false } = {}) => {
     href: String(clickElement.href || clickElement.getAttribute?.("href") || "").slice(0, 500),
     rect,
     inViewport: isInViewport(clickElement),
-    hitTestable: isHitTestable(clickElement),
+    hitTestable: isHitTestable(clickElement, { extensionHost }),
     confidence: candidateConfidence({ element, stateElement, kind: effectiveKind, clickElement })
   };
   candidate.questionKey = questionKeyFor(candidate);

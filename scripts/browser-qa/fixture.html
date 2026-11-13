@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Nahida local action fixture</title>
+<style>body{font:18px sans-serif;padding:30px;max-width:640px}label,button{display:block;margin:18px 0}input,select{font:inherit}#details{padding:10px}</style>
+<h1>Local-only extension QA</h1>
+<button id="expand" type="button" aria-expanded="false">Expand details</button><div id="details" hidden>Visible details</div>
+<label>Display name <input id="name" aria-label="Display name"></label>
+<label>Color <select id="color" aria-label="Color"><option value="red">Red</option><option value="blue">Blue</option></select></label>
+<label><input id="subscribe" type="checkbox"> Subscribe locally</label>
+<button id="noop" type="button">No-op button</button>
+<label>Accepted replacement <input id="accepted" aria-label="Accepted replacement"></label>
+<label>Rejected replacement <input id="rejected" aria-label="Rejected replacement" value="old"></label>
+<button id="covered" type="button">Covered button</button>
+<button id="modal-background" type="button">Modal background button</button>
+<div id="page-modal" role="dialog" aria-modal="true" hidden style="position:fixed;left:20px;top:20px;background:white;border:2px solid black;z-index:1000;padding:12px">
+  <button id="modal-inside" type="button" aria-expanded="false">Modal inside button</button>
+</div>
+<div id="shadow-fixture"></div>
+<script>
+window.coveredClicks=0;
+document.querySelector('#covered').onclick=document.querySelector('#modal-background').onclick=()=>window.coveredClicks++;
+document.querySelector('#modal-inside').onclick=function(){this.setAttribute('aria-expanded','true');};
+window.showFixtureOverlay=()=>{const blocker=document.createElement('div');blocker.style.cssText='position:fixed;inset:0;background:#8888;z-index:100';document.body.append(blocker);};
+const shadow=document.querySelector('#shadow-fixture').attachShadow({mode:'open'});
+shadow.innerHTML='<button type="button" aria-expanded="false">Shadow button</button>';
+shadow.querySelector('button').onclick=function(){this.setAttribute('aria-expanded','true');};
+window.fixtureClicks=0;
+expand.onclick=()=>{window.fixtureClicks++;expand.setAttribute('aria-expanded','true');details.hidden=false};
+function replacement(id,reject){document.getElementById(id).addEventListener('input',function(){const next=this.cloneNode(true);next.value=reject?'REJECTED':this.value;this.replaceWith(next);},{once:true});}
+replacement('accepted',false);replacement('rejected',true);
+</script></html>

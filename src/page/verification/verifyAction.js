@@ -60,9 +60,9 @@ export const verifyActivation = ({ action, target, before, observation, expected
   );
 };
 
-export const verifyValue = ({ action, before, observation, expectedValue, sensitive = false }) => {
+export const verifyValue = ({ observation, expectedValue, sensitive = false }) => {
   const { after } = observation;
-  if (after.value === expectedValue) {
+  if (after.connected && after.value === expectedValue) {
     return success("verified", observation, { value: sensitive ? "[已隐藏]" : expectedValue.slice(0, 300) });
   }
   return unverified(observation, "输入事件已发出，但元素值没有变为预期内容。请重新读取页面状态确认。", {
@@ -72,7 +72,7 @@ export const verifyValue = ({ action, before, observation, expectedValue, sensit
 
 export const verifySelect = ({ observation, expectedValue, expectedLabel }) => {
   const { after } = observation;
-  if (after.selectedValue === expectedValue || after.value === expectedValue) {
+  if (after.connected && (after.selectedValue === expectedValue || after.value === expectedValue)) {
     return success("verified", observation, { selected: { value: expectedValue, label: expectedLabel } });
   }
   return unverified(observation, "选择事件已发出，但下拉框没有变为目标选项。请重新读取页面状态确认。", {
