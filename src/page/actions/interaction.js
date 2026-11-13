@@ -83,6 +83,7 @@ const queuedNavigationResult = (target, action, canRunQueuedAction) => {
 };
 
 const combineObservation = (first, second) => ({
+  before: first.before,
   after: second.after,
   changes: Array.from(new Set([...(first.changes || []), ...(second.changes || [])])),
   mutated: Boolean(first.mutated || second.mutated)
@@ -111,7 +112,7 @@ export const clickTarget = async (target, { check = false, signal, canRunQueuedA
         action,
         target,
         before,
-        observation: { after: before, changes: [], mutated: false },
+        observation: { before, after: before, changes: [], mutated: false },
         expectedChecked: true
       })
     };
@@ -156,7 +157,7 @@ export const setCheckedTarget = async (target, { checked = true, signal } = {}) 
         action,
         target,
         before,
-        observation: { after: before, changes: [], mutated: false },
+        observation: { before, after: before, changes: [], mutated: false },
         expectedChecked
       })
     };

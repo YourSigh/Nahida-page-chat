@@ -1,3 +1,4 @@
+import { createUserMessage } from "../common/messageTrust.js";
 import stylesText from "../ui/styles.css";
 import MarkdownIt from "markdown-it";
 import { acceptTurnMessage, createSendGate } from "../common/streamProtocol.js";
@@ -1017,17 +1018,6 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     }
   };
 
-  const buildUserApiMessage = (textBlock, imageDataUrls) => {
-    if (!imageDataUrls?.length) return { role: "user", content: textBlock };
-    return {
-      role: "user",
-      content: [
-        { type: "text", text: textBlock },
-        ...imageDataUrls.map((url) => ({ type: "image_url", image_url: { url } }))
-      ]
-    };
-  };
-
   const stopStreamingChat = () => {
     const p = chatStreamPort;
     if (!p) return;
@@ -1469,11 +1459,12 @@ const requestStickerDecision = ({ userText, assistantText }) => {
     const questionLine =
       trimmed || "（用户仅上传了图片，请根据图片回答。）";
 
-    const textBlock = pageContext
-      ? `[以下是用户当前浏览的页面信息]\n${pageContext}\n\n[用户的问题]\n${questionLine}`
-      : questionLine;
-
-    chatHistory.push(buildUserApiMessage(textBlock, urls));
+    const externalData = [];
+    if (pageContext) externalData.push({ source: "current_page", data: pageContext });
+    if (streamOptions.selectedText != null) {
+      externalData.push({ source: "selected_text", data: String(streamOptions.selectedText) });
+    }
+    chatHistory.push(createUserMessage(questionLine, urls, externalData));
 
     setInputEnabled(false);
 
@@ -2087,10 +2078,11 @@ const requestStickerDecision = ({ userText, assistantText }) => {
         }
         setDialogOpen(true);
         const body = String(text);
-        const instruction = `请将下面这段文本翻译：若原文主要为非中文，译为自然流畅的中文；若原文主要为中文，译为自然流畅的英文。只输出译文正文，不要额外说明或标题。\n\n---\n${body}\n---`;
+        const instruction = `请将下面这段文本翻译：若原文主要为非中文，译为自然流畅的中文；若原文主要为中文，译为自然流畅的英文。只输出译文正文，不要额外说明或标题。原文位于 selected_text 资料中。`;
         const preview = body.length > 120 ? `${body.slice(0, 120)}…` : body;
         doSendChat(instruction, [], {
           bubbleText: `翻译选中文本：${preview}`,
+          selectedText: body,
           includePageContext: false,
           turnUserText: body.slice(0, 800)
         });

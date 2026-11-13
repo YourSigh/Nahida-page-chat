@@ -4,7 +4,6 @@ import { build, context } from "esbuild";
 function loadEnv() {
   const defaults = {
     LLM_API_BASE_URL: "https://api.openai.com/v1",
-    LLM_API_KEY: "",
     LLM_MODEL: "gpt-4o-mini"
   };
 

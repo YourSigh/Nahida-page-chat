@@ -1,3 +1,4 @@
+import { SOURCE_TRUST_PROMPT, serializeObservation, toModelMessages } from "../common/messageTrust.js";
 import { drainSseBuffer } from "../common/streamProtocol.js";
 import { PURE_MODE_KEY } from "../common/chatMode.js";
 import { isNativeToolsUnsupported, runNativePageAgent } from "./nativeAgent.js";
@@ -11,7 +12,7 @@ import {
 
 const DEFAULT_CONFIG = {
   apiBaseUrl: process.env.LLM_API_BASE_URL || "https://api.openai.com/v1",
-  apiKey: process.env.LLM_API_KEY || "",
+  apiKey: "",
   model: process.env.LLM_MODEL || "gpt-4o-mini"
 };
 
@@ -354,7 +355,7 @@ function isAbortError(e) {
 }
 
 async function runAgent(config, userMessages, port, signal, { turnId, executionId, resume, emitOverride } = {}) {
-  const messages = [{ role: "system", content: LEGACY_SYSTEM_PROMPT }, ...userMessages];
+  const messages = [{ role: "system", content: `${LEGACY_SYSTEM_PROMPT}\n\n${SOURCE_TRUST_PROMPT}` }, ...toModelMessages(userMessages)];
   const execution = createExecutionController({ messages: userMessages, resume });
   const budget = execution.manager;
   const taskId = String(executionId || turnId || "");
@@ -396,7 +397,7 @@ async function runAgent(config, userMessages, port, signal, { turnId, executionI
     }
     messages.push({
       role: "user",
-      content: `[恢复任务后的最新页面状态]\n${JSON.stringify(freshState).slice(0, 12_000)}\n\n这是恢复任务后重新读取的页面状态。之前对话中的 targetId 可能已经失效，后续只能使用这次状态返回的最新 targetId。`
+      content: `[恢复任务后的最新页面状态]\n${serializeObservation("resume_page_state", freshState, 12000)}\n\n这是恢复任务后重新读取的页面状态。之前对话中的 targetId 可能已经失效，后续只能使用这次状态返回的最新 targetId。`
     });
     return true;
   };
@@ -521,7 +522,7 @@ async function runAgent(config, userMessages, port, signal, { turnId, executionI
         }
       }
       messages.push({ role: "assistant", content: JSON.stringify(parsedAtEnd) });
-      messages.push({ role: "user", content: `工具结果(${parsedAtEnd.name}):\n${JSON.stringify(result).slice(0, 6000)}` });
+      messages.push({ role: "user", content: serializeObservation(`tool:${parsedAtEnd.name}`, result, 6000) });
       continue;
     }
 
@@ -751,7 +752,7 @@ chrome.runtime.onConnect.addListener((port) => {
       }
       if (msg.type === "chat") {
         if (pureMode) {
-          const messages = [{ role: "system", content: PURE_SYSTEM_PROMPT }, ...msg.messages];
+          const messages = [{ role: "system", content: `${PURE_SYSTEM_PROMPT}\n\n${SOURCE_TRUST_PROMPT}` }, ...toModelMessages(msg.messages)];
           for await (const content of streamChatCompletion(config, messages, controller.signal)) {
             if (controller.signal.aborted || !emit({ type: "chunk", content })) return;
           }
