@@ -99,11 +99,12 @@
 
 ### 环境变量（大模型配置）
 
-请新建 `.env`（可参考 `.env.example`），填入你的模型参数：
+可选：创建 `.env`（参考 `.env.example`）来调整公开的模型默认值：
 
 - `LLM_API_BASE_URL`: OpenAI 兼容接口地址（例如 `https://api.openai.com/v1`）
-- `LLM_API_KEY`: API Key
 - `LLM_MODEL`: 模型名
+
+API Key 请在扩展的模型设置中填写。构建不会从 `.env` 读取或打包 Key。
 
 - 构建一次：
 

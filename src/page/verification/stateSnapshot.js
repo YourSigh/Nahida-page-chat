@@ -89,7 +89,7 @@ export const observeAfterAction = async (target, before, { timeout = 650 } = {})
       if (rafId) cancelAnimationFrame(rafId);
       if (timer) clearTimeout(timer);
       const after = snapshotTargetState(target);
-      resolve({ after, changes: meaningfulChanges(before, after), mutated });
+      resolve({ before, after, changes: meaningfulChanges(before, after), mutated });
     };
 
     const check = () => {

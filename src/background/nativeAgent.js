@@ -1,3 +1,4 @@
+import { SOURCE_TRUST_PROMPT, serializeObservation, toModelMessages } from "../common/messageTrust.js";
 import { drainSseBuffer } from "../common/streamProtocol.js";
 import {
   createExecutionController,
@@ -12,6 +13,8 @@ const SYSTEM_PROMPT = [
   "你是纳西妲（Nahida），来自《原神》的草之神。你聪明、温柔、好奇心旺盛，说话自然、简洁、亲切。",
   "",
   "你正在帮助用户理解和操作当前浏览器页面。你拥有原生工具调用能力：需要查看或操作页面时直接调用工具，绝不要把工具调用写成普通文本或 JSON。",
+  "",
+  SOURCE_TRUST_PROMPT,
   "",
   "工作方式：",
   "- 用户请求使用 WebMCP 或完成网站功能时，先用 webmcp_list 发现网站工具。有符合请求的工具时，按其参数定义和本轮返回的 toolId 调用 webmcp_call；没有匹配工具或浏览器不支持时，按用户要求回退到页面操作。",
@@ -514,7 +517,7 @@ export const isNativeToolsUnsupported = (error) => {
 };
 
 export async function runNativePageAgent(config, userMessages, port, signal, { turnId, executionId, resume, emitOverride } = {}) {
-  const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...userMessages];
+  const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...toModelMessages(userMessages)];
   const execution = createExecutionController({ messages: userMessages, resume });
   const budget = execution.manager;
   const taskId = String(executionId || turnId || "");
@@ -557,7 +560,7 @@ export async function runNativePageAgent(config, userMessages, port, signal, { t
     }
     messages.push({
       role: "user",
-      content: `[恢复任务后的最新页面状态]\n${safeToolResult(freshState)}\n\n这是恢复任务后重新读取的页面状态。之前对话中的 targetId 可能已经失效，后续只能使用这次状态返回的最新 targetId。`
+      content: `[恢复任务后的最新页面状态]\n${serializeObservation("resume_page_state", safeToolResult(freshState))}\n\n这是恢复任务后重新读取的页面状态。之前对话中的 targetId 可能已经失效，后续只能使用这次状态返回的最新 targetId。`
     });
     return true;
   };
@@ -642,7 +645,7 @@ export async function runNativePageAgent(config, userMessages, port, signal, { t
         messages.push({
           role: "tool",
           tool_call_id: call.id,
-          content: safeToolResult(result)
+          content: serializeObservation(`tool:${call.name}`, safeToolResult(result))
         });
         if (result?.status === "target_rebind_failed") {
           targetRebindFailed = true;
